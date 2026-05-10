@@ -9,21 +9,24 @@ imported from ``node_helpers``.
 import re
 import logging
 
-from langchain_core.messages import SystemMessage, HumanMessage, RemoveMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 
 from .graph_state import State
 from .schemas import (
     IntentAnalysis,
     DepartmentRecommendation,
 )
-from .prompts import *
+from .prompts import get_conversation_summary_prompt, get_intent_router_prompt, get_department_recommendation_prompt
 from .node_helpers import (
     _APPOINTMENT_NO_RE,
+    _DEPARTMENT_HINTS,
     _ORDINAL_RE,
     _build_appointment_context,
+    _build_history_reset_messages,
     _build_recent_context,
     _clear_pending_action_state,
     _extract_topic_focus,
+    _get_user_query,
     _infer_risk_level,
     _is_abort_request,
     _is_explicit_confirmation,
@@ -37,6 +40,7 @@ from .node_helpers import (
     _looks_like_medical_knowledge_question,
     _looks_like_medical_request,
     _looks_like_medication_risk_query,
+    _next_clarification_attempt,
     _normalize_date,
     _normalize_time_slot,
     _pick_candidate_from_text,
@@ -68,7 +72,6 @@ def _looks_like_department_name_only(user_query: str) -> bool:
     normalized = (user_query or "").strip()
     if not normalized:
         return False
-    from .node_helpers import _DEPARTMENT_HINTS
     return any(department in normalized for department in _DEPARTMENT_HINTS)
 
 
@@ -193,17 +196,6 @@ def _should_continue_pending_action(state: State, user_query: str) -> bool:
     return False
 
 
-def _build_history_reset_messages(messages, keep_recent: int = 5):
-    non_system_messages = [m for m in messages if not isinstance(m, SystemMessage)]
-    keep_ids = {getattr(m, "id", None) for m in non_system_messages[-keep_recent:]}
-    delete_messages = []
-    for message in non_system_messages:
-        message_id = getattr(message, "id", None)
-        if message_id and message_id not in keep_ids:
-            delete_messages.append(RemoveMessage(id=message_id))
-    return delete_messages
-
-
 # ---------------------------------------------------------------------------
 # Public routing nodes
 # ---------------------------------------------------------------------------
@@ -271,12 +263,7 @@ def analyze_turn(state: State):
     ):
         return {
             "recent_context": recent_context,
-            "topic_focus": _extract_topic_focus(
-                user_query,
-                state.get("topic_focus", ""),
-                state.get("appointment_context", {}),
-                state.get("recommended_department", ""),
-            ),
+            "topic_focus": topic_focus or state.get("topic_focus", ""),
             "primary_intent": "appointment",
             "secondary_intent": "",
             "primary_user_query": user_query,
@@ -540,7 +527,7 @@ def intent_router(state: State, llm):
             **pending_updates,
         }
 
-    clarification_attempts = int(state.get("clarification_attempts") or 0) + 1
+    clarification_attempts = _next_clarification_attempt(state)
     if clarification_attempts > 1:
         if _looks_like_medical_request(user_query, conversation_summary=state.get("conversation_summary", ""), recent_context=recent_context, topic_focus=topic_focus):
             fallback_answer = "我先给你一个保守建议：如果你有持续不适、症状加重，建议尽快线下就医；如果你愿意，也可以再补充一句最困扰你的症状，我会继续帮你缩小范围。"
@@ -595,8 +582,7 @@ def intent_router(state: State, llm):
 
 
 def recommend_department(state: State, llm):
-    last_message = state["messages"][-1]
-    user_query = state.get("primary_user_query") or str(last_message.content).strip()
+    user_query = _get_user_query(state)
     conversation_summary = state.get("conversation_summary", "")
     risk_level = state.get("risk_level", "normal")
     topic_focus = state.get("topic_focus", "")
@@ -636,7 +622,7 @@ def recommend_department(state: State, llm):
                 **_reset_pending_action_if_needed(state),
                 "messages": [AIMessage(content=answer)],
             }
-        clarification_attempts = int(state.get("clarification_attempts") or 0) + 1
+        clarification_attempts = _next_clarification_attempt(state)
         if clarification_attempts > 1:
             answer = "如果你目前还拿不准具体挂什么科，建议先从 **全科医学科/普通内科** 开始，由医生根据症状再分流；如果出现胸痛、呼吸困难、意识异常等情况，请优先急诊。"
             return {

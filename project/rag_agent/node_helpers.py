@@ -10,7 +10,7 @@ import re
 import logging
 from datetime import date, timedelta
 
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, SystemMessage, RemoveMessage
 
 from .graph_state import State
 import config
@@ -635,6 +635,34 @@ def _wants_earliest_available_slot(user_query: str) -> bool:
     return any(token in normalized for token in _EARLIEST_SLOT_HINTS)
 
 
+def _build_history_reset_messages(messages, keep_recent: int = 5):
+    non_system_messages = [m for m in messages if not isinstance(m, SystemMessage)]
+    keep_ids = {getattr(m, "id", None) for m in non_system_messages[-keep_recent:]}
+    delete_messages = []
+    for message in non_system_messages:
+        message_id = getattr(message, "id", None)
+        if message_id and message_id not in keep_ids:
+            delete_messages.append(RemoveMessage(id=message_id))
+    return delete_messages
+
+
+def _get_user_query(state: State) -> str:
+    last_message = state["messages"][-1]
+    return state.get("primary_user_query") or str(last_message.content).strip()
+
+
+def _get_appointment_context(state: State) -> dict:
+    return dict(state.get("appointment_context") or {})
+
+
+def _get_pending_payload(state: State) -> dict:
+    return _sanitize_pending_payload(state.get("pending_action_payload"))
+
+
+def _next_clarification_attempt(state: State) -> int:
+    return int(state.get("clarification_attempts") or 0) + 1
+
+
 __all__ = [
     # --- compiled regex patterns ---
     "_APPOINTMENT_NO_RE",
@@ -666,6 +694,7 @@ __all__ = [
     "_TOPIC_STOP_WORDS",
     # --- shared helper functions ---
     "_build_appointment_context",
+    "_build_history_reset_messages",
     "_build_medical_fallback_notice",
     "_build_recent_context",
     "_clear_pending_action_state",
@@ -675,7 +704,11 @@ __all__ = [
     "_extract_topic_focus",
     "_format_reference_lines",
     "_freshness_bucket_label",
+    "_get_appointment_context",
+    "_get_pending_payload",
+    "_get_user_query",
     "_infer_risk_level",
+    "_next_clarification_attempt",
     "_is_abort_request",
     "_is_explicit_confirmation",
     "_json_safe_value",

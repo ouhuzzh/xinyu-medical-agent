@@ -18,7 +18,7 @@ from .schemas import (
     CancelActionCall,
     AppointmentSkillRequest,
 )
-from .prompts import *
+from .prompts import get_appointment_request_prompt, get_cancel_appointment_prompt, get_appointment_skill_prompt
 from db.appointment_skill_log_store import AppointmentSkillLogStore
 from services.appointment_skill import AppointmentSkill
 
@@ -28,10 +28,14 @@ from .node_helpers import (
     _RESCHEDULE_HINTS,
     _build_appointment_context,
     _clear_pending_action_state,
+    _get_appointment_context,
+    _get_pending_payload,
+    _get_user_query,
     _is_abort_request,
     _is_explicit_confirmation,
     _json_safe_value,
     _looks_like_appointment_discovery_query,
+    _next_clarification_attempt,
     _normalize_date,
     _normalize_time_slot,
     _pick_candidate_from_text,
@@ -186,11 +190,10 @@ def _format_reschedule_confirmation_preview(payload: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def _handle_appointment_legacy(state: State, llm, appointment_service):
-    last_message = state["messages"][-1]
-    user_query = state.get("primary_user_query") or str(last_message.content).strip()
-    appointment_context = dict(state.get("appointment_context") or {})
+    user_query = _get_user_query(state)
+    appointment_context = _get_appointment_context(state)
     pending_action_type = state.get("pending_action_type", "")
-    pending_payload = _sanitize_pending_payload(state.get("pending_action_payload"))
+    pending_payload = _get_pending_payload(state)
 
     if pending_action_type == "appointment":
         if _is_abort_request(user_query):
@@ -302,7 +305,7 @@ def _handle_appointment_legacy(state: State, llm, appointment_service):
             "intent": "appointment",
             "pending_clarification": clarification,
             "clarification_target": "handle_appointment",
-            "clarification_attempts": int(state.get("clarification_attempts") or 0) + 1,
+            "clarification_attempts": _next_clarification_attempt(state),
             "topic_focus": department or state.get("topic_focus", ""),
             "appointment_context": merged_context,
             **_clear_pending_action_state(),
@@ -334,7 +337,7 @@ def _handle_appointment_legacy(state: State, llm, appointment_service):
             "intent": "appointment",
             "pending_clarification": clarification,
             "clarification_target": "handle_appointment",
-            "clarification_attempts": int(state.get("clarification_attempts") or 0) + 1,
+            "clarification_attempts": _next_clarification_attempt(state),
             "topic_focus": department or state.get("topic_focus", ""),
             "appointment_context": _build_appointment_context(merged_context, {"available_doctors": doctor_options, "doctor_name": ""}),
             **_clear_pending_action_state(),
@@ -355,7 +358,7 @@ def _handle_appointment_legacy(state: State, llm, appointment_service):
                 "intent": "appointment",
                 "pending_clarification": answer,
                 "clarification_target": "handle_appointment",
-                "clarification_attempts": int(state.get('clarification_attempts') or 0) + 1,
+                "clarification_attempts": _next_clarification_attempt(state),
                 "topic_focus": department or state.get("topic_focus", ""),
                 "appointment_context": _build_appointment_context(merged_context, {"available_doctors": doctor_options, "doctor_name": ""}),
                 **_clear_pending_action_state(),
@@ -393,12 +396,11 @@ def _handle_appointment_legacy(state: State, llm, appointment_service):
 
 
 def _handle_cancel_appointment_legacy(state: State, llm, appointment_service):
-    last_message = state["messages"][-1]
-    user_query = state.get("primary_user_query") or str(last_message.content).strip()
-    appointment_context = dict(state.get("appointment_context") or {})
+    user_query = _get_user_query(state)
+    appointment_context = _get_appointment_context(state)
     last_appointment_no = state.get("last_appointment_no", "")
     pending_action_type = state.get("pending_action_type", "")
-    pending_payload = _sanitize_pending_payload(state.get("pending_action_payload"))
+    pending_payload = _get_pending_payload(state)
     pending_candidates = state.get("pending_candidates", []) or []
 
     if pending_action_type == "cancel_appointment":
@@ -499,7 +501,7 @@ def _handle_cancel_appointment_legacy(state: State, llm, appointment_service):
             "intent": "cancel_appointment",
             "pending_clarification": clarification,
             "clarification_target": "handle_cancel_appointment",
-            "clarification_attempts": int(state.get("clarification_attempts") or 0) + 1,
+            "clarification_attempts": _next_clarification_attempt(state),
             **_clear_pending_action_state(),
             "messages": [AIMessage(content=clarification)],
         }
@@ -532,7 +534,7 @@ def _handle_cancel_appointment_legacy(state: State, llm, appointment_service):
             "intent": "cancel_appointment",
             "pending_clarification": clarification,
             "clarification_target": "handle_cancel_appointment",
-            "clarification_attempts": int(state.get("clarification_attempts") or 0) + 1,
+            "clarification_attempts": _next_clarification_attempt(state),
             "pending_action_type": "",
             "pending_action_payload": {},
             "pending_confirmation_id": "",
@@ -592,7 +594,7 @@ def _log_appointment_skill_event(
 
 
 def _invoke_appointment_skill_request(llm, state: State, user_query: str) -> dict:
-    appointment_context = dict(state.get("appointment_context") or {})
+    appointment_context = _get_appointment_context(state)
     llm_with_tools = llm.with_config(temperature=0.1).bind_tools([AppointmentSkillRequest])
     response = llm_with_tools.invoke(
         [
@@ -663,11 +665,10 @@ def _base_skill_state_update(
 # ---------------------------------------------------------------------------
 
 def handle_appointment_skill(state: State, llm, appointment_service):
-    last_message = state["messages"][-1]
-    user_query = state.get("primary_user_query") or str(last_message.content).strip()
-    appointment_context = dict(state.get("appointment_context") or {})
+    user_query = _get_user_query(state)
+    appointment_context = _get_appointment_context(state)
     pending_action_type = state.get("pending_action_type", "")
-    pending_payload = _sanitize_pending_payload(state.get("pending_action_payload"))
+    pending_payload = _get_pending_payload(state)
     pending_candidates = state.get("pending_candidates", []) or []
     active_intent = state.get("intent") or state.get("primary_intent") or "appointment"
     skill = AppointmentSkill(appointment_service)
@@ -1107,7 +1108,7 @@ def handle_appointment_skill(state: State, llm, appointment_service):
             **_base_skill_state_update(state, intent=active_intent, skill_mode="clarify", topic_focus=department or state.get("topic_focus", ""), appointment_context=merged_context, skill_last_prompt=clarification),
             "pending_clarification": clarification,
             "clarification_target": "handle_appointment_skill",
-            "clarification_attempts": int(state.get("clarification_attempts") or 0) + 1,
+            "clarification_attempts": _next_clarification_attempt(state),
             **_clear_pending_action_state(),
             "messages": [AIMessage(content=clarification)],
         }
@@ -1143,7 +1144,7 @@ def handle_appointment_skill(state: State, llm, appointment_service):
                 **_base_skill_state_update(state, intent="appointment", skill_mode="clarify", appointment_context=merged_context, skill_last_prompt=clarification),
                 "pending_clarification": clarification,
                 "clarification_target": "handle_appointment_skill",
-                "clarification_attempts": int(state.get("clarification_attempts") or 0) + 1,
+                "clarification_attempts": _next_clarification_attempt(state),
                 "messages": [AIMessage(content=clarification)],
             }
         schedule_date_value = date.fromisoformat(normalized_date) if normalized_date and time_slot else None
@@ -1201,7 +1202,7 @@ def handle_appointment_skill(state: State, llm, appointment_service):
                 **_base_skill_state_update(state, intent="appointment", skill_mode="clarify", appointment_context=merged_context, skill_last_prompt=message),
                 "pending_clarification": message,
                 "clarification_target": "handle_appointment_skill",
-                "clarification_attempts": int(state.get("clarification_attempts") or 0) + 1,
+                "clarification_attempts": _next_clarification_attempt(state),
                 "messages": [AIMessage(content=message)],
             }
         if not normalized_date or not time_slot:
@@ -1316,7 +1317,7 @@ def handle_appointment_skill(state: State, llm, appointment_service):
             **_base_skill_state_update(state, intent="appointment", skill_mode="clarify", appointment_context=merged_context, skill_last_prompt=clarification),
             "pending_clarification": clarification,
             "clarification_target": "handle_appointment_skill",
-            "clarification_attempts": int(state.get("clarification_attempts") or 0) + 1,
+            "clarification_attempts": _next_clarification_attempt(state),
             **_clear_pending_action_state(),
             "messages": [AIMessage(content=clarification)],
         }

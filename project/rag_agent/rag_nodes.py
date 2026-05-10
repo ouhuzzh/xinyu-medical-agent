@@ -20,25 +20,35 @@ from .schemas import (
     RetrievalQueryPlan,
     GroundedAnswerCheck,
 )
-from .prompts import *
+from .prompts import (
+    get_rewrite_query_prompt,
+    get_retrieval_query_plan_prompt,
+    get_orchestrator_prompt,
+    get_fallback_response_prompt,
+    get_context_compression_prompt,
+    get_aggregation_prompt,
+)
 from utils import estimate_context_tokens
 import config
 from config import BASE_TOKEN_THRESHOLD, TOKEN_GROWTH_FACTOR
 from rag_agent.tools import plan_queries, ground_answer
 
 from .node_helpers import (
+    _build_history_reset_messages,
     _build_medical_fallback_notice,
     _build_recent_context,
     _confidence_bucket_explanation,
     _confidence_bucket_label,
     _extract_topic_focus,
     _format_reference_lines,
+    _get_user_query,
     _infer_risk_level,
     _looks_like_general_non_medical_query,
     _looks_like_medical_follow_up,
     _looks_like_medical_knowledge_question,
     _looks_like_medical_request,
     _needs_strict_medical_safety,
+    _next_clarification_attempt,
     _sanitize_final_answer_text,
     _strip_leading_query_plan_blob,
     _structured_output_llm,
@@ -51,17 +61,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Private helpers (only used by RAG nodes)
 # ---------------------------------------------------------------------------
-
-def _build_history_reset_messages(messages, keep_recent: int = 5):
-    non_system_messages = [m for m in messages if not isinstance(m, SystemMessage)]
-    keep_ids = {getattr(m, "id", None) for m in non_system_messages[-keep_recent:]}
-    delete_messages = []
-    for message in non_system_messages:
-        message_id = getattr(message, "id", None)
-        if message_id and message_id not in keep_ids:
-            delete_messages.append(RemoveMessage(id=message_id))
-    return delete_messages
-
 
 def _extract_source_citations(messages) -> list[dict]:
     citations = []
@@ -124,10 +123,9 @@ def _extract_source_citations(messages) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 def rewrite_query(state: State, llm):
-    last_message = state["messages"][-1]
     conversation_summary = state.get("conversation_summary", "")
     recent_context = state.get("recent_context") or _build_recent_context(state.get("messages", []))
-    user_query = state.get("primary_user_query") or str(last_message.content).strip()
+    user_query = _get_user_query(state)
     topic_focus = state.get("topic_focus", "")
 
     if state.get("intent") == "medical_rag" and _looks_like_general_non_medical_query(user_query):
@@ -199,21 +197,6 @@ def rewrite_query(state: State, llm):
             "clarification_attempts": 0,
         }
 
-    if state.get("intent") == "medical_rag" and _looks_like_medical_knowledge_question(user_query):
-        delete_all = _build_history_reset_messages(state["messages"])
-        fallback_query = response.questions[0] if response.questions else user_query
-        return {
-            "questionIsClear": True,
-            "messages": delete_all,
-            "originalQuery": user_query,
-            "rewrittenQuestions": [fallback_query],
-            "recent_context": recent_context,
-            "topic_focus": topic_focus,
-            "pending_clarification": "",
-            "clarification_target": "",
-            "clarification_attempts": 0,
-        }
-
     if state.get("intent") == "medical_rag" and _looks_like_medical_follow_up(user_query, "\n".join(part for part in (conversation_summary, topic_focus) if part), recent_context):
         delete_all = _build_history_reset_messages(state["messages"])
         fallback_query = response.questions[0] if response.questions else f"{topic_focus or recent_context or conversation_summary}\nFollow-up: {user_query}"
@@ -244,7 +227,7 @@ def rewrite_query(state: State, llm):
             "clarification_attempts": 0,
         }
 
-    clarification_attempts = int(state.get("clarification_attempts") or 0) + 1
+    clarification_attempts = _next_clarification_attempt(state)
     if clarification_attempts > 1:
         fallback_query = response.questions[0] if response.questions else (topic_focus or user_query)
         return {
