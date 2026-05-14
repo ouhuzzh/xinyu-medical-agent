@@ -1,3 +1,4 @@
+from __future__ import annotations
 from contextvars import ContextVar
 from typing import List
 import logging
@@ -491,7 +492,7 @@ class ToolFactory:
     
     def _search_child_chunks(self, query: str, limit: int, query_plan: List[str] | None = None) -> str:
         """Search for the top K most relevant child chunks.
-        
+
         Args:
             query: Search query string
             limit: Maximum number of results to return
@@ -505,10 +506,9 @@ class ToolFactory:
             )
             per_query_limit = max(limit * 2, 6) if len(normalized_plan) > 1 else limit
             ranked_sets = []
-            executed_queries = []
+            executed_queries = list(normalized_plan)
 
-            for planned_query in normalized_plan:
-                executed_queries.append(planned_query)
+            def _retrieve_and_grade(planned_query: str) -> list[Document] | None:
                 graded = grade_documents(
                     planned_query,
                     self._layered_similarity_search(
@@ -522,12 +522,31 @@ class ToolFactory:
                     metadata["matched_query"] = planned_query
                     doc.metadata = metadata
                 if graded:
-                    ranked_sets.append(
-                        self._sort_docs_by_source_priority(
-                            graded,
-                            preferred_layers=self._preferred_source_layers(query),
-                        )
+                    return self._sort_docs_by_source_priority(
+                        graded,
+                        preferred_layers=self._preferred_source_layers(query),
                     )
+                return None
+
+            if len(normalized_plan) > 1:
+                from concurrent.futures import ThreadPoolExecutor, as_completed
+                plan_results: dict[str, list[Document]] = {}
+                with ThreadPoolExecutor(max_workers=min(len(normalized_plan), 4)) as executor:
+                    futures = {
+                        executor.submit(_retrieve_and_grade, pq): pq
+                        for pq in normalized_plan
+                    }
+                    for future in as_completed(futures):
+                        result = future.result()
+                        if result is not None:
+                            plan_results[futures[future]] = result
+                for pq in normalized_plan:
+                    if pq in plan_results:
+                        ranked_sets.append(plan_results[pq])
+            else:
+                result = _retrieve_and_grade(normalized_plan[0])
+                if result is not None:
+                    ranked_sets.append(result)
 
             results = self._sort_docs_by_source_priority(
                 self._dedupe_docs(

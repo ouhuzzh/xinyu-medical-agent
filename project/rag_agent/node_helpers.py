@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Shared LangGraph node helpers.
 
 Utility functions and constants used by two or more of the focused node

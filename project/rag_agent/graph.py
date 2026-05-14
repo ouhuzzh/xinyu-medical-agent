@@ -102,10 +102,10 @@ def create_agent_graph(llm, tools_list, appointment_service=None):
         "handle_cancel_appointment": "handle_cancel_appointment",
     })
     graph_builder.add_edge(["agent"], "grounded_answer_generation")
-    graph_builder.add_conditional_edges("recommend_department", route_after_action, {"prepare_secondary_turn": "prepare_secondary_turn", "__end__": END})
-    graph_builder.add_conditional_edges("handle_appointment_skill", route_after_action, {"prepare_secondary_turn": "prepare_secondary_turn", "__end__": END})
-    graph_builder.add_conditional_edges("handle_appointment", route_after_action, {"prepare_secondary_turn": "prepare_secondary_turn", "__end__": END})
-    graph_builder.add_conditional_edges("handle_cancel_appointment", route_after_action, {"prepare_secondary_turn": "prepare_secondary_turn", "__end__": END})
+    graph_builder.add_conditional_edges("recommend_department", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "__end__": END})
+    graph_builder.add_conditional_edges("handle_appointment_skill", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "__end__": END})
+    graph_builder.add_conditional_edges("handle_appointment", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "__end__": END})
+    graph_builder.add_conditional_edges("handle_cancel_appointment", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "__end__": END})
     graph_builder.add_conditional_edges("prepare_secondary_turn", route_after_prepare_secondary_turn, {
         "rewrite_query": "rewrite_query",
         "handle_appointment": "handle_appointment",

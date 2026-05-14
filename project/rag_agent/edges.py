@@ -93,7 +93,9 @@ def route_after_orchestrator_call(state: AgentState) -> Literal["tools", "fallba
     return "tools"
 
 
-def route_after_action(state: State) -> Literal["prepare_secondary_turn", "__end__"]:
+def route_after_action(state: State) -> Literal["request_clarification", "prepare_secondary_turn", "__end__"]:
+    if state.get("pending_clarification") and state.get("clarification_target"):
+        return "request_clarification"
     if (
         state.get("secondary_intent")
         and state.get("deferred_user_question")

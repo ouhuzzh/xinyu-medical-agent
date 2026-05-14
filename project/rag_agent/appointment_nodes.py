@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Appointment skill graph nodes and compatibility wrappers.
 
 Booking, cancellation, rescheduling, and the appointment-skill discovery /
