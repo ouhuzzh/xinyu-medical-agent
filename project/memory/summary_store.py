@@ -77,5 +77,4 @@ class SummaryStore:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM chat_session_summaries WHERE thread_id = %s", (thread_id,))
-                cur.execute("DELETE FROM chat_sessions WHERE thread_id = %s", (thread_id,))
             conn.commit()

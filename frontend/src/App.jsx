@@ -32,13 +32,16 @@ function AppInner() {
   const chat = useChatSession({
     apiBaseUrl: system.apiBaseUrl,
     setApiBaseUrl: system.setApiBaseUrl,
+    authToken: system.authToken,
     refreshStatus: system.refreshStatus,
     setIsConnected: system.setIsConnected,
   });
   const documents = useDocuments({
     apiBaseUrl: system.apiBaseUrl,
     setApiBaseUrl: system.setApiBaseUrl,
+    authToken: system.authToken,
     refreshStatus: system.refreshStatus,
+    enabled: system.isAdmin,
   });
   const search = useSearch(chat.messages);
   const lastAssistantMessage = [...chat.messages]
@@ -79,10 +82,14 @@ function AppInner() {
         onMobileClose={() => setSidebarOpen(false)}
         theme={theme}
         onToggleTheme={toggleTheme}
+        authToken={system.authToken}
+        onSaveAuthToken={system.setAuthToken}
+        currentUser={system.currentUser}
+        canManageDocuments={system.isAdmin}
       />
 
       <Suspense fallback={<PageLoader />}>
-        {activeView === "documents" ? (
+        {activeView === "documents" && system.isAdmin ? (
           <DocumentsPage
             documentsState={documents}
             onMenuClick={() => setSidebarOpen(true)}

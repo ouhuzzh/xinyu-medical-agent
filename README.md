@@ -153,6 +153,7 @@ Fill in at least:
 - LLM / embedding provider credentials
 - PostgreSQL connection settings
 - Redis connection settings
+- API Bearer token mapping (`API_AUTH_TOKENS_JSON`)
 
 ### 3. Start Required Services
 
@@ -163,6 +164,15 @@ You need:
 - one configured LLM / embedding provider
 
 PostgreSQL setup notes are in [docs/POSTGRES_SETUP_CN.md](docs/POSTGRES_SETUP_CN.md).
+
+Development defaults in `project/.env.example` include:
+
+- `demo-admin-token` for the React admin/demo flow
+- `demo-user-token` for regular user chat flow
+
+Production note:
+
+- if `REDIS_ENABLED=true` and `APP_ENV!=development`, Redis is required at startup and the API will fail fast instead of silently falling back to in-process memory
 
 ### 4. Start the Split Frontend App
 
@@ -209,13 +219,15 @@ The React app uses these main endpoints:
 | `POST /api/chat/session` | Create or reuse a thread id |
 | `GET /api/chat/history` | Load visible session history |
 | `POST /api/chat/clear` | Clear one thread |
-| `GET /api/chat/stream` | SSE chat stream |
+| `POST /api/chat/stream` | Authenticated SSE chat stream |
 | `GET /api/documents/status` | Knowledge-base status and recent task summary |
 | `GET /api/documents/list` | User-facing document list with source, sync status, and freshness metadata |
 | `GET /api/documents/tasks` | Recent import/sync task records |
 | `GET /api/documents/sources` | Official-source coverage, recommended use, and expansion notes |
 | `POST /api/documents/upload` | Upload files and sync them into the knowledge base |
 | `POST /api/documents/sync-official` | Sync one official source |
+
+All `/api/*` routes require `Authorization: Bearer <token>`. Document routes are admin-only.
 
 ## Knowledge Base Updates
 
@@ -234,6 +246,15 @@ Supported official-source importers currently include:
 - MedlinePlus
 - NHC whitelist PDFs
 - WHO whitelist HTML pages
+
+API startup no longer auto-runs knowledge-base background jobs. Run maintenance explicitly when needed:
+
+```powershell
+.\venv\Scripts\python.exe project\kb_jobs.py bootstrap
+.\venv\Scripts\python.exe project\kb_jobs.py sync-local --soft-delete-missing
+.\venv\Scripts\python.exe project\kb_jobs.py sync-official nhc --limit 5
+.\venv\Scripts\python.exe project\kb_jobs.py sync-all
+```
 
 ## Benchmarks
 

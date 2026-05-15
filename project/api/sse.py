@@ -34,7 +34,7 @@ def stream_chat_events(thread_id: str, message: str) -> Iterable[str]:
     yield event_payload(ChatSseEvent(type="session", thread_id=thread_id, content=thread_id))
     yield event_payload(ChatSseEvent(type="status", thread_id=thread_id, content="thinking"))
     try:
-        with container.chat_lock:
+        with container.get_thread_lock(thread_id):
             for chunk in container.chat_interface.chat(
                 message,
                 [],

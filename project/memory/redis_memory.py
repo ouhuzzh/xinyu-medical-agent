@@ -19,6 +19,9 @@ class RedisSessionMemory:
         self._checked = False
         self._fallback_messages = {}
         self._fallback_state = {}
+        self._degraded_reason = ""
+        self._mode = "disabled" if not config.REDIS_ENABLED else "redis"
+        self._require_external_redis = config.REDIS_ENABLED and config.APP_ENV != "development"
 
     def _messages_key(self, thread_id: str) -> str:
         return f"chat:session:{thread_id}:recent_messages"
@@ -41,11 +44,53 @@ class RedisSessionMemory:
                 decode_responses=True,
             )
             self._client.ping()
+            self._mode = "redis"
+            self._degraded_reason = ""
         except Exception as e:
-            logger.warning("Redis unavailable, memory cache disabled: %s", e)
+            if self._require_external_redis:
+                raise RuntimeError(f"Redis is required but unavailable: {e}") from e
+            logger.warning("Redis unavailable, memory cache degraded to in-process fallback: %s", e)
             self._client = None
             self._enabled = False
+            self._mode = "memory_fallback"
+            self._degraded_reason = str(e)
         return self._client
+
+    def ensure_ready(self):
+        if not config.REDIS_ENABLED:
+            return
+        self._get_client()
+
+    def status_info(self):
+        if not config.REDIS_ENABLED:
+            return {
+                "component": "redis_memory",
+                "mode": "disabled",
+                "degraded": False,
+                "message": "Redis memory is disabled by configuration.",
+            }
+        try:
+            client = self._get_client()
+        except RuntimeError as exc:
+            return {
+                "component": "redis_memory",
+                "mode": "unavailable",
+                "degraded": True,
+                "message": str(exc),
+            }
+        if client is not None:
+            return {
+                "component": "redis_memory",
+                "mode": self._mode,
+                "degraded": False,
+                "message": "Redis session memory is available.",
+            }
+        return {
+            "component": "redis_memory",
+            "mode": self._mode,
+            "degraded": True,
+            "message": self._degraded_reason or "Redis is unavailable; using in-process fallback memory.",
+        }
 
     @staticmethod
     def _serialize_messages(messages):

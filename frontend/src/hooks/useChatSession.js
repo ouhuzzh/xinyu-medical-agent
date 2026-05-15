@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useReducer } from "react";
 import { THREAD_KEY } from "../constants/app";
 import {
-  chatStreamUrl,
   clearChatSession,
   createSession,
   fetchChatHistory,
@@ -68,13 +67,13 @@ function reducer(state, action) {
 export function useChatSession({
   apiBaseUrl,
   setApiBaseUrl,
+  authToken,
   refreshStatus,
   setIsConnected,
 }) {
   const [state, dispatch] = useReducer(reducer, initialState);
-  const sourceRef = useRef(null);
+  const streamRef = useRef(null);
   const streamDoneRef = useRef(false);
-  // Use refs to avoid stale closures in sendMessage
   const isStreamingRef = useRef(false);
   const inputRef = useRef(state.input);
   inputRef.current = state.input;
@@ -86,7 +85,7 @@ export function useChatSession({
     if (!activeThreadId) return;
     dispatch({ type: "SET_LOADING_HISTORY", payload: true });
     try {
-      const data = await fetchChatHistory(apiBaseUrl, setApiBaseUrl, activeThreadId);
+      const data = await fetchChatHistory(apiBaseUrl, setApiBaseUrl, authToken, activeThreadId);
       dispatch({
         type: "SET_MESSAGES",
         payload: (data.messages || []).map((m, i) => ({
@@ -95,29 +94,33 @@ export function useChatSession({
           ...m,
         })),
       });
-    } catch {
-      dispatch({ type: "SET_ERROR", payload: "历史会话暂时无法读取。" });
+      dispatch({ type: "SET_ERROR", payload: "" });
+    } catch (err) {
+      dispatch({ type: "SET_MESSAGES", payload: [] });
+      dispatch({ type: "SET_ERROR", payload: err.message || "历史会话暂时无法读取。" });
     } finally {
       dispatch({ type: "SET_LOADING_HISTORY", payload: false });
     }
-  }, [apiBaseUrl, setApiBaseUrl, state.threadId]);
+  }, [apiBaseUrl, authToken, setApiBaseUrl, state.threadId]);
 
   const ensureSession = useCallback(async () => {
     try {
-      const data = await createSession(apiBaseUrl, setApiBaseUrl, state.threadId);
+      const data = await createSession(apiBaseUrl, setApiBaseUrl, authToken, state.threadId);
       dispatch({ type: "SET_THREAD_ID", payload: data.thread_id });
       localStorage.setItem(THREAD_KEY, data.thread_id);
       setIsConnected(true);
-    } catch {
+      dispatch({ type: "SET_ERROR", payload: "" });
+    } catch (err) {
       setIsConnected(false);
-      dispatch({ type: "SET_ERROR", payload: "无法连接后端服务，请确认 FastAPI 已启动。" });
+      dispatch({ type: "SET_MESSAGES", payload: [] });
+      dispatch({ type: "SET_ERROR", payload: err.message || "无法连接后端服务，请确认 Bearer Token 和 FastAPI 状态。" });
     }
-  }, [apiBaseUrl, setApiBaseUrl, setIsConnected, state.threadId]);
+  }, [apiBaseUrl, authToken, setApiBaseUrl, setIsConnected, state.threadId]);
 
   useEffect(() => {
     ensureSession();
-    return () => sourceRef.current?.close();
-  }, []);
+    return () => streamRef.current?.close();
+  }, [ensureSession]);
 
   useEffect(() => {
     if (!state.threadId) return;
@@ -127,18 +130,18 @@ export function useChatSession({
 
   const clearChat = useCallback(async () => {
     if (!state.threadId) return;
-    sourceRef.current?.close();
+    streamRef.current?.close();
     dispatch({ type: "SET_STREAM_STATE", payload: "idle" });
     try {
-      await clearChatSession(apiBaseUrl, setApiBaseUrl, state.threadId);
+      await clearChatSession(apiBaseUrl, setApiBaseUrl, authToken, state.threadId);
       dispatch({ type: "CLEAR_MESSAGES" });
-    } catch {
-      dispatch({ type: "SET_ERROR", payload: "清空会话失败，请稍后再试。" });
+    } catch (err) {
+      dispatch({ type: "SET_ERROR", payload: err.message || "清空会话失败，请稍后再试。" });
     }
-  }, [apiBaseUrl, setApiBaseUrl, state.threadId]);
+  }, [apiBaseUrl, authToken, setApiBaseUrl, state.threadId]);
 
   const stopStreaming = useCallback(() => {
-    sourceRef.current?.close();
+    streamRef.current?.close();
     streamDoneRef.current = true;
     dispatch({ type: "STOP_STREAMING" });
   }, []);
@@ -147,7 +150,7 @@ export function useChatSession({
     const content = (text ?? inputRef.current).trim();
     if (!content || !state.threadId || isStreamingRef.current) return;
 
-    sourceRef.current?.close();
+    streamRef.current?.close();
     streamDoneRef.current = false;
     dispatch({ type: "SET_ERROR", payload: "" });
     dispatch({ type: "SET_INPUT", payload: "" });
@@ -163,9 +166,12 @@ export function useChatSession({
       ],
     });
 
-    const url = chatStreamUrl(apiBaseUrl, state.threadId, content);
-    const source = openChatStream({
-      url,
+    const stream = openChatStream({
+      apiBaseUrl,
+      authToken,
+      threadId: state.threadId,
+      message: content,
+      onFallback: setApiBaseUrl,
       doneRef: streamDoneRef,
       onStatus: () => dispatch({ type: "SET_STREAM_STATE", payload: "thinking" }),
       onMessage: (payload) => {
@@ -182,23 +188,14 @@ export function useChatSession({
         dispatch({ type: "SET_ERROR", payload: payload.content || "聊天服务暂时不可用。" });
         dispatch({ type: "SET_STREAM_STATE", payload: "error" });
       },
-      onConnectionError: (event) => {
-        if (event.data) {
-          try {
-            const payload = JSON.parse(event.data);
-            dispatch({ type: "SET_ERROR", payload: payload.content || "聊天服务暂时不可用。" });
-          } catch {
-            dispatch({ type: "SET_ERROR", payload: "聊天服务暂时不可用。" });
-          }
-        } else {
-          dispatch({ type: "SET_ERROR", payload: "聊天连接中断，请稍后重试。" });
-        }
+      onConnectionError: (error) => {
+        dispatch({ type: "SET_ERROR", payload: error?.message || "聊天连接中断，请稍后重试。" });
         dispatch({ type: "SET_STREAM_STATE", payload: "error" });
         setIsConnected(false);
       },
     });
-    sourceRef.current = source;
-  }, [apiBaseUrl, state.threadId, refreshStatus, setIsConnected]);
+    streamRef.current = stream;
+  }, [apiBaseUrl, authToken, refreshStatus, setApiBaseUrl, setIsConnected, state.threadId]);
 
   const retryLastMessage = useCallback(() => {
     if (state.lastUserMessage && !isStreamingRef.current) {
@@ -210,12 +207,12 @@ export function useChatSession({
     threadId: state.threadId,
     messages: state.messages,
     input: state.input,
-    setInput: (v) => dispatch({ type: "SET_INPUT", payload: v }),
+    setInput: (value) => dispatch({ type: "SET_INPUT", payload: value }),
     streamState: state.streamState,
     isStreaming,
     isLoadingHistory: state.isLoadingHistory,
     error: state.error,
-    setError: (v) => dispatch({ type: "SET_ERROR", payload: v }),
+    setError: (value) => dispatch({ type: "SET_ERROR", payload: value }),
     lastUserMessage: state.lastUserMessage,
     sendMessage,
     retryLastMessage,

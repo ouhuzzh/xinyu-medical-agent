@@ -13,15 +13,23 @@ from api.app import create_app  # noqa: E402
 from api.dependencies import set_container_for_tests  # noqa: E402
 
 
+ADMIN_HEADERS = {"Authorization": "Bearer demo-admin-token"}
+USER_HEADERS = {"Authorization": "Bearer demo-user-token"}
+OTHER_USER_HEADERS = {"Authorization": "Bearer other-user-token"}
+
+
 class FakeSessionMemory:
     def __init__(self):
-        self.cleared = []
+        self.messages = {}
 
     def get_recent_messages(self, thread_id):
-        return [
-            HumanMessage(content="你好"),
-            AIMessage(content=f"你好，我记得当前会话是 {thread_id}"),
-        ]
+        return self.messages.get(
+            thread_id,
+            [
+                HumanMessage(content="你好"),
+                AIMessage(content=f"你好，我记得当前会话是 {thread_id}"),
+            ],
+        )
 
 
 class FakeRagSystem:
@@ -35,6 +43,7 @@ class FakeRagSystem:
             "message": "系统已就绪。",
             "last_error": "",
             "steps": {"graph_compile": {"state": "completed"}},
+            "degraded_components": [],
         }
 
     def get_knowledge_base_status(self):
@@ -75,9 +84,6 @@ class FakeRagSystem:
     def refresh_knowledge_base_status(self):
         return self.get_knowledge_base_status()
 
-    def start_knowledge_base_bootstrap(self):
-        self.bootstrap_started = True
-
 
 class FakeChatInterface:
     def __init__(self, rag_system):
@@ -107,12 +113,13 @@ class FakeSyncResult:
     updated = 0
     deactivated = 0
     unchanged = 0
+    status = "completed"
 
     def to_event(self):
         return {
             "source": self.source,
             "label": self.label,
-            "status": "completed",
+            "status": self.status,
             "written": self.written,
             "updated": self.updated,
             "deactivated": self.deactivated,
@@ -127,6 +134,7 @@ class FakeDocumentManager:
         (self.markdown_dir / "guide.md").write_text("# Guide\n", encoding="utf-8")
         self.uploaded_paths = []
         self.synced = []
+        self.sync_locked = False
 
     def get_markdown_paths(self):
         return sorted(self.markdown_dir.glob("*.md"))
@@ -174,7 +182,10 @@ class FakeDocumentManager:
 
     def sync_official_source(self, source, limit=10, trigger_type="manual"):
         self.synced.append({"source": source, "limit": limit, "trigger_type": trigger_type})
-        return FakeSyncResult()
+        result = FakeSyncResult()
+        if self.sync_locked:
+            result.status = "skipped_locked"
+        return result
 
     def get_official_source_coverage(self):
         return [
@@ -188,18 +199,64 @@ class FakeDocumentManager:
         ]
 
 
+class FakeChatSessionStore:
+    def __init__(self):
+        self.counter = 0
+        self.sessions = {}
+
+    def create_session(self, owner_user_id):
+        self.counter += 1
+        thread_id = f"thread-{self.counter}"
+        self.sessions[thread_id] = {"thread_id": thread_id, "owner_user_id": owner_user_id, "status": "active"}
+        return thread_id
+
+    def get_session(self, thread_id):
+        return self.sessions.get(thread_id)
+
+    def assign_owner_if_missing(self, thread_id, owner_user_id):
+        session = self.sessions.get(thread_id)
+        if session and not session.get("owner_user_id"):
+            session["owner_user_id"] = owner_user_id
+            return True
+        return False
+
+
 class FakeContainer:
     def __init__(self, temp_dir):
         self.rag_system = FakeRagSystem()
         self.chat_interface = FakeChatInterface(self.rag_system)
         self.document_manager = FakeDocumentManager(temp_dir)
-        self.chat_lock = threading.Lock()
+        self.chat_sessions = FakeChatSessionStore()
+        self._thread_locks = {}
+        self._thread_lock_guard = threading.Lock()
+
+    def get_thread_lock(self, thread_id):
+        with self._thread_lock_guard:
+            lock = self._thread_locks.get(thread_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._thread_locks[thread_id] = lock
+            return lock
 
 
 class ApiAppTests(unittest.TestCase):
     def setUp(self):
         self.tmp = TemporaryDirectory()
         self.container = FakeContainer(self.tmp.name)
+        self.container.rag_system.session_memory.messages["thread-existing"] = [
+            HumanMessage(content="hi"),
+            AIMessage(content="owned thread"),
+        ]
+        self.container.chat_sessions.sessions["thread-existing"] = {
+            "thread_id": "thread-existing",
+            "owner_user_id": "demo-user",
+            "status": "active",
+        }
+        self.container.chat_sessions.sessions["thread-other"] = {
+            "thread_id": "thread-other",
+            "owner_user_id": "other-user",
+            "status": "active",
+        }
         set_container_for_tests(self.container)
         self.client = TestClient(create_app())
 
@@ -207,40 +264,91 @@ class ApiAppTests(unittest.TestCase):
         set_container_for_tests(None)
         self.tmp.cleanup()
 
-    def test_create_session_accepts_existing_thread_id(self):
-        response = self.client.post("/api/chat/session", json={"thread_id": "thread-123"})
+    def test_requires_bearer_token_for_api_routes(self):
+        response = self.client.get("/api/system/status")
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_invalid_bearer_token_is_rejected(self):
+        response = self.client.get(
+            "/api/system/status",
+            headers={"Authorization": "Bearer invalid-token"},
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_regular_user_cannot_access_admin_document_routes(self):
+        response = self.client.get("/api/documents/status", headers=USER_HEADERS)
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_create_session_reuses_owned_thread_id(self):
+        response = self.client.post(
+            "/api/chat/session",
+            json={"thread_id": "thread-existing"},
+            headers=USER_HEADERS,
+        )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["thread_id"], "thread-123")
+        self.assertEqual(response.json()["thread_id"], "thread-existing")
 
-    def test_system_status_includes_knowledge_base_status(self):
-        response = self.client.get("/api/system/status")
+    def test_create_session_generates_new_thread_for_unowned_id(self):
+        response = self.client.post(
+            "/api/chat/session",
+            json={"thread_id": "thread-other"},
+            headers=USER_HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(response.json()["thread_id"], "thread-other")
+
+    def test_system_status_includes_current_user_and_knowledge_base_status(self):
+        response = self.client.get("/api/system/status", headers=ADMIN_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["state"], "ready")
         self.assertEqual(data["knowledge_base"]["status"], "ready")
         self.assertEqual(data["knowledge_base"]["stats"]["documents"], 2)
+        self.assertEqual(data["current_user"]["role"], "admin")
 
-    def test_chat_history_returns_visible_messages(self):
-        response = self.client.get("/api/chat/history", params={"thread_id": "thread-abc"})
+    def test_chat_history_returns_visible_messages_for_owner(self):
+        response = self.client.get(
+            "/api/chat/history",
+            params={"thread_id": "thread-existing"},
+            headers=USER_HEADERS,
+        )
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["thread_id"], "thread-abc")
+        self.assertEqual(data["thread_id"], "thread-existing")
         self.assertEqual([item["role"] for item in data["messages"]], ["user", "assistant"])
 
+    def test_chat_history_blocks_other_users_thread(self):
+        response = self.client.get(
+            "/api/chat/history",
+            params={"thread_id": "thread-other"},
+            headers=USER_HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 403)
+
     def test_clear_session_uses_requested_thread_id(self):
-        response = self.client.post("/api/chat/clear", json={"thread_id": "thread-clear"})
+        response = self.client.post(
+            "/api/chat/clear",
+            json={"thread_id": "thread-existing"},
+            headers=USER_HEADERS,
+        )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.container.rag_system.cleared, ["thread-clear"])
+        self.assertEqual(self.container.rag_system.cleared, ["thread-existing"])
 
     def test_chat_stream_emits_session_message_and_final_events(self):
         with self.client.stream(
-            "GET",
+            "POST",
             "/api/chat/stream",
-            params={"thread_id": "thread-stream", "message": "高血压要注意什么"},
+            json={"thread_id": "thread-existing", "message": "高血压要注意什么"},
+            headers=USER_HEADERS,
         ) as response:
             body = response.read().decode("utf-8")
 
@@ -249,13 +357,22 @@ class ApiAppTests(unittest.TestCase):
         self.assertIn("event: message", body)
         self.assertIn("event: final", body)
         self.assertNotIn("event: error", body)
-        self.assertIn("thread-stream", body)
-        self.assertEqual(self.container.chat_interface.calls[0]["thread_id"], "thread-stream")
+        self.assertIn("thread-existing", body)
+        self.assertEqual(self.container.chat_interface.calls[0]["thread_id"], "thread-existing")
 
-    def test_documents_status_list_and_tasks_are_user_facing(self):
-        status_response = self.client.get("/api/documents/status")
-        list_response = self.client.get("/api/documents/list")
-        tasks_response = self.client.get("/api/documents/tasks")
+    def test_chat_stream_blocks_other_users_thread(self):
+        response = self.client.post(
+            "/api/chat/stream",
+            json={"thread_id": "thread-other", "message": "test"},
+            headers=USER_HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_documents_status_list_and_tasks_are_user_facing_for_admin(self):
+        status_response = self.client.get("/api/documents/status", headers=ADMIN_HEADERS)
+        list_response = self.client.get("/api/documents/list", headers=ADMIN_HEADERS)
+        tasks_response = self.client.get("/api/documents/tasks", headers=ADMIN_HEADERS)
 
         self.assertEqual(status_response.status_code, 200)
         self.assertEqual(list_response.status_code, 200)
@@ -271,7 +388,7 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(status_response.json()["source_coverage"][0]["source"], "nhc")
 
     def test_documents_sources_returns_official_source_coverage(self):
-        response = self.client.get("/api/documents/sources")
+        response = self.client.get("/api/documents/sources", headers=ADMIN_HEADERS)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["sources"][0]["manifest_count"], 4)
@@ -280,6 +397,7 @@ class ApiAppTests(unittest.TestCase):
         response = self.client.post(
             "/api/documents/upload",
             files=[("files", ("new-guide.md", b"# New Guide\n", "text/markdown"))],
+            headers=ADMIN_HEADERS,
         )
 
         self.assertEqual(response.status_code, 200)
@@ -287,12 +405,32 @@ class ApiAppTests(unittest.TestCase):
         self.assertIn("已处理 1 个文件", data["message"])
         self.assertEqual(self.container.document_manager.uploaded_paths, ["new-guide.md"])
         self.assertEqual(self.container.rag_system.last_import_event["source"], "local")
-        self.assertTrue(self.container.rag_system.bootstrap_started)
+
+    def test_documents_upload_rejects_too_many_files(self):
+        files = [
+            ("files", (f"file-{index}.md", b"# Demo\n", "text/markdown"))
+            for index in range(6)
+        ]
+        response = self.client.post("/api/documents/upload", files=files, headers=ADMIN_HEADERS)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("单次最多上传", response.json()["detail"])
+
+    def test_documents_upload_rejects_unsupported_extension(self):
+        response = self.client.post(
+            "/api/documents/upload",
+            files=[("files", ("payload.exe", b"nope", "application/octet-stream"))],
+            headers=ADMIN_HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("不支持的文件类型", response.json()["detail"])
 
     def test_documents_sync_official_uses_document_manager(self):
         response = self.client.post(
             "/api/documents/sync-official",
             json={"source": "nhc", "limit": 2},
+            headers=ADMIN_HEADERS,
         )
 
         self.assertEqual(response.status_code, 200)
@@ -301,6 +439,17 @@ class ApiAppTests(unittest.TestCase):
             self.container.document_manager.synced,
             [{"source": "nhc", "limit": 2, "trigger_type": "manual"}],
         )
+
+    def test_documents_sync_returns_conflict_when_locked(self):
+        self.container.document_manager.sync_locked = True
+
+        response = self.client.post(
+            "/api/documents/sync-official",
+            json={"source": "nhc", "limit": 2},
+            headers=ADMIN_HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 409)
 
 
 if __name__ == "__main__":

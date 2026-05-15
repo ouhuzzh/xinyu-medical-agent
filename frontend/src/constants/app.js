@@ -1,4 +1,5 @@
 export const THREAD_KEY = "medical_assistant_thread_id";
+export const AUTH_TOKEN_KEY = "medical_assistant_auth_token";
 
 export const STARTER_PROMPTS = [
   { key: "hypertension", text: "高血压应该注意什么？" },

@@ -44,11 +44,18 @@ class KnowledgeBaseStatusResponse(BaseModel):
     stats: dict[str, Any] = Field(default_factory=dict)
 
 
+class CurrentUserResponse(BaseModel):
+    user_id: str
+    role: Literal["user", "admin"]
+
+
 class SystemStatusResponse(BaseModel):
     state: str
     message: str
     last_error: str = ""
     steps: dict[str, Any] = Field(default_factory=dict)
+    degraded_components: list[str] = Field(default_factory=list)
+    current_user: CurrentUserResponse
     knowledge_base: KnowledgeBaseStatusResponse
 
 

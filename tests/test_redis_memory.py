@@ -1,9 +1,23 @@
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
 
+import config  # noqa: E402
+from memory import redis_memory as redis_memory_module  # noqa: E402
 from memory.redis_memory import RedisSessionMemory  # noqa: E402
+
+
+class _FailingRedisClient:
+    def ping(self):
+        raise RuntimeError("redis down")
+
+
+class _FailingRedisModule:
+    @staticmethod
+    def Redis(*args, **kwargs):
+        return _FailingRedisClient()
 
 
 class RedisSessionMemoryFallbackTests(unittest.TestCase):
@@ -35,6 +49,26 @@ class RedisSessionMemoryFallbackTests(unittest.TestCase):
 
         self.assertEqual(memory.get_recent_messages(thread_id), [])
         self.assertEqual(memory.get_state(thread_id), {})
+
+    def test_status_info_marks_degraded_in_development_when_redis_is_down(self):
+        with mock.patch.object(redis_memory_module, "redis", _FailingRedisModule), \
+                mock.patch.object(config, "APP_ENV", "development"), \
+                mock.patch.object(config, "REDIS_ENABLED", True):
+            memory = RedisSessionMemory()
+
+            status = memory.status_info()
+
+        self.assertTrue(status["degraded"])
+        self.assertEqual(status["mode"], "memory_fallback")
+
+    def test_ensure_ready_fails_outside_development_when_redis_is_down(self):
+        with mock.patch.object(redis_memory_module, "redis", _FailingRedisModule), \
+                mock.patch.object(config, "APP_ENV", "production"), \
+                mock.patch.object(config, "REDIS_ENABLED", True):
+            memory = RedisSessionMemory()
+
+            with self.assertRaises(RuntimeError):
+                memory.ensure_ready()
 
 
 if __name__ == "__main__":

@@ -167,7 +167,7 @@ export default function DocumentsPage({
             <h3>上传本地资料</h3>
           </div>
           <p className="document-card__desc">
-            支持 Markdown、PDF、Office、HTML 等格式。上传后会自动转换并同步到知识库。
+            支持 Markdown、PDF、Office、HTML 等格式。单次最多 5 个文件，单文件最大 20 MB。
           </p>
           <input
             ref={fileRef}

@@ -1,42 +1,69 @@
+import { AUTH_TOKEN_KEY } from "../constants/app";
+
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+const configuredApiAuthToken = import.meta.env.VITE_API_AUTH_TOKEN;
 const browserApiBaseUrl =
   typeof window !== "undefined" && window.location.hostname
     ? `${window.location.protocol}//${window.location.hostname}:8000`
     : "http://127.0.0.1:8000";
-const fallbackApiBaseUrl = "http://127.0.0.1:8000";
+export const fallbackApiBaseUrl = "http://127.0.0.1:8000";
 
 export function initialApiBaseUrl() {
   return configuredApiBaseUrl || browserApiBaseUrl;
 }
 
+export function initialAuthToken() {
+  if (typeof window === "undefined") {
+    return configuredApiAuthToken || "demo-admin-token";
+  }
+  return localStorage.getItem(AUTH_TOKEN_KEY) || configuredApiAuthToken || "demo-admin-token";
+}
+
+function buildHeaders(authToken, headers = {}) {
+  const nextHeaders = new Headers(headers);
+  if (authToken) {
+    nextHeaders.set("Authorization", `Bearer ${authToken}`);
+  }
+  return nextHeaders;
+}
+
 async function readJson(response) {
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `HTTP ${response.status}`);
+    let payload = null;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = null;
+    }
+    throw new Error(payload?.detail || payload?.message || text || `HTTP ${response.status}`);
   }
   return response.json();
 }
 
-export async function apiFetchJson(path, options, apiBaseUrl, onFallback) {
+function withAuth(options = {}, authToken) {
+  return {
+    ...options,
+    headers: buildHeaders(authToken, options.headers),
+  };
+}
+
+export async function apiFetchJson(path, options, apiBaseUrl, onFallback, authToken) {
   const firstUrl = `${apiBaseUrl}${path}`;
   try {
-    return await readJson(await fetch(firstUrl, options));
+    return await readJson(await fetch(firstUrl, withAuth(options, authToken)));
   } catch (err) {
     if (configuredApiBaseUrl || apiBaseUrl === fallbackApiBaseUrl) {
       throw err;
     }
     const fallbackUrl = `${fallbackApiBaseUrl}${path}`;
-    const data = await readJson(await fetch(fallbackUrl, options));
+    const data = await readJson(await fetch(fallbackUrl, withAuth(options, authToken)));
     onFallback?.(fallbackApiBaseUrl);
     return data;
   }
 }
 
-export function chatStreamUrl(apiBaseUrl, threadId, message) {
-  return `${apiBaseUrl}/api/chat/stream?thread_id=${encodeURIComponent(threadId)}&message=${encodeURIComponent(message)}`;
-}
-
-export function createSession(apiBaseUrl, onFallback, threadId) {
+export function createSession(apiBaseUrl, onFallback, authToken, threadId) {
   return apiFetchJson(
     "/api/chat/session",
     {
@@ -46,19 +73,21 @@ export function createSession(apiBaseUrl, onFallback, threadId) {
     },
     apiBaseUrl,
     onFallback,
+    authToken,
   );
 }
 
-export function fetchChatHistory(apiBaseUrl, onFallback, threadId) {
+export function fetchChatHistory(apiBaseUrl, onFallback, authToken, threadId) {
   return apiFetchJson(
     `/api/chat/history?thread_id=${encodeURIComponent(threadId)}`,
     undefined,
     apiBaseUrl,
     onFallback,
+    authToken,
   );
 }
 
-export function clearChatSession(apiBaseUrl, onFallback, threadId) {
+export function clearChatSession(apiBaseUrl, onFallback, authToken, threadId) {
   return apiFetchJson(
     "/api/chat/clear",
     {
@@ -68,30 +97,31 @@ export function clearChatSession(apiBaseUrl, onFallback, threadId) {
     },
     apiBaseUrl,
     onFallback,
+    authToken,
   );
 }
 
-export function fetchSystemStatus(apiBaseUrl, onFallback) {
-  return apiFetchJson("/api/system/status", undefined, apiBaseUrl, onFallback);
+export function fetchSystemStatus(apiBaseUrl, onFallback, authToken) {
+  return apiFetchJson("/api/system/status", undefined, apiBaseUrl, onFallback, authToken);
 }
 
-export function fetchDocumentsStatus(apiBaseUrl, onFallback) {
-  return apiFetchJson("/api/documents/status", undefined, apiBaseUrl, onFallback);
+export function fetchDocumentsStatus(apiBaseUrl, onFallback, authToken) {
+  return apiFetchJson("/api/documents/status", undefined, apiBaseUrl, onFallback, authToken);
 }
 
-export function fetchDocumentList(apiBaseUrl, onFallback) {
-  return apiFetchJson("/api/documents/list", undefined, apiBaseUrl, onFallback);
+export function fetchDocumentList(apiBaseUrl, onFallback, authToken) {
+  return apiFetchJson("/api/documents/list", undefined, apiBaseUrl, onFallback, authToken);
 }
 
-export function fetchDocumentTasks(apiBaseUrl, onFallback) {
-  return apiFetchJson("/api/documents/tasks", undefined, apiBaseUrl, onFallback);
+export function fetchDocumentTasks(apiBaseUrl, onFallback, authToken) {
+  return apiFetchJson("/api/documents/tasks", undefined, apiBaseUrl, onFallback, authToken);
 }
 
-export function fetchDocumentSources(apiBaseUrl, onFallback) {
-  return apiFetchJson("/api/documents/sources", undefined, apiBaseUrl, onFallback);
+export function fetchDocumentSources(apiBaseUrl, onFallback, authToken) {
+  return apiFetchJson("/api/documents/sources", undefined, apiBaseUrl, onFallback, authToken);
 }
 
-export function uploadDocuments(apiBaseUrl, onFallback, files) {
+export function uploadDocuments(apiBaseUrl, onFallback, authToken, files) {
   const formData = new FormData();
   Array.from(files || []).forEach((file) => formData.append("files", file));
   return apiFetchJson(
@@ -102,10 +132,11 @@ export function uploadDocuments(apiBaseUrl, onFallback, files) {
     },
     apiBaseUrl,
     onFallback,
+    authToken,
   );
 }
 
-export function syncOfficialDocuments(apiBaseUrl, onFallback, source, limit) {
+export function syncOfficialDocuments(apiBaseUrl, onFallback, authToken, source, limit) {
   return apiFetchJson(
     "/api/documents/sync-official",
     {
@@ -115,5 +146,20 @@ export function syncOfficialDocuments(apiBaseUrl, onFallback, source, limit) {
     },
     apiBaseUrl,
     onFallback,
+    authToken,
   );
+}
+
+export function buildStreamRequest(apiBaseUrl, authToken, threadId, message) {
+  return {
+    url: `${apiBaseUrl}/api/chat/stream`,
+    options: withAuth(
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ thread_id: threadId, message }),
+      },
+      authToken,
+    ),
+  };
 }

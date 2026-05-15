@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS patients (
 CREATE TABLE IF NOT EXISTS chat_sessions (
     id              BIGSERIAL PRIMARY KEY,
     thread_id       VARCHAR(128) NOT NULL UNIQUE,
+    owner_user_id   VARCHAR(128),
     patient_id      BIGINT REFERENCES patients(id),
     status          VARCHAR(32) NOT NULL DEFAULT 'active',
     current_intent  VARCHAR(64),

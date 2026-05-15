@@ -1,21 +1,40 @@
 import threading
 
+import config
 from core.chat_interface import ChatInterface
 from core.document_manager import DocumentManager
 from core.rag_system import RAGSystem
+from db.chat_session_store import ChatSessionStore
+
+
+class ThreadLockRegistry:
+    def __init__(self):
+        self._locks = {}
+        self._guard = threading.Lock()
+
+    def get_lock(self, thread_id: str):
+        with self._guard:
+            lock = self._locks.get(thread_id)
+            if lock is None:
+                lock = threading.Lock()
+                self._locks[thread_id] = lock
+            return lock
 
 
 class ApiContainer:
     def __init__(self):
         self.rag_system = RAGSystem()
-        self.rag_system.start_background_initialize()
+        if config.APP_ENV == "development":
+            self.rag_system.start_background_initialize()
+        else:
+            self.rag_system.initialize()
         self.chat_interface = ChatInterface(self.rag_system)
         self.document_manager = DocumentManager(self.rag_system)
-        self._chat_lock = threading.Lock()
+        self.chat_sessions = ChatSessionStore()
+        self.thread_locks = ThreadLockRegistry()
 
-    @property
-    def chat_lock(self):
-        return self._chat_lock
+    def get_thread_lock(self, thread_id: str):
+        return self.thread_locks.get_lock(thread_id)
 
 
 _container: ApiContainer | None = None

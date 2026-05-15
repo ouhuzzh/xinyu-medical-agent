@@ -78,11 +78,16 @@ class RAGSystem:
         self._startup_status["last_error"] = last_error
 
     def get_system_status(self):
+        degraded_components = []
+        memory_status = self.session_memory.status_info()
+        if memory_status.get("degraded"):
+            degraded_components.append(memory_status["component"])
         return {
             "state": self._startup_status["state"],
             "message": self._startup_status["message"],
             "last_error": self._startup_status["last_error"],
             "steps": {key: value.copy() for key, value in self._startup_status["steps"].items()},
+            "degraded_components": degraded_components,
         }
 
     def get_knowledge_base_status(self):
@@ -295,8 +300,6 @@ class RAGSystem:
     def initialize(self):
         with self._initialize_lock:
             if self.agent_graph is not None:
-                self.start_knowledge_base_bootstrap()
-                self.start_knowledge_base_sync_scheduler()
                 return
 
             self._set_startup_status("preparing", "正在检查数据库与模型依赖。")
@@ -304,6 +307,7 @@ class RAGSystem:
             try:
                 self._set_startup_step("database_check", "running", "检查数据库 schema 和索引。")
                 self.vector_db.create_collection(self.collection_name)
+                self.session_memory.ensure_ready()
                 self.refresh_knowledge_base_status()
                 self._set_startup_step("database_check", "completed", "数据库 schema 检查完成。")
 
@@ -319,8 +323,6 @@ class RAGSystem:
 
                 self._set_startup_step("knowledge_base_bootstrap", "completed", "知识库状态检查完成。")
                 self._set_startup_status("ready", "系统已就绪。")
-                self.start_knowledge_base_bootstrap()
-                self.start_knowledge_base_sync_scheduler()
             except Exception as exc:
                 logger.exception("RAG system initialization failed")
                 self._set_startup_status("failed", "系统初始化失败。", last_error=str(exc))

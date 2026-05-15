@@ -285,6 +285,20 @@ class SchemaManager:
                 _DEMO_APPOINTMENT_SEED_SQL,
             ],
         ),
+        (
+            "009_chat_session_ownership",
+            "Track chat session owners for API authorization.",
+            [
+                """
+                ALTER TABLE chat_sessions
+                ADD COLUMN IF NOT EXISTS owner_user_id VARCHAR(128)
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_chat_sessions_owner_user_id
+                ON chat_sessions(owner_user_id)
+                """,
+            ],
+        ),
     ]
 
     def __init__(self, conninfo: str):
@@ -354,6 +368,7 @@ class SchemaManager:
                           'idx_child_chunks_embedding_cosine',
                           'idx_appointments_patient_status_date',
                           'idx_chat_sessions_patient_id',
+                          'idx_chat_sessions_owner_user_id',
                           'idx_documents_source_name',
                           'uq_documents_source_key',
                           'idx_documents_is_active',

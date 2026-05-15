@@ -217,6 +217,36 @@
   border-top: 1px solid var(--border-soft);
 }
 
+.sidebar-auth-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.sidebar-auth-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--slate-500);
+}
+
+.sidebar-auth-card__head strong {
+  color: #172126;
+}
+
+.sidebar-auth-card__input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: #172126;
+}
+
 .sidebar-link-icon {
   display: inline-flex;
   align-items: center;

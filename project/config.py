@@ -1,3 +1,4 @@
+import json
 import os
 from dotenv import load_dotenv
 
@@ -6,6 +7,19 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 # --- Directory Configuration ---
 _BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 _RUNTIME_DIR = os.path.join(_BASE_DIR, "runtime")
+
+
+def _load_json_mapping(env_name: str, default: dict | None = None) -> dict:
+    raw = os.environ.get(env_name, "").strip()
+    if not raw:
+        return dict(default or {})
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Environment variable `{env_name}` must be valid JSON.") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"Environment variable `{env_name}` must decode to a JSON object.")
+    return data
 
 MARKDOWN_DIR = os.path.join(_BASE_DIR, "markdown_docs")
 PARENT_STORE_PATH = os.path.join(_BASE_DIR, "parent_store")
@@ -70,10 +84,10 @@ POSTGRES_DB = os.environ.get("POSTGRES_DB", "ai_companion")
 POSTGRES_USER = os.environ.get("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "")
 VECTOR_INDEX_LISTS = int(os.environ.get("VECTOR_INDEX_LISTS", "100"))
-AUTO_BOOTSTRAP_KNOWLEDGE_BASE = os.environ.get("AUTO_BOOTSTRAP_KNOWLEDGE_BASE", "true").lower() == "true"
+AUTO_BOOTSTRAP_KNOWLEDGE_BASE = os.environ.get("AUTO_BOOTSTRAP_KNOWLEDGE_BASE", "false").lower() == "true"
 STATUS_REFRESH_SECONDS = float(os.environ.get("STATUS_REFRESH_SECONDS", "2"))
 RECENT_IMPORT_TASK_LIMIT = int(os.environ.get("RECENT_IMPORT_TASK_LIMIT", "8"))
-ENABLE_KB_SYNC_SCHEDULER = os.environ.get("ENABLE_KB_SYNC_SCHEDULER", "true").lower() == "true"
+ENABLE_KB_SYNC_SCHEDULER = os.environ.get("ENABLE_KB_SYNC_SCHEDULER", "false").lower() == "true"
 KB_SYNC_INTERVAL_HOURS = int(os.environ.get("KB_SYNC_INTERVAL_HOURS", "24"))
 KB_SYNC_OFFICIAL_SOURCES = [
     item.strip().lower()
@@ -82,6 +96,9 @@ KB_SYNC_OFFICIAL_SOURCES = [
 ]
 KB_SOFT_DELETE_MISSING = os.environ.get("KB_SOFT_DELETE_MISSING", "true").lower() == "true"
 KB_REPLACE_LOCAL_DUPLICATES = os.environ.get("KB_REPLACE_LOCAL_DUPLICATES", "true").lower() == "true"
+
+# --- Runtime / App Mode ---
+APP_ENV = os.environ.get("APP_ENV", "development").strip().lower() or "development"
 
 # --- API / Frontend Configuration ---
 API_CORS_ORIGINS = [
@@ -92,6 +109,22 @@ API_CORS_ORIGINS = [
     ).split(",")
     if item.strip()
 ]
+API_UPLOAD_MAX_FILES = int(os.environ.get("API_UPLOAD_MAX_FILES", "5"))
+API_UPLOAD_MAX_FILE_SIZE_MB = int(os.environ.get("API_UPLOAD_MAX_FILE_SIZE_MB", "20"))
+API_RATE_LIMIT_CHAT_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_CHAT_PER_MINUTE", "20"))
+API_RATE_LIMIT_UPLOADS_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_UPLOADS_PER_MINUTE", "6"))
+API_RATE_LIMIT_SYNCS_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_SYNCS_PER_MINUTE", "3"))
+
+_DEFAULT_AUTH_TOKENS = (
+    {
+        "demo-user-token": {"user_id": "demo-user", "role": "user"},
+        "other-user-token": {"user_id": "other-user", "role": "user"},
+        "demo-admin-token": {"user_id": "demo-admin", "role": "admin"},
+    }
+    if APP_ENV == "development"
+    else {}
+)
+API_AUTH_TOKENS = _load_json_mapping("API_AUTH_TOKENS_JSON", default=_DEFAULT_AUTH_TOKENS)
 
 # --- Redis Configuration ---
 REDIS_ENABLED = os.environ.get("REDIS_ENABLED", "true").lower() == "true"

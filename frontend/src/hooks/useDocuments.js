@@ -8,7 +8,7 @@ import {
   uploadDocuments,
 } from "../lib/api";
 
-export function useDocuments({ apiBaseUrl, setApiBaseUrl, refreshStatus }) {
+export function useDocuments({ apiBaseUrl, setApiBaseUrl, authToken, refreshStatus, enabled = true }) {
   const [documents, setDocuments] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [sourceCoverage, setSourceCoverage] = useState([]);
@@ -19,25 +19,37 @@ export function useDocuments({ apiBaseUrl, setApiBaseUrl, refreshStatus }) {
   const [error, setError] = useState("");
 
   const refreshDocuments = useCallback(async () => {
+    if (!enabled) {
+      setDocumentStatus(null);
+      setDocuments([]);
+      setTasks([]);
+      setSourceCoverage([]);
+      setError("");
+      return;
+    }
     setIsLoading(true);
     try {
       const [statusData, listData, taskData, sourceData] = await Promise.all([
-        fetchDocumentsStatus(apiBaseUrl, setApiBaseUrl),
-        fetchDocumentList(apiBaseUrl, setApiBaseUrl),
-        fetchDocumentTasks(apiBaseUrl, setApiBaseUrl),
-        fetchDocumentSources(apiBaseUrl, setApiBaseUrl),
+        fetchDocumentsStatus(apiBaseUrl, setApiBaseUrl, authToken),
+        fetchDocumentList(apiBaseUrl, setApiBaseUrl, authToken),
+        fetchDocumentTasks(apiBaseUrl, setApiBaseUrl, authToken),
+        fetchDocumentSources(apiBaseUrl, setApiBaseUrl, authToken),
       ]);
       setDocumentStatus(statusData.knowledge_base);
       setDocuments(listData.documents || []);
       setTasks(taskData.tasks || statusData.recent_tasks || []);
       setSourceCoverage(sourceData.sources || statusData.source_coverage || []);
       setError("");
-    } catch {
-      setError("知识库信息暂时无法读取。");
+    } catch (err) {
+      setDocumentStatus(null);
+      setDocuments([]);
+      setTasks([]);
+      setSourceCoverage([]);
+      setError(err.message || "知识库信息暂时无法读取。");
     } finally {
       setIsLoading(false);
     }
-  }, [apiBaseUrl, setApiBaseUrl]);
+  }, [apiBaseUrl, authToken, enabled, setApiBaseUrl]);
 
   useEffect(() => {
     refreshDocuments();
@@ -49,7 +61,7 @@ export function useDocuments({ apiBaseUrl, setApiBaseUrl, refreshStatus }) {
     setMessage("");
     setError("");
     try {
-      const data = await uploadDocuments(apiBaseUrl, setApiBaseUrl, files);
+      const data = await uploadDocuments(apiBaseUrl, setApiBaseUrl, authToken, files);
       setMessage(data.message || "文档上传完成。");
       await refreshDocuments();
       refreshStatus?.();
@@ -58,14 +70,14 @@ export function useDocuments({ apiBaseUrl, setApiBaseUrl, refreshStatus }) {
     } finally {
       setIsWorking(false);
     }
-  }, [apiBaseUrl, refreshDocuments, refreshStatus, setApiBaseUrl]);
+  }, [apiBaseUrl, authToken, refreshDocuments, refreshStatus, setApiBaseUrl]);
 
   const syncOfficial = useCallback(async (source, limit) => {
     setIsWorking(true);
     setMessage("");
     setError("");
     try {
-      const data = await syncOfficialDocuments(apiBaseUrl, setApiBaseUrl, source, limit);
+      const data = await syncOfficialDocuments(apiBaseUrl, setApiBaseUrl, authToken, source, limit);
       setMessage(data.message || "官方资料同步完成。");
       await refreshDocuments();
       refreshStatus?.();
@@ -74,7 +86,7 @@ export function useDocuments({ apiBaseUrl, setApiBaseUrl, refreshStatus }) {
     } finally {
       setIsWorking(false);
     }
-  }, [apiBaseUrl, refreshDocuments, refreshStatus, setApiBaseUrl]);
+  }, [apiBaseUrl, authToken, refreshDocuments, refreshStatus, setApiBaseUrl]);
 
   return {
     documents,
