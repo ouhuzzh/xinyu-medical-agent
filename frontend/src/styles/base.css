@@ -209,6 +209,7 @@
   color: #f1f5f9;
 }
 [data-theme="dark"] .composer textarea:focus {
+  background: #162033;
   border-color: var(--teal-600);
   box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.18), 0 0 16px rgba(20, 184, 166, 0.08);
 }
