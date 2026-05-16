@@ -1,0 +1,1294 @@
+{
+  "variants": [
+    {
+      "precision_at_k": 0.29,
+      "recall_at_k": 0.58,
+      "mrr_at_k": 0.56,
+      "hit_at_k": 0.6,
+      "keyword_coverage": 0.446,
+      "variant": "1_BASELINE"
+    },
+    {
+      "precision_at_k": 0.2627,
+      "recall_at_k": 0.58,
+      "mrr_at_k": 0.52,
+      "hit_at_k": 0.6,
+      "keyword_coverage": 0.448,
+      "variant": "2_+HYBRID",
+      "precision_delta": -0.0273
+    },
+    {
+      "precision_at_k": 0.2893,
+      "recall_at_k": 0.66,
+      "mrr_at_k": 0.58,
+      "hit_at_k": 0.68,
+      "keyword_coverage": 0.462,
+      "variant": "3_+QUERY_PLAN",
+      "precision_delta": 0.0266
+    },
+    {
+      "precision_at_k": 0.4413,
+      "recall_at_k": 0.58,
+      "mrr_at_k": 0.56,
+      "hit_at_k": 0.64,
+      "keyword_coverage": 0.1513,
+      "variant": "4_+PARENT_CHILD",
+      "precision_delta": 0.152
+    },
+    {
+      "precision_at_k": 0.4413,
+      "recall_at_k": 0.58,
+      "mrr_at_k": 0.5333,
+      "hit_at_k": 0.64,
+      "keyword_coverage": 0.1333,
+      "variant": "5_+RERANK",
+      "precision_delta": 0.0
+    },
+    {
+      "precision_at_k": 0.4413,
+      "recall_at_k": 0.58,
+      "mrr_at_k": 0.5333,
+      "hit_at_k": 0.64,
+      "keyword_coverage": 0.1333,
+      "variant": "6_+SOURCE_PRIORITY",
+      "precision_delta": 0.0
+    }
+  ],
+  "components": [
+    [
+      "Hybrid retrieval (vector + keyword + RRF)",
+      -0.0273
+    ],
+    [
+      "Multi-query planning (plan_queries)",
+      0.0266
+    ],
+    [
+      "Parent/child chunk index",
+      0.152
+    ],
+    [
+      "Reranking",
+      0.0
+    ],
+    [
+      "Source priority sorting",
+      0.0
+    ]
+  ],
+  "total_uplift": 0.15130000000000005,
+  "per_sample": {
+    "1_BASELINE": [
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "who-hypertension-risk"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.6667,
+        "sample_id": "who-hypertension-symptoms"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "who-diabetes-prevention"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-diabetes-complications"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "who-asthma-management"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.75,
+        "sample_id": "who-copd-causes"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-obesity-health-risks"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-healthy-diet-basics"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.5,
+        "sample_id": "who-depression-signs"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.4,
+        "sample_id": "who-cancer-risk-factors"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-headache-types"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-ncd-overview"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "nhc-covid-transmission"
+      },
+      {
+        "precision_at_k": 0.25,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.5,
+        "sample_id": "nhc-covid-high-risk"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "nhc-covid-prevention"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "nhc-influenza-transmission"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.5,
+        "sample_id": "nhc-mycoplasma-children"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.6,
+        "sample_id": "cross-hypertension-diet"
+      },
+      {
+        "precision_at_k": 0.6667,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.4,
+        "sample_id": "cross-covid-flu-difference"
+      },
+      {
+        "precision_at_k": 0.6667,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "cross-diabetes-obesity"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.3333,
+        "sample_id": "ambiguous-vague-chest"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 0.5,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "ambiguous-short-of-breath"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.5,
+        "sample_id": "followup-that-medicine"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "followup-then-what"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-tuberculosis-transmission"
+      }
+    ],
+    "2_+HYBRID": [
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "who-hypertension-risk"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.6667,
+        "sample_id": "who-hypertension-symptoms"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "who-diabetes-prevention"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-diabetes-complications"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "who-asthma-management"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.75,
+        "sample_id": "who-copd-causes"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-obesity-health-risks"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-healthy-diet-basics"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.5,
+        "sample_id": "who-depression-signs"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.4,
+        "sample_id": "who-cancer-risk-factors"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-headache-types"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-ncd-overview"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "nhc-covid-transmission"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.5,
+        "sample_id": "nhc-covid-high-risk"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "nhc-covid-prevention"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "nhc-influenza-transmission"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.75,
+        "sample_id": "nhc-mycoplasma-children"
+      },
+      {
+        "precision_at_k": 0.4,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "cross-hypertension-diet"
+      },
+      {
+        "precision_at_k": 0.6667,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.8,
+        "sample_id": "cross-covid-flu-difference"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "cross-diabetes-obesity"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.3333,
+        "sample_id": "ambiguous-vague-chest"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 0.5,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "ambiguous-short-of-breath"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.5,
+        "sample_id": "followup-that-medicine"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "followup-then-what"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-tuberculosis-transmission"
+      }
+    ],
+    "3_+QUERY_PLAN": [
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "who-hypertension-risk"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.6667,
+        "sample_id": "who-hypertension-symptoms"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "who-diabetes-prevention"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-diabetes-complications"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "who-asthma-management"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.75,
+        "sample_id": "who-copd-causes"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-obesity-health-risks"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-healthy-diet-basics"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.5,
+        "sample_id": "who-depression-signs"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.4,
+        "sample_id": "who-cancer-risk-factors"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-headache-types"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-ncd-overview"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "nhc-covid-transmission"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "nhc-covid-high-risk"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "nhc-covid-prevention"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "nhc-influenza-transmission"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.75,
+        "sample_id": "nhc-mycoplasma-children"
+      },
+      {
+        "precision_at_k": 0.4,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.6,
+        "sample_id": "cross-hypertension-diet"
+      },
+      {
+        "precision_at_k": 0.6667,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.8,
+        "sample_id": "cross-covid-flu-difference"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "cross-diabetes-obesity"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.3333,
+        "sample_id": "ambiguous-vague-chest"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 0.5,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "ambiguous-short-of-breath"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.5,
+        "sample_id": "followup-that-medicine"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.5,
+        "sample_id": "followup-then-what"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-tuberculosis-transmission"
+      }
+    ],
+    "4_+PARENT_CHILD": [
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-hypertension-risk"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-hypertension-symptoms"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-diabetes-prevention"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-diabetes-complications"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 1.0,
+        "sample_id": "who-asthma-management"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-copd-causes"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-obesity-health-risks"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-healthy-diet-basics"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-depression-signs"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-cancer-risk-factors"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-headache-types"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-ncd-overview"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "nhc-covid-transmission"
+      },
+      {
+        "precision_at_k": 0.25,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "nhc-covid-high-risk"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.2,
+        "sample_id": "nhc-covid-prevention"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "nhc-influenza-transmission"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.75,
+        "sample_id": "nhc-mycoplasma-children"
+      },
+      {
+        "precision_at_k": 0.2,
+        "recall_at_k": 0.5,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "cross-hypertension-diet"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "cross-covid-flu-difference"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 0.5,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "cross-diabetes-obesity"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.3333,
+        "sample_id": "ambiguous-vague-chest"
+      },
+      {
+        "precision_at_k": 0.25,
+        "recall_at_k": 0.5,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.75,
+        "sample_id": "ambiguous-short-of-breath"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.5,
+        "sample_id": "followup-that-medicine"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "followup-then-what"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-tuberculosis-transmission"
+      }
+    ],
+    "5_+RERANK": [
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-hypertension-risk"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-hypertension-symptoms"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-diabetes-prevention"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-diabetes-complications"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.75,
+        "sample_id": "who-asthma-management"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-copd-causes"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-obesity-health-risks"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-healthy-diet-basics"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-depression-signs"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-cancer-risk-factors"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-headache-types"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-ncd-overview"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "nhc-covid-transmission"
+      },
+      {
+        "precision_at_k": 0.25,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "nhc-covid-high-risk"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "nhc-covid-prevention"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "nhc-influenza-transmission"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.75,
+        "sample_id": "nhc-mycoplasma-children"
+      },
+      {
+        "precision_at_k": 0.2,
+        "recall_at_k": 0.5,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "cross-hypertension-diet"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "cross-covid-flu-difference"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 0.5,
+        "mrr_at_k": 0.3333,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "cross-diabetes-obesity"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.3333,
+        "sample_id": "ambiguous-vague-chest"
+      },
+      {
+        "precision_at_k": 0.25,
+        "recall_at_k": 0.5,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.75,
+        "sample_id": "ambiguous-short-of-breath"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.5,
+        "sample_id": "followup-that-medicine"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "followup-then-what"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-tuberculosis-transmission"
+      }
+    ],
+    "6_+SOURCE_PRIORITY": [
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-hypertension-risk"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-hypertension-symptoms"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-diabetes-prevention"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-diabetes-complications"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.75,
+        "sample_id": "who-asthma-management"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-copd-causes"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-obesity-health-risks"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-healthy-diet-basics"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-depression-signs"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-cancer-risk-factors"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-headache-types"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-ncd-overview"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "nhc-covid-transmission"
+      },
+      {
+        "precision_at_k": 0.25,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "nhc-covid-high-risk"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "nhc-covid-prevention"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "nhc-influenza-transmission"
+      },
+      {
+        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.75,
+        "sample_id": "nhc-mycoplasma-children"
+      },
+      {
+        "precision_at_k": 0.2,
+        "recall_at_k": 0.5,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "cross-hypertension-diet"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "cross-covid-flu-difference"
+      },
+      {
+        "precision_at_k": 0.3333,
+        "recall_at_k": 0.5,
+        "mrr_at_k": 0.3333,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "cross-diabetes-obesity"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.3333,
+        "sample_id": "ambiguous-vague-chest"
+      },
+      {
+        "precision_at_k": 0.25,
+        "recall_at_k": 0.5,
+        "mrr_at_k": 1.0,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.75,
+        "sample_id": "ambiguous-short-of-breath"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.5,
+        "sample_id": "followup-that-medicine"
+      },
+      {
+        "precision_at_k": 0.5,
+        "recall_at_k": 1.0,
+        "mrr_at_k": 0.5,
+        "hit_at_k": 1.0,
+        "keyword_coverage": 0.25,
+        "sample_id": "followup-then-what"
+      },
+      {
+        "precision_at_k": 0.0,
+        "recall_at_k": 0.0,
+        "mrr_at_k": 0.0,
+        "hit_at_k": 0.0,
+        "keyword_coverage": 0.0,
+        "sample_id": "who-tuberculosis-transmission"
+      }
+    ]
+  }
+}

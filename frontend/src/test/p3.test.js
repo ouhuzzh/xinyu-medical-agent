@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { useSearch } from "../hooks/useSearch";
 import { renderHook, act } from "@testing-library/react";
 import { exportAsMarkdown, exportAsJSON } from "../lib/export";
+import { buildStreamRequest } from "../lib/api";
 import zhCN from "../i18n/zh-CN.js";
 import enUS from "../i18n/en-US.js";
 
@@ -134,6 +135,24 @@ describe("exportAsJSON", () => {
     expect(data.messageCount).toBe(1);
     expect(data.messages).toHaveLength(1);
     expect(data.messages[0].role).toBe("user");
+  });
+});
+
+// ==========================================
+// buildStreamRequest (POST instead of GET)
+// ==========================================
+describe("buildStreamRequest", () => {
+  it("uses POST body instead of leaking message in the URL", () => {
+    const request = buildStreamRequest("http://api.test", null, "thread-1", "高血压要注意什么");
+
+    expect(request.url).toBe("http://api.test/api/chat/stream");
+    expect(request.options.method).toBe("POST");
+    expect(request.options.headers.get("Content-Type")).toBe("application/json");
+    expect(request.url).not.toContain("高血压");
+    expect(JSON.parse(request.options.body)).toEqual({
+      thread_id: "thread-1",
+      message: "高血压要注意什么",
+    });
   });
 });
 

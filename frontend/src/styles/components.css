@@ -13,7 +13,7 @@
 .message__footer {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .message__footer--user {
@@ -33,25 +33,29 @@
   gap: 3px;
   padding: 3px 8px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--slate-400);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.18s, color 0.15s, background 0.15s, border-color 0.15s;
+  transition: opacity 0.2s var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
   line-height: 1;
 }
 
-.message:hover .copy-btn {
+.message:hover .copy-btn,
+.copy-btn:focus-visible {
   opacity: 1;
 }
 
 .copy-btn:hover {
   color: var(--teal-700);
   background: var(--teal-50);
-  border-color: rgba(15,118,110,0.15);
+  border-color: rgba(15, 118, 110, 0.12);
 }
 
 .copy-btn:active {
@@ -65,18 +69,20 @@
   position: fixed;
   margin: auto;
   border: 1px solid var(--border-soft);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: 0;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-xl);
   max-width: 380px;
   width: calc(100% - 40px);
   z-index: 200;
   background: #fff;
+  animation: fade-in-up 0.2s var(--ease-out) both;
 }
 
 .confirm-dialog::backdrop {
-  background: rgba(23, 33, 38, 0.4);
-  backdrop-filter: blur(3px);
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .confirm-dialog__inner {
@@ -92,7 +98,7 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: rgba(245,158,11,0.12);
+  background: rgba(245, 158, 11, 0.10);
   color: var(--amber-500);
 }
 
@@ -123,11 +129,15 @@
   background: #fff;
   color: var(--slate-600);
   font-weight: 600;
-  font-size: 14px;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
 }
 
 .confirm-dialog__btn--cancel:hover {
-  border-color: var(--teal-700);
+  border-color: var(--teal-600);
   color: var(--teal-700);
   background: var(--teal-50);
 }
@@ -139,7 +149,9 @@
   background: var(--red-600);
   color: #fff;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .confirm-dialog__btn--confirm:hover {
@@ -158,14 +170,21 @@
   border-radius: var(--radius-sm);
   background: #fff;
   color: var(--slate-600);
-  transition: border-color 0.15s, background 0.15s, color 0.15s;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
   padding: 0;
 }
 
 .icon-button:hover {
-  border-color: var(--teal-700);
+  border-color: var(--teal-600);
   color: var(--teal-700);
   background: var(--teal-50);
+}
+
+.icon-button:active {
+  transform: scale(0.96);
 }
 
 /* ============================================= */
@@ -175,7 +194,7 @@
   z-index: 9999;
   pointer-events: none;
   width: 220px;
-  animation: fade-in-up 0.14s ease both;
+  animation: fade-in-up 0.14s var(--ease-out) both;
   position: fixed;
   max-height: calc(100vh - 16px);
   overflow-y: auto;

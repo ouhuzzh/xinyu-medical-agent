@@ -1,6 +1,7 @@
 import sys
 import unittest
 from datetime import date
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
 
@@ -189,6 +190,21 @@ class StorageAndServiceTests(unittest.TestCase):
         self.assertTrue(service.schedule_received_conn)
         self.assertEqual(result["appointment_no"][:3], "APT")
         self.assertEqual(result["department"], "呼吸内科")
+
+    def test_appointment_connect_does_not_apply_migrations_each_time(self):
+        schema_manager = Mock()
+        connection = Mock()
+        with patch("services.appointment_service.SchemaManager", return_value=schema_manager), patch(
+            "services.appointment_service.connect",
+            return_value=connection,
+        ):
+            service = AppointmentService()
+            first = service._connect()
+            second = service._connect()
+
+        self.assertIs(first, connection)
+        self.assertIs(second, connection)
+        schema_manager.apply_migrations.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@
 @media (max-width: 920px) {
   .app {
     grid-template-columns: 1fr;
-    grid-template-rows: 1fr;   /* 单列单行，完整撑满 */
+    grid-template-rows: 1fr;
     height: 100%;
   }
 
@@ -13,12 +13,13 @@
     top: 0;
     left: 0;
     bottom: 0;
-    height: 100%;           /* fixed 抽屉也需要明确高度 */
+    height: 100%;
     width: 300px;
     z-index: 20;
     transform: translateX(-110%);
-    box-shadow: var(--shadow-lg);
+    box-shadow: var(--shadow-xl);
     border-right: 1px solid var(--border-soft);
+    border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
   }
 
   .sidebar--open {
@@ -71,16 +72,14 @@
     font-size: 18px;
   }
 
-  .thread-chip {
-    display: none;
-  }
-
+  .thread-chip,
   .stream-chip {
     display: none;
   }
 
   .documents-header {
-    align-items: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
 
   .documents-header .secondary-btn {
@@ -101,6 +100,18 @@
 
   .empty-state__bg-ornament {
     display: none;
+  }
+
+  .composer {
+    gap: 8px;
+  }
+
+  .chat-shell {
+    padding: 14px 12px;
+  }
+
+  .message-list {
+    padding: 14px 10px;
   }
 }
 

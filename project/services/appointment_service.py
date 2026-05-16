@@ -2,25 +2,18 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import date
-import psycopg
 import config
+from db.connection import connect, get_conninfo
 from db.schema_manager import SchemaManager
 
 
 class AppointmentService:
     def __init__(self):
-        self._conninfo = (
-            f"host={config.POSTGRES_HOST} "
-            f"port={config.POSTGRES_PORT} "
-            f"dbname={config.POSTGRES_DB} "
-            f"user={config.POSTGRES_USER} "
-            f"password={config.POSTGRES_PASSWORD}"
-        )
+        self._conninfo = get_conninfo()
         self._schema_manager = SchemaManager(self._conninfo)
 
     def _connect(self):
-        self._schema_manager.apply_migrations()
-        return psycopg.connect(self._conninfo)
+        return connect()
 
     def ensure_patient_for_thread(self, thread_id: str, conn=None) -> int:
         patient_no = "thread-" + uuid.uuid5(uuid.NAMESPACE_URL, thread_id).hex
