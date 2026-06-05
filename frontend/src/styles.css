@@ -2671,18 +2671,21 @@ button:disabled {
    ============================================= */
 .login-page {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 100vh;
   background: linear-gradient(160deg, #f0f4ff 0%, #e8f0fe 30%, #fdf2f8 70%, #fef3c7 100%);
-  z-index: 999;
-  overflow-y: auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+  z-index: 9999;
 }
 
 .login-card {
-  position: relative;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   background: #fff;
   border-radius: 20px;
   box-shadow:
@@ -2691,8 +2694,7 @@ button:disabled {
     0 0 0 1px rgba(0, 0, 0, 0.03);
   padding: 44px 40px 36px;
   width: 400px;
-  max-width: 100%;
-  margin: auto;
+  max-width: calc(100vw - 32px);
 }
 
 .login-card__brand {
