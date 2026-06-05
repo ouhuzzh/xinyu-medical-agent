@@ -197,3 +197,17 @@ export function registerUser(apiBaseUrl, username, password, displayName) {
 export function fetchUserProfile(apiBaseUrl, authToken) {
   return apiFetchJson("/api/auth/profile", undefined, apiBaseUrl, () => {}, authToken);
 }
+
+export function refreshAccessToken(apiBaseUrl, refreshToken) {
+  return apiFetchJson(
+    "/api/auth/refresh",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    },
+    apiBaseUrl,
+    () => {},
+    "",
+  );
+}

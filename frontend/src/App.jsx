@@ -10,7 +10,7 @@ import { useSystemStatus } from "./hooks/useSystemStatus";
 import { useSearch } from "./hooks/useSearch";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { exportChat } from "./lib/export";
-import { AUTH_TOKEN_KEY } from "./constants/app";
+import { AUTH_TOKEN_KEY, REFRESH_TOKEN_KEY } from "./constants/app";
 
 const ChatPage = lazy(() => import("./pages/ChatPage"));
 const DocumentsPage = lazy(() => import("./pages/DocumentsPage"));
@@ -37,6 +37,7 @@ function AppInner() {
   const handleLogin = useCallback((accessToken, refreshToken) => {
     if (typeof window !== "undefined") {
       localStorage.setItem(AUTH_TOKEN_KEY, accessToken);
+      if (refreshToken) localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
     }
     system.setAuthToken(accessToken);
     setLoggedIn(true);
@@ -45,6 +46,7 @@ function AppInner() {
   const handleLogout = useCallback(() => {
     if (typeof window !== "undefined") {
       localStorage.removeItem(AUTH_TOKEN_KEY);
+      localStorage.removeItem(REFRESH_TOKEN_KEY);
     }
     system.setAuthToken("");
     system.setCurrentUser(null);
