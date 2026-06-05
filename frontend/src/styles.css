@@ -2674,126 +2674,165 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--slate-50) 0%, var(--blue-50) 100%);
+  background: linear-gradient(160deg, #f0f4ff 0%, #e8f0fe 30%, #fdf2f8 70%, #fef3c7 100%);
   padding: 24px;
 }
 
 .login-card {
   background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.08);
-  padding: 40px;
+  border-radius: 20px;
+  box-shadow:
+    0 4px 6px rgba(0, 0, 0, 0.02),
+    0 12px 40px rgba(0, 0, 0, 0.06),
+    0 0 0 1px rgba(0, 0, 0, 0.03);
+  padding: 44px 40px 36px;
   width: 100%;
-  max-width: 420px;
+  max-width: 400px;
 }
 
 .login-card__brand {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 36px;
+}
+
+.login-card__brand svg {
+  display: block;
+  margin: 0 auto;
 }
 
 .login-card__brand h1 {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
-  color: var(--slate-800);
-  margin: 12px 0 4px;
+  color: #1e293b;
+  margin: 16px 0 6px;
+  letter-spacing: -0.3px;
 }
 
 .login-card__brand p {
-  font-size: 14px;
-  color: var(--slate-400);
+  font-size: 13.5px;
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.login-card__form {
+  text-align: left;
 }
 
 .login-card__form h2 {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--slate-700);
-  margin-bottom: 20px;
+  font-size: 17px;
+  font-weight: 650;
+  color: #334155;
+  margin-bottom: 22px;
   text-align: center;
 }
 
 .login-card__field {
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .login-card__field label {
   display: block;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: var(--slate-500);
+  color: #64748b;
   margin-bottom: 6px;
+  letter-spacing: 0.2px;
 }
 
 .login-card__field input {
   width: 100%;
-  padding: 10px 14px;
-  font-size: 15px;
-  border: 1.5px solid var(--slate-200);
-  border-radius: 8px;
-  background: var(--slate-50);
-  color: var(--slate-800);
-  transition: border-color 0.15s, box-shadow 0.15s;
+  padding: 11px 14px;
+  font-size: 14.5px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #1e293b;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
   outline: none;
   box-sizing: border-box;
 }
 
+.login-card__field input::placeholder {
+  color: #cbd5e1;
+}
+
 .login-card__field input:focus {
-  border-color: var(--blue-400);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  border-color: #818cf8;
+  background: #fff;
+  box-shadow: 0 0 0 3.5px rgba(129, 140, 248, 0.12);
 }
 
 .login-card__error {
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  color: #dc2626;
+  background: #fff1f2;
+  border: 1px solid #fecdd3;
+  color: #be123c;
   padding: 10px 14px;
-  border-radius: 8px;
+  border-radius: 10px;
   font-size: 13px;
   margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.login-card__error::before {
+  content: "⚠";
+  font-size: 14px;
+  flex-shrink: 0;
 }
 
 .login-card__submit {
   width: 100%;
   padding: 12px;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 650;
   color: #fff;
-  background: var(--blue-500);
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: background 0.15s;
-  margin-top: 4px;
+  transition: transform 0.12s, box-shadow 0.2s;
+  margin-top: 6px;
+  letter-spacing: 0.3px;
 }
 
 .login-card__submit:hover {
-  background: var(--blue-600);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.35);
+}
+
+.login-card__submit:active {
+  transform: translateY(0);
 }
 
 .login-card__submit:disabled {
-  background: var(--slate-300);
+  background: #cbd5e1;
+  transform: none;
+  box-shadow: none;
   cursor: not-allowed;
 }
 
 .login-card__switch {
   text-align: center;
-  margin-top: 20px;
-  font-size: 14px;
-  color: var(--slate-400);
+  margin-top: 22px;
+  font-size: 13.5px;
+  color: #94a3b8;
 }
 
 .link-btn {
   background: none;
   border: none;
-  color: var(--blue-500);
-  font-size: 14px;
+  color: #6366f1;
+  font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
   padding: 0 0 0 4px;
 }
 
 .link-btn:hover {
+  color: #4f46e5;
   text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* =============================================
