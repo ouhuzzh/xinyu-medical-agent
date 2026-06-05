@@ -609,15 +609,27 @@ def recommend_department(state: State, llm):
     topic_focus = state.get("topic_focus", "")
 
     try:
-        llm_with_structure = _structured_output_llm(llm, DepartmentRecommendation, temperature=0.1)
         user_memories_section = ""
         if state.get("user_memories"):
             user_memories_section = f"\nKnown user context:\n{state['user_memories']}\n"
-        response = llm_with_structure.invoke(
+        raw_response = llm.with_config(temperature=0.1).invoke(
             [
                 SystemMessage(content=get_department_recommendation_prompt()),
                 HumanMessage(content=f"Conversation summary:\n{conversation_summary}\n{user_memories_section}\nUser query:\n{user_query}"),
             ]
+        )
+        raw_text = str(raw_response.content or "").strip()
+        # Parse JSON from LLM response (supports both raw JSON and markdown code blocks)
+        import re, json
+        json_match = re.search(r"\{.*\}", raw_text, re.DOTALL)
+        if not json_match:
+            raise ValueError("No JSON found in response")
+        parsed = json.loads(json_match.group())
+        response = DepartmentRecommendation(
+            department=str(parsed.get("department", "")).strip(),
+            reason=str(parsed.get("reason", "")).strip(),
+            needs_clarification=bool(parsed.get("needs_clarification", False)),
+            clarification_needed=str(parsed.get("clarification_needed", "")).strip(),
         )
     except Exception:
         logger.exception("Department recommendation structured output failed; returning safe fallback.")
