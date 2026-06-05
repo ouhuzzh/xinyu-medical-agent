@@ -10,6 +10,7 @@ import { useSystemStatus } from "./hooks/useSystemStatus";
 import { useSearch } from "./hooks/useSearch";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { exportChat } from "./lib/export";
+import { initialAuthToken } from "./lib/api";
 import { AUTH_TOKEN_KEY } from "./constants/app";
 
 const ChatPage = lazy(() => import("./pages/ChatPage"));
@@ -28,7 +29,12 @@ function AppInner() {
   const [activeView, setActiveView] = useState("chat");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
-  const [loggedIn, setLoggedIn] = useState(false);
+  // If there's already a stored token, start with loggedIn=true so we show the app
+  // immediately. useSystemStatus will gate with onAuthExpired if the token is bad.
+  const [loggedIn, setLoggedIn] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return !!(localStorage.getItem(AUTH_TOKEN_KEY) || initialAuthToken());
+  });
   const composerRef = useRef(null);
   const { theme, toggleTheme } = useTheme();
   const system = useSystemStatus({ onAuthExpired: () => setLoggedIn(false) });
