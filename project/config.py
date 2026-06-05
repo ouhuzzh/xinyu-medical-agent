@@ -174,6 +174,19 @@ USER_MEMORY_RECENCY_WEIGHT = float(os.environ.get("USER_MEMORY_RECENCY_WEIGHT", 
 USER_MEMORY_IMPORTANCE_WEIGHT = float(os.environ.get("USER_MEMORY_IMPORTANCE_WEIGHT", "0.4"))
 USER_MEMORY_RELEVANCE_WEIGHT = float(os.environ.get("USER_MEMORY_RELEVANCE_WEIGHT", "0.3"))
 
+# --- Episodic Memory Configuration (L4) ---
+EPISODIC_MEMORY_ENABLED = os.environ.get("EPISODIC_MEMORY_ENABLED", "true").lower() == "true"
+EPISODIC_MEMORY_MAX_RETRIEVED = int(os.environ.get("EPISODIC_MEMORY_MAX_RETRIEVED", "3"))
+
+# --- Core Memory Configuration (L5) ---
+CORE_MEMORY_ENABLED = os.environ.get("CORE_MEMORY_ENABLED", "true").lower() == "true"
+CORE_MEMORY_MAX_LENGTH = int(os.environ.get("CORE_MEMORY_MAX_LENGTH", "2000"))
+
+# --- Reflection Memory Configuration (L6) ---
+REFLECTION_MEMORY_ENABLED = os.environ.get("REFLECTION_MEMORY_ENABLED", "true").lower() == "true"
+REFLECTION_MEMORY_MIN_SOURCE_COUNT = int(os.environ.get("REFLECTION_MEMORY_MIN_SOURCE_COUNT", "3"))
+REFLECTION_MEMORY_INTERVAL_TURNS = int(os.environ.get("REFLECTION_MEMORY_INTERVAL_TURNS", "10"))
+
 HIGH_RISK_KEYWORDS = [
     "胸痛",
     "胸闷",

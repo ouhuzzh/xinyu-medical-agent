@@ -516,29 +516,46 @@ test_cases = [
 
 ---
 
-## 6. 演进路线
+## 6. 当前架构（方案 C 已全部实现）
 
 ```
-方案 A（当前）                方案 C（六层认知，终极目标）
-┌──────────────────┐        ┌──────────────────────────┐
-│ L1 工作记忆 (State)│        │ L1 工作记忆 (State)       │
-│ L2 短期记忆 (Redis)│        │ L2 短期记忆 (Redis)       │
-│ L3 语义记忆 (Store)│  ───→  │ L3 语义记忆 (Store)       │
-│   + 重要性评分     │        │ L4 情景记忆 (时间线)       │
-│   + 结构化提取     │        │ L5 核心记忆 (始终在 ctx)   │
-│   + 三因子检索     │        │ L6 反思记忆 (LLM 抽象)    │
-└──────────────────┘        └──────────────────────────┘
-  3 层, 1 新表                 6 层, 3 新表
-  Token: 异步一次性             Token: 每轮 +300~500
+┌──────────────────────────────────────────────────────────┐
+│                    六层认知记忆架构                         │
+│                                                          │
+│  L1 工作记忆   — LangGraph State 字段（当前意图、风险等）    │
+│  L2 短期记忆   — Redis 滑动窗口（最近 12 条消息）           │
+│  L3 语义记忆   — user_memories 表（四类结构化 + 三因子检索）  │
+│  L4 情景记忆   — episodic_memories 表（对话时间线）         │
+│  L5 核心记忆   — user_core_memory 表（始终注入 context）    │
+│  L6 反思记忆   — reflection_memories 表（LLM 合成抽象）     │
+└──────────────────────────────────────────────────────────┘
 ```
 
-**A → C 直达路径**（跳过方案 B 的 Agent 自主管理，因为医疗场景下被动提取更安全）：
+**各层实现状态**：
 
-| 阶段 | 新增内容 | 对应记忆层 |
-|------|----------|-----------|
-| A（当前） | 用户级 Store + 提取 + 检索 | L3 语义记忆 |
-| C-1 | 完整对话时间线存储 + 时间范围检索 | L4 情景记忆 |
-| C-2 | Core Memory 结构化块（始终注入 context） | L5 核心记忆 |
-| C-3 | 反思合成管道（记忆群组 → 高层抽象） | L6 反思记忆 |
+| 层 | 状态 | 新增文件 | 新增表 |
+|---|---|---|---|
+| L1 工作记忆 | ✅ 已有 | — | — |
+| L2 短期记忆 | ✅ 已有 | — | — |
+| L3 语义记忆 | ✅ 方案 A 已实现 | `user_memory_store.py`, `memory_extractor.py` | `user_memories` |
+| L4 情景记忆 | ✅ 已实现 | `episodic_memory_store.py` | `episodic_memories` |
+| L5 核心记忆 | ✅ 已实现 | `core_memory_store.py` | `user_core_memory` |
+| L6 反思记忆 | ✅ 已实现 | `reflection_memory_store.py` | `reflection_memories` |
 
-方案 B 的 Agent 自主记忆工具（memory_save/search/update/delete）作为**可选增强**，可在任意阶段叠加，不影响核心架构。
+**六层协同数据流**：
+
+```
+对话前注入:
+  L5 核心记忆 → 始终注入（用户画像/病史/偏好）
+  L3 语义记忆 → 三因子检索 top 5（结构化事实）
+  L4 情景记忆 → 时间+语义检索 top 3（相关历史对话）
+  L6 反思记忆 → 语义检索 top 3（高层洞察）
+
+对话后提取:
+  L3: MemoryExtractor → 结构化提取 + 重要性评分 + 去重合并
+  L4: EpisodicMemoryStore.save_turn() → 保存对话时间线
+  L5: CoreMemoryStore.update_core_memory_with_new_facts() → 更新核心记忆块
+  L6: ReflectionMemoryStore.maybe_reflect() → 条件触发反思合成
+```
+
+**方案 B 的 Agent 自主记忆工具**（memory_save/search/update/delete）作为**可选增强**，可在任意阶段叠加，不影响当前架构。

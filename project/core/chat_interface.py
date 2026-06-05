@@ -81,6 +81,9 @@ SESSION_STATE_DEFAULTS = {
     "pending_candidates": [],
     "skill_data": {},
     "user_memories": "",
+    "core_memory": "",
+    "episodic_memories": "",
+    "reflection_memories": "",
 }
 
 # --- Helpers ---
@@ -458,7 +461,7 @@ class ChatInterface:
             except Exception:
                 logger.warning("Failed to resolve user_id for memory injection", exc_info=True)
 
-        # Retrieve user-level memories
+        # Retrieve user-level memories (L3 semantic)
         user_memories_text = ""
         if user_id and config.USER_MEMORY_ENABLED and config.USER_MEMORY_INJECTION_ENABLED:
             try:
@@ -471,6 +474,42 @@ class ChatInterface:
                     )
             except Exception:
                 logger.warning("User memory retrieval failed; continuing without memories.", exc_info=True)
+
+        # L5: Core memory — always inject
+        core_memory_text = ""
+        if user_id and config.CORE_MEMORY_ENABLED:
+            try:
+                core_memory_text = self.rag_system.core_memory_store.get_core_memory(user_id)
+            except Exception:
+                logger.warning("Core memory retrieval failed; continuing without it.", exc_info=True)
+
+        # L4: Episodic memory — retrieve relevant past turns
+        episodic_text = ""
+        if user_id and config.EPISODIC_MEMORY_ENABLED:
+            try:
+                episodes = self.rag_system.episodic_memory_store.retrieve_by_time_and_semantic(
+                    user_id, user_message, hours_back=168, top_k=config.EPISODIC_MEMORY_MAX_RETRIEVED
+                )
+                if episodes:
+                    episodic_text = "\n".join(
+                        f"- [{e.get('created_at', '')}] 用户: {e.get('user_message', '')}" for e in episodes
+                    )
+            except Exception:
+                logger.warning("Episodic memory retrieval failed; continuing without it.", exc_info=True)
+
+        # L6: Reflection memory — retrieve relevant insights
+        reflection_text = ""
+        if user_id and config.REFLECTION_MEMORY_ENABLED:
+            try:
+                reflections = self.rag_system.reflection_memory_store.retrieve_reflections(
+                    user_id, user_message, top_k=3
+                )
+                if reflections:
+                    reflection_text = "\n".join(
+                        f"- {r['content']}" for r in reflections
+                    )
+            except Exception:
+                logger.warning("Reflection memory retrieval failed; continuing without it.", exc_info=True)
 
         try:
             retrieval_context_token = set_retrieval_context(
@@ -486,6 +525,12 @@ class ChatInterface:
                 }
                 if user_memories_text:
                     update_payload["user_memories"] = user_memories_text
+                if core_memory_text:
+                    update_payload["core_memory"] = core_memory_text
+                if episodic_text:
+                    update_payload["episodic_memories"] = episodic_text
+                if reflection_text:
+                    update_payload["reflection_memories"] = reflection_text
                 self.rag_system.agent_graph.update_state(
                     graph_config,
                     update_payload,
@@ -509,6 +554,9 @@ class ChatInterface:
                     "messages": [*state_messages, *stored_messages, HumanMessage(content=user_message)],
                     "request_id": request_id,
                     "user_memories": user_memories_text,
+                    "core_memory": core_memory_text,
+                    "episodic_memories": episodic_text,
+                    "reflection_memories": reflection_text,
                 }
 
             response_messages  = []
@@ -555,6 +603,45 @@ class ChatInterface:
                     )
                 except Exception:
                     logger.warning("Memory extraction failed for thread_id=%s", active_thread_id, exc_info=True)
+
+            # L4: Save turn to episodic memory timeline
+            if user_id and config.EPISODIC_MEMORY_ENABLED and combined_assistant_text:
+                try:
+                    recent_count = self.rag_system.session_memory.recent_message_count(active_thread_id)
+                    self.rag_system.episodic_memory_store.save_turn(
+                        user_id=user_id,
+                        thread_id=active_thread_id,
+                        turn_index=recent_count // 2,
+                        user_message=user_message,
+                        assistant_message=combined_assistant_text[:500],
+                    )
+                except Exception:
+                    logger.warning("Episodic memory save failed for thread_id=%s", active_thread_id, exc_info=True)
+
+            # L5: Update core memory with new extracted facts
+            if user_id and config.CORE_MEMORY_ENABLED and config.USER_MEMORY_EXTRACTION_ENABLED:
+                try:
+                    # Get recently saved memories to update core memory
+                    recent_memories = self.rag_system.user_memory_store.get_memories_for_user(user_id)
+                    # Only update with memories from this thread
+                    thread_memories = [m for m in recent_memories if m.get("source_thread_id") == active_thread_id]
+                    if thread_memories:
+                        self.rag_system.core_memory_store.update_core_memory_with_new_facts(
+                            user_id, thread_memories
+                        )
+                except Exception:
+                    logger.warning("Core memory update failed for user_id=%s", user_id, exc_info=True)
+
+            # L6: Maybe synthesize reflections
+            if user_id and config.REFLECTION_MEMORY_ENABLED and combined_assistant_text:
+                try:
+                    self.rag_system.reflection_memory_store.maybe_reflect(
+                        user_id=user_id,
+                        episodic_store=self.rag_system.episodic_memory_store,
+                        user_memory_store=self.rag_system.user_memory_store,
+                    )
+                except Exception:
+                    logger.warning("Reflection synthesis failed for user_id=%s", user_id, exc_info=True)
 
             updated_state = self._resolved_session_state(latest_values, session_state, user_message, clarification_text)
             if updated_state != (session_state or {}):

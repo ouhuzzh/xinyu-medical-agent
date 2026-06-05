@@ -339,6 +339,66 @@ class SchemaManager:
                 """,
             ],
         ),
+        (
+            "011_episodic_memory",
+            "Episodic memory layer — full conversation timeline with vector search.",
+            [
+                """
+                CREATE TABLE IF NOT EXISTS episodic_memories (
+                    id              BIGSERIAL PRIMARY KEY,
+                    user_id         VARCHAR(128) NOT NULL,
+                    thread_id       VARCHAR(128) NOT NULL,
+                    turn_index      INTEGER NOT NULL,
+                    user_message    TEXT NOT NULL DEFAULT '',
+                    assistant_message TEXT NOT NULL DEFAULT '',
+                    embedding       VECTOR(1024),
+                    created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_episodic_memories_user_id
+                ON episodic_memories(user_id)
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_episodic_memories_user_time
+                ON episodic_memories(user_id, created_at DESC)
+                """,
+                f"""
+                CREATE INDEX IF NOT EXISTS idx_episodic_memories_embedding_cosine
+                ON episodic_memories
+                USING ivfflat (embedding vector_cosine_ops)
+                WITH (lists = {config.VECTOR_INDEX_LISTS})
+                """,
+            ],
+        ),
+        (
+            "012_reflection_memory",
+            "Reflection memory layer — LLM-synthesized higher-order abstractions.",
+            [
+                """
+                CREATE TABLE IF NOT EXISTS reflection_memories (
+                    id              BIGSERIAL PRIMARY KEY,
+                    user_id         VARCHAR(128) NOT NULL,
+                    content         TEXT NOT NULL,
+                    source_memory_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    embedding       VECTOR(1024),
+                    importance      SMALLINT NOT NULL DEFAULT 7,
+                    created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_reflection_memories_user_id
+                ON reflection_memories(user_id)
+                """,
+                f"""
+                CREATE INDEX IF NOT EXISTS idx_reflection_memories_embedding_cosine
+                ON reflection_memories
+                USING ivfflat (embedding vector_cosine_ops)
+                WITH (lists = {config.VECTOR_INDEX_LISTS})
+                """,
+            ],
+        ),
     ]
 
     def __init__(self, conninfo: str):
@@ -422,7 +482,12 @@ class SchemaManager:
                           'idx_user_memories_user_id',
                           'idx_user_memories_user_type',
                           'idx_user_memories_user_importance',
-                          'idx_user_memories_embedding_cosine'
+                          'idx_user_memories_embedding_cosine',
+                          'idx_episodic_memories_user_id',
+                          'idx_episodic_memories_user_time',
+                          'idx_episodic_memories_embedding_cosine',
+                          'idx_reflection_memories_user_id',
+                          'idx_reflection_memories_embedding_cosine'
                       )
                     """
                 )

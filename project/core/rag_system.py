@@ -23,6 +23,9 @@ from memory.redis_memory import RedisSessionMemory
 from memory.summary_store import SummaryStore
 from memory.user_memory_store import UserMemoryStore
 from memory.memory_extractor import MemoryExtractor
+from memory.episodic_memory_store import EpisodicMemoryStore
+from memory.core_memory_store import CoreMemoryStore
+from memory.reflection_memory_store import ReflectionMemoryStore
 from db.chat_session_store import ChatSessionStore
 from model_factory import get_chat_model
 from rag_agent.tools import ToolFactory
@@ -46,6 +49,9 @@ class RAGSystem:
         self.user_memory_store = UserMemoryStore()
         self.chat_sessions = ChatSessionStore()
         self.memory_extractor = MemoryExtractor(self.user_memory_store, self.chat_sessions)
+        self.episodic_memory_store = EpisodicMemoryStore()
+        self.core_memory_store = CoreMemoryStore()
+        self.reflection_memory_store = ReflectionMemoryStore()
         self.appointment_service = AppointmentService()
         self.observability = Observability()
         self.document_manager = None
@@ -103,6 +109,18 @@ class RAGSystem:
             user_memory_status = self.user_memory_store.status_info()
             if user_memory_status.get("degraded"):
                 degraded_components.append(user_memory_status["component"])
+        if config.EPISODIC_MEMORY_ENABLED:
+            episodic_status = self.episodic_memory_store.status_info()
+            if episodic_status.get("degraded"):
+                degraded_components.append(episodic_status["component"])
+        if config.CORE_MEMORY_ENABLED:
+            core_status = self.core_memory_store.status_info()
+            if core_status.get("degraded"):
+                degraded_components.append(core_status["component"])
+        if config.REFLECTION_MEMORY_ENABLED:
+            reflection_status = self.reflection_memory_store.status_info()
+            if reflection_status.get("degraded"):
+                degraded_components.append(reflection_status["component"])
         return {
             "state": self._startup_status["state"],
             "message": self._startup_status["message"],
