@@ -299,6 +299,46 @@ class SchemaManager:
                 """,
             ],
         ),
+        (
+            "010_user_memories",
+            "User-level long-term memories with pgvector similarity and importance scoring.",
+            [
+                """
+                CREATE TABLE IF NOT EXISTS user_memories (
+                    id              BIGSERIAL PRIMARY KEY,
+                    user_id         VARCHAR(128) NOT NULL,
+                    memory_type     VARCHAR(32) NOT NULL,
+                    content         TEXT NOT NULL,
+                    importance      SMALLINT NOT NULL DEFAULT 5,
+                    embedding       VECTOR(1024),
+                    source_thread_id VARCHAR(128),
+                    merged_from     JSONB NOT NULL DEFAULT '[]'::jsonb,
+                    access_count    INTEGER NOT NULL DEFAULT 0,
+                    last_accessed_at TIMESTAMP,
+                    created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_user_memories_user_id
+                ON user_memories(user_id)
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_user_memories_user_type
+                ON user_memories(user_id, memory_type)
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_user_memories_user_importance
+                ON user_memories(user_id, importance DESC)
+                """,
+                f"""
+                CREATE INDEX IF NOT EXISTS idx_user_memories_embedding_cosine
+                ON user_memories
+                USING ivfflat (embedding vector_cosine_ops)
+                WITH (lists = {config.VECTOR_INDEX_LISTS})
+                """,
+            ],
+        ),
     ]
 
     def __init__(self, conninfo: str):
@@ -378,7 +418,11 @@ class SchemaManager:
                           'idx_route_logs_request_id',
                           'idx_retrieval_logs_request_id',
                           'idx_appointment_skill_logs_created_at',
-                          'idx_appointment_skill_logs_thread_id'
+                          'idx_appointment_skill_logs_thread_id',
+                          'idx_user_memories_user_id',
+                          'idx_user_memories_user_type',
+                          'idx_user_memories_user_importance',
+                          'idx_user_memories_embedding_cosine'
                       )
                     """
                 )

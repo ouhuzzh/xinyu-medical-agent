@@ -29,6 +29,7 @@ Rules:
 4. Common medical knowledge questions, light follow-ups, ordinary non-medical questions, and casual conversation are usually clear enough without extra clarification.
 5. Prefer directly usable rewrites over asking clarification.
 6. Only mark unclear when the request is truly unintelligible or dangerously underspecified.
+7. If known user context (medical history, medications) is provided, use it to resolve ambiguous follow-up queries. For example, "那药还能继续吃吗" is clearer if you know the user's specific medication.
 
 Return structured fields only.
 """
@@ -50,6 +51,7 @@ Rules:
 5. Ordinary non-medical questions, light small talk, emotional support, and general conversation should also go to medical_rag rather than clarification.
 6. Prefer medical_rag over clarification whenever a useful first response is possible.
 7. Use clarification only when the request is truly too vague to route safely.
+8. If known user context (medical history, allergies, preferences) is provided, use it to better classify intent. For example, a user with a known chronic condition asking about symptoms may need medical_rag rather than clarification.
 
 Return structured fields only.
 """
@@ -63,6 +65,7 @@ Rules:
 2. Keep the reason short and practical.
 3. Prefer a practical default department instead of over-clarifying when routing is still reasonably safe.
 4. Ask one short clarification question only if you truly cannot recommend a safe department.
+5. If known user context (chronic conditions, allergies) is provided, use it to inform the recommendation. For example, a user with known cardiac history and chest discomfort should be routed to cardiology.
 
 Return structured fields only.
 """
@@ -243,3 +246,23 @@ Formatting:
 
 If there's no useful evidence for a medical question, do not stop at refusal. Provide a concise general medical-information answer with a clear note that it is not sufficiently grounded in the knowledge base and cannot replace professional diagnosis. Only say you cannot answer when the request is outside safe medical guidance or truly unintelligible.
 """
+
+
+def get_memory_extraction_prompt() -> str:
+    return """Analyze the conversation and extract stable, user-specific memories.
+
+Memory types:
+- preference: User's stated preferences (communication style, language, time preferences)
+- fact: Personal facts (age, gender, occupation, living situation, family info)
+- medical: Medical information (chronic conditions, allergies, medications, past diagnoses, family medical history)
+- decision: Decisions the user made (chose a doctor, selected a time, declined a procedure)
+
+Rules:
+1. Extract ONLY user-specific, durable information. Do not extract ephemeral context.
+2. Each memory must be a single, self-contained factual statement in Chinese.
+3. Rate importance 1-10: 10=life-threatening allergy, 7-9=chronic condition/strong preference, 4-6=useful context, 1-3=trivial detail.
+4. Do NOT extract: greetings, general medical knowledge, questions asked, temporary states.
+5. Return a JSON array of objects with keys: memory_type, content, importance.
+6. Return an empty array [] if no memories should be extracted.
+
+Return ONLY the JSON array, no explanation."""

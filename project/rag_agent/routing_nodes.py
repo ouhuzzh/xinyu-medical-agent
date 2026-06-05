@@ -475,14 +475,18 @@ def intent_router(state: State, llm):
 
     try:
         llm_with_structure = _structured_output_llm(llm, IntentAnalysis, temperature=0.1)
+        user_memories_section = ""
+        if state.get("user_memories"):
+            user_memories_section = f"\nKnown user context:\n{state['user_memories']}\n"
         response = llm_with_structure.invoke(
             [
                 SystemMessage(content=get_intent_router_prompt()),
                 HumanMessage(
                     content=(
                         f"Conversation summary:\n{state.get('conversation_summary', '')}\n\n"
-                        f"Recent dialogue context:\n{recent_context}\n\n"
-                        f"User query:\n{user_query}"
+                        f"Recent dialogue context:\n{recent_context}\n"
+                        f"{user_memories_section}"
+                        f"\nUser query:\n{user_query}"
                     )
                 ),
             ]
@@ -606,10 +610,13 @@ def recommend_department(state: State, llm):
 
     try:
         llm_with_structure = _structured_output_llm(llm, DepartmentRecommendation, temperature=0.1)
+        user_memories_section = ""
+        if state.get("user_memories"):
+            user_memories_section = f"\nKnown user context:\n{state['user_memories']}\n"
         response = llm_with_structure.invoke(
             [
                 SystemMessage(content=get_department_recommendation_prompt()),
-                HumanMessage(content=f"Conversation summary:\n{conversation_summary}\n\nUser query:\n{user_query}"),
+                HumanMessage(content=f"Conversation summary:\n{conversation_summary}\n{user_memories_section}\nUser query:\n{user_query}"),
             ]
         )
     except Exception:

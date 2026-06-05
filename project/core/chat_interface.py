@@ -80,6 +80,7 @@ SESSION_STATE_DEFAULTS = {
     "pending_confirmation_id": "",
     "pending_candidates": [],
     "skill_data": {},
+    "user_memories": "",
 }
 
 # --- Helpers ---
@@ -448,6 +449,29 @@ class ChatInterface:
         session_state = self.rag_system.session_memory.get_state(active_thread_id)
         checkpoint_resumed = bool(current_state.next)
 
+        # Resolve user_id for memory injection/extraction
+        user_id = ""
+        if config.USER_MEMORY_ENABLED:
+            try:
+                session_info = self.rag_system.chat_sessions.get_session(active_thread_id)
+                user_id = (session_info or {}).get("owner_user_id", "") or ""
+            except Exception:
+                logger.warning("Failed to resolve user_id for memory injection", exc_info=True)
+
+        # Retrieve user-level memories
+        user_memories_text = ""
+        if user_id and config.USER_MEMORY_ENABLED and config.USER_MEMORY_INJECTION_ENABLED:
+            try:
+                memories = self.rag_system.user_memory_store.retrieve_memories(
+                    user_id, user_message, top_k=config.USER_MEMORY_MAX_RETRIEVED
+                )
+                if memories:
+                    user_memories_text = "\n".join(
+                        f"- [{m['memory_type']}|{m['importance']}] {m['content']}" for m in memories
+                    )
+            except Exception:
+                logger.warning("User memory retrieval failed; continuing without memories.", exc_info=True)
+
         try:
             retrieval_context_token = set_retrieval_context(
                 thread_id=active_thread_id,
@@ -455,13 +479,16 @@ class ChatInterface:
                 request_id=request_id,
             )
             if current_state.next:
+                update_payload = {
+                    "messages": [HumanMessage(content=user_message)],
+                    "thread_id": active_thread_id,
+                    "request_id": request_id,
+                }
+                if user_memories_text:
+                    update_payload["user_memories"] = user_memories_text
                 self.rag_system.agent_graph.update_state(
                     graph_config,
-                    {
-                        "messages": [HumanMessage(content=user_message)],
-                        "thread_id": active_thread_id,
-                        "request_id": request_id,
-                    },
+                    update_payload,
                 )
                 stream_input = None
             else:
@@ -481,6 +508,7 @@ class ChatInterface:
                 stream_input = {
                     "messages": [*state_messages, *stored_messages, HumanMessage(content=user_message)],
                     "request_id": request_id,
+                    "user_memories": user_memories_text,
                 }
 
             response_messages  = []
@@ -515,6 +543,18 @@ class ChatInterface:
                     conversation_summary = latest_values.get("conversation_summary", "")
                     if conversation_summary:
                         self.rag_system.summary_store.save_summary(active_thread_id, conversation_summary, recent_count)
+
+            # Extract user memories (async, fire-and-forget)
+            if user_id and config.USER_MEMORY_ENABLED and config.USER_MEMORY_EXTRACTION_ENABLED and combined_assistant_text:
+                try:
+                    self.rag_system.memory_extractor.extract_and_save(
+                        thread_id=active_thread_id,
+                        user_message=user_message,
+                        assistant_message=combined_assistant_text,
+                        conversation_summary=latest_values.get("conversation_summary", ""),
+                    )
+                except Exception:
+                    logger.warning("Memory extraction failed for thread_id=%s", active_thread_id, exc_info=True)
 
             updated_state = self._resolved_session_state(latest_values, session_state, user_message, clarification_text)
             if updated_state != (session_state or {}):

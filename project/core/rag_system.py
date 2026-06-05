@@ -21,6 +21,9 @@ from db.import_task_store import ImportTaskStore
 from core.document_chunker import DocumentChuncker
 from memory.redis_memory import RedisSessionMemory
 from memory.summary_store import SummaryStore
+from memory.user_memory_store import UserMemoryStore
+from memory.memory_extractor import MemoryExtractor
+from db.chat_session_store import ChatSessionStore
 from model_factory import get_chat_model
 from rag_agent.tools import ToolFactory
 from rag_agent.graph import create_agent_graph
@@ -40,6 +43,9 @@ class RAGSystem:
         self.chunker = DocumentChuncker()
         self.session_memory = RedisSessionMemory()
         self.summary_store = SummaryStore()
+        self.user_memory_store = UserMemoryStore()
+        self.chat_sessions = ChatSessionStore()
+        self.memory_extractor = MemoryExtractor(self.user_memory_store, self.chat_sessions)
         self.appointment_service = AppointmentService()
         self.observability = Observability()
         self.document_manager = None
@@ -93,6 +99,10 @@ class RAGSystem:
         memory_status = self.session_memory.status_info()
         if memory_status.get("degraded"):
             degraded_components.append(memory_status["component"])
+        if config.USER_MEMORY_ENABLED:
+            user_memory_status = self.user_memory_store.status_info()
+            if user_memory_status.get("degraded"):
+                degraded_components.append(user_memory_status["component"])
         return {
             "state": self._startup_status["state"],
             "message": self._startup_status["message"],

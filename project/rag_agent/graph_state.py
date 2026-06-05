@@ -58,6 +58,7 @@ class State(MessagesState):
     grounding_evidence_score: float | None = None
     agent_answers: Annotated[List[dict], accumulate_or_reset] = []
     skill_data: Dict[str, Any] = {}
+    user_memories: str = ""
 
 class AgentState(MessagesState):
     """State for individual agent subgraph"""
