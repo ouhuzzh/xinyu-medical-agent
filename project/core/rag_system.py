@@ -1,3 +1,14 @@
+"""RAG system orchestrator — manages the full lifecycle of the agentic RAG pipeline.
+
+Responsibilities:
+    - Initialize database schema, LLM models, vector collections, and tools
+    - Compile the LangGraph agent graph with checkpointer
+    - Bootstrap the knowledge base from markdown_docs/
+    - Schedule periodic KB sync from official sources (MedlinePlus, NHC, WHO)
+    - Track startup status and KB status for health monitoring
+    - Provide thread-level checkpoint reset
+"""
+
 import uuid
 import logging
 import threading
@@ -7,7 +18,7 @@ import config
 from db.vector_db_manager import VectorDbManager
 from db.parent_store_manager import ParentStoreManager
 from db.import_task_store import ImportTaskStore
-from document_chunker import DocumentChuncker
+from core.document_chunker import DocumentChuncker
 from memory.redis_memory import RedisSessionMemory
 from memory.summary_store import SummaryStore
 from model_factory import get_chat_model
@@ -312,13 +323,26 @@ class RAGSystem:
                 self._set_startup_step("database_check", "completed", "数据库 schema 检查完成。")
 
                 self._set_startup_step("model_init", "running", "初始化聊天模型。")
-                llm = get_chat_model()
+                from llm_tiered_router import TieredLLMRouter
+                llm_router = TieredLLMRouter.from_env()
+                llm = llm_router.get_llm("default")
                 self._set_startup_step("model_init", "completed", "聊天模型初始化完成。")
 
                 self._set_startup_step("graph_compile", "running", "构建代理图。")
                 collection = self.vector_db.get_collection(self.collection_name)
                 tools = ToolFactory(collection).create_tools()
-                self.agent_graph = create_agent_graph(llm, tools, appointment_service=self.appointment_service)
+
+                # Register skills (if enabled)
+                if getattr(config, "SKILLS_ENABLED", False):
+                    from skills.registry import get_skill_registry
+                    from skills.greeting_skill import GreetingSkill
+                    from skills.medical_rag_skill import MedicalRagSkill
+                    registry = get_skill_registry()
+                    registry.register(GreetingSkill())
+                    registry.register(MedicalRagSkill())
+                    logger.info("Skill plugin framework enabled: %d skills registered", len(registry.skills))
+
+                self.agent_graph = create_agent_graph(llm, tools, appointment_service=self.appointment_service, llm_router=llm_router)
                 self._set_startup_step("graph_compile", "completed", "代理图已就绪。")
 
                 self._set_startup_step("knowledge_base_bootstrap", "completed", "知识库状态检查完成。")

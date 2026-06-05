@@ -1,3 +1,12 @@
+"""DocumentManager — CRUD facade for the knowledge base.
+
+Handles:
+    - Upload (PDF/MD/HTML via unstructured) → markdown conversion → chunking → indexing
+    - List / delete documents with vector store cleanup
+    - Official source sync (MedlinePlus, NHC, WHO) with content-hash dedup
+    - Knowledge base status reporting (document count, chunk count, recent imports)
+"""
+
 from pathlib import Path
 import logging
 import shutil

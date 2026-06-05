@@ -40,3 +40,25 @@ def system_status(
             stats=knowledge.get("stats") or {},
         ),
     )
+
+
+@router.get("/api/system/llm-status")
+def llm_status(
+    request: Request,
+    current_user: AuthenticatedUser = Depends(require_current_user),
+):
+    """Return circuit-breaker status for all LLM providers (admin only)."""
+    request.state.route_type = "llm_status"
+    if current_user.role != "admin":
+        return {"error": "Admin access required"}
+    container = get_container()
+    rag = container.rag_system
+    if rag.agent_graph is None:
+        return {"status": "not_initialized"}
+    # Retrieve the router from the RAG system's initialize() scope
+    try:
+        from llm_tiered_router import TieredLLMRouter
+        router = TieredLLMRouter.from_env()
+        return router.get_status()
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}

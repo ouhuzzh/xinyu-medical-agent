@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
 
-from document_chunker import DocumentChuncker  # noqa: E402
+from core.document_chunker import DocumentChuncker  # noqa: E402
 
 
 class DocumentMetadataFlowTests(unittest.TestCase):

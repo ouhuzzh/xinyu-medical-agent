@@ -1,3 +1,13 @@
+"""KnowledgeBaseSyncService — incremental sync from official medical sources.
+
+Key features:
+    - Content-hash dedup: only re-index documents whose SHA-256 hash has changed
+    - Soft delete: mark missing documents is_active=False, physically delete chunks
+    - PostgreSQL advisory lock: prevent concurrent sync runs on the same source
+    - Standard markdown rendering with YAML front matter
+    - Pluggable importers: MedlinePlus XML, NHC PDF, WHO HTML
+"""
+
 from __future__ import annotations
 import hashlib
 import json

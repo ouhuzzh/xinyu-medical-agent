@@ -1,3 +1,12 @@
+"""pgvector + tsvector hybrid search layer on PostgreSQL.
+
+Provides:
+    - PgVectorCollection: similarity_search (cosine distance), keyword_search (tsvector),
+      layered tiered search, RRF fusion, rerank (via external API)
+    - VectorDbManager: lifecycle (create_collection, get_collection, collection stats)
+    - Embedding via model_factory.get_embedding_model()
+"""
+
 import json
 from pathlib import Path
 import config
@@ -293,6 +302,8 @@ class PgVectorCollection:
             conn.commit()
 
     def similarity_search(self, query, k=4, score_threshold=None, source_types=None, rerank=True):
+        import time as _time
+        _t0 = _time.perf_counter()
         query_embedding = self._embeddings.embed_query(query)
         fetch_limit = max(config.RERANK_FETCH_K, k)
         source_types = [str(item).strip().lower() for item in (source_types or []) if str(item).strip()]
@@ -322,6 +333,7 @@ class PgVectorCollection:
                 )
                 rows = cur.fetchall()
 
+        vector_ms = (_time.perf_counter() - _t0) * 1000
         results = []
         for content, metadata, score in rows:
             score_value = float(score)
@@ -329,15 +341,22 @@ class PgVectorCollection:
                 continue
             meta = dict(metadata or {})
             meta["score"] = score_value
+            meta["_vector_latency_ms"] = round(vector_ms, 1)
             results.append(Document(page_content=content, metadata=meta))
 
         if not rerank:
             return results[:k]
 
+        _tr = _time.perf_counter()
         reranked = self._rerank_documents(query, results, k)
+        rerank_ms = (_time.perf_counter() - _tr) * 1000
+        for doc in reranked:
+            doc.metadata["_rerank_latency_ms"] = round(rerank_ms, 1)
         return reranked[:k]
 
     def keyword_search(self, query, k=4, source_types=None):
+        import time as _time
+        _t0 = _time.perf_counter()
         fetch_limit = max(config.KEYWORD_FETCH_K, k)
         source_types = [str(item).strip().lower() for item in (source_types or []) if str(item).strip()]
         where_clauses = ["coalesce(d.is_active, true) = true", "c.tsv @@ websearch_to_tsquery('simple', %s)"]
@@ -383,11 +402,13 @@ class PgVectorCollection:
                     )
                 rows = cur.fetchall()
 
+        kw_ms = (_time.perf_counter() - _t0) * 1000
         results = []
         for content, metadata, keyword_score in rows:
             meta = dict(metadata or {})
             meta["keyword_score"] = float(keyword_score or 0.0)
             meta["score"] = max(float(meta.get("score") or 0.0), float(keyword_score or 0.0))
+            meta["_keyword_latency_ms"] = round(kw_ms, 1)
             results.append(Document(page_content=content, metadata=meta))
         return results[:k]
 
