@@ -1,6 +1,7 @@
-import { useState, useRef, lazy, Suspense } from "react";
+import { useState, useRef, useCallback, lazy, Suspense } from "react";
 import Sidebar from "./components/Sidebar";
 import ClearConfirmDialog from "./components/ClearConfirmDialog";
+import LoginPage from "./pages/LoginPage";
 import { I18nProvider } from "./i18n";
 import { useTheme } from "./hooks/useTheme";
 import { useChatSession } from "./hooks/useChatSession";
@@ -9,6 +10,7 @@ import { useSystemStatus } from "./hooks/useSystemStatus";
 import { useSearch } from "./hooks/useSearch";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { exportChat } from "./lib/export";
+import { AUTH_TOKEN_KEY } from "./constants/app";
 
 const ChatPage = lazy(() => import("./pages/ChatPage"));
 const DocumentsPage = lazy(() => import("./pages/DocumentsPage"));
@@ -26,15 +28,35 @@ function AppInner() {
   const [activeView, setActiveView] = useState("chat");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [loggedIn, setLoggedIn] = useState(false);
   const composerRef = useRef(null);
   const { theme, toggleTheme } = useTheme();
-  const system = useSystemStatus();
+  const system = useSystemStatus({ onAuthExpired: () => setLoggedIn(false) });
+
+  const handleLogin = useCallback((accessToken, refreshToken) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(AUTH_TOKEN_KEY, accessToken);
+    }
+    system.setAuthToken(accessToken);
+    setLoggedIn(true);
+  }, [system]);
+
+  const handleLogout = useCallback(() => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem(AUTH_TOKEN_KEY);
+    }
+    system.setAuthToken("");
+    system.setCurrentUser(null);
+    setLoggedIn(false);
+  }, [system]);
+
   const chat = useChatSession({
     apiBaseUrl: system.apiBaseUrl,
     setApiBaseUrl: system.setApiBaseUrl,
     authToken: system.authToken,
     refreshStatus: system.refreshStatus,
     setIsConnected: system.setIsConnected,
+    enabled: loggedIn,
   });
   const documents = useDocuments({
     apiBaseUrl: system.apiBaseUrl,
@@ -70,6 +92,16 @@ function AppInner() {
   // Expose composerRef to ChatPage via chat object
   const chatWithRef = { ...chat, composerRef, search, onExport: handleExport };
 
+  // Login gate — show login page if not authenticated
+  if (!loggedIn) {
+    return (
+      <LoginPage
+        apiBaseUrl={system.apiBaseUrl}
+        onLogin={handleLogin}
+      />
+    );
+  }
+
   return (
     <div className="app">
       <Sidebar
@@ -82,10 +114,9 @@ function AppInner() {
         onMobileClose={() => setSidebarOpen(false)}
         theme={theme}
         onToggleTheme={toggleTheme}
-        authToken={system.authToken}
-        onSaveAuthToken={system.setAuthToken}
         currentUser={system.currentUser}
         canManageDocuments={system.isAdmin}
+        onLogout={handleLogout}
       />
 
       <Suspense fallback={<PageLoader />}>

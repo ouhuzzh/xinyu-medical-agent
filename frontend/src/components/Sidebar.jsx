@@ -1,5 +1,5 @@
 import React from "react";
-import { Activity, Database, MessageCircle, Trash2, ExternalLink, X } from "lucide-react";
+import { Activity, Database, MessageCircle, Trash2, ExternalLink, X, LogOut } from "lucide-react";
 import StatusIndicator from "./StatusIndicator";
 import XinyuLogo from "./XinyuLogo";
 import ThemeToggle from "./ThemeToggle";
@@ -14,20 +14,14 @@ const Sidebar = React.memo(function Sidebar({
   onMobileClose,
   theme,
   onToggleTheme,
-  authToken,
-  onSaveAuthToken,
   currentUser,
   canManageDocuments,
+  onLogout,
 }) {
-  const [draftToken, setDraftToken] = React.useState(authToken || "");
   const systemState = status?.state || "preparing";
   const kbState = status?.knowledge_base?.status || "not_checked";
   const stats = status?.knowledge_base?.stats || {};
   const gradioUrl = "http://127.0.0.1:7860";
-
-  React.useEffect(() => {
-    setDraftToken(authToken || "");
-  }, [authToken]);
 
   function openGradioAdmin() {
     const opened = window.open(gradioUrl, "_blank", "noopener,noreferrer");
@@ -110,26 +104,22 @@ const Sidebar = React.memo(function Sidebar({
         </div>
 
         <div className="sidebar-actions">
-          <div className="sidebar-auth-card">
-            <div className="sidebar-auth-card__head">
-              <strong>Bearer Token</strong>
-              <span>{currentUser ? `${currentUser.user_id} · ${currentUser.role}` : "未认证"}</span>
+          {currentUser && (
+            <div className="sidebar-auth-card">
+              <div className="sidebar-auth-card__head">
+                <strong>{currentUser.username || currentUser.user_id}</strong>
+                <span className="role-badge">{currentUser.role === "admin" ? "管理员" : "用户"}</span>
+              </div>
+              <button
+                type="button"
+                className="sidebar-logout-btn"
+                onClick={onLogout}
+              >
+                <LogOut size={14} />
+                退出登录
+              </button>
             </div>
-            <input
-              type="password"
-              value={draftToken}
-              onChange={(event) => setDraftToken(event.target.value)}
-              placeholder="输入 Bearer Token"
-              className="sidebar-auth-card__input"
-            />
-            <button
-              type="button"
-              className="secondary-btn"
-              onClick={() => onSaveAuthToken?.(draftToken)}
-            >
-              保存 Token
-            </button>
-          </div>
+          )}
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
           <button
             type="button"

@@ -2665,3 +2665,165 @@ button:disabled {
   max-height: calc(100vh - 16px);
   overflow-y: auto;
 }
+
+/* =============================================
+   Login Page
+   ============================================= */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--slate-50) 0%, var(--blue-50) 100%);
+  padding: 24px;
+}
+
+.login-card {
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.08);
+  padding: 40px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.login-card__brand {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-card__brand h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--slate-800);
+  margin: 12px 0 4px;
+}
+
+.login-card__brand p {
+  font-size: 14px;
+  color: var(--slate-400);
+}
+
+.login-card__form h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--slate-700);
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.login-card__field {
+  margin-bottom: 16px;
+}
+
+.login-card__field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--slate-500);
+  margin-bottom: 6px;
+}
+
+.login-card__field input {
+  width: 100%;
+  padding: 10px 14px;
+  font-size: 15px;
+  border: 1.5px solid var(--slate-200);
+  border-radius: 8px;
+  background: var(--slate-50);
+  color: var(--slate-800);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.login-card__field input:focus {
+  border-color: var(--blue-400);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.login-card__error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #dc2626;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  margin-bottom: 16px;
+}
+
+.login-card__submit {
+  width: 100%;
+  padding: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--blue-500);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-top: 4px;
+}
+
+.login-card__submit:hover {
+  background: var(--blue-600);
+}
+
+.login-card__submit:disabled {
+  background: var(--slate-300);
+  cursor: not-allowed;
+}
+
+.login-card__switch {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 14px;
+  color: var(--slate-400);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--blue-500);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 0 0 4px;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+/* =============================================
+   Sidebar Logout
+   ============================================= */
+.role-badge {
+  font-size: 11px;
+  background: var(--slate-100);
+  color: var(--slate-500);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.sidebar-logout-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--red-500);
+  background: var(--red-50);
+  border: 1px solid var(--red-100);
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: background 0.15s;
+}
+
+.sidebar-logout-btn:hover {
+  background: var(--red-100);
+}

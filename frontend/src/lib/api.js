@@ -163,3 +163,37 @@ export function buildStreamRequest(apiBaseUrl, authToken, threadId, message) {
     ),
   };
 }
+
+// --- Auth API ---
+
+export function loginUser(apiBaseUrl, username, password) {
+  return apiFetchJson(
+    "/api/auth/login",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    },
+    apiBaseUrl,
+    () => {},
+    "",
+  );
+}
+
+export function registerUser(apiBaseUrl, username, password, displayName) {
+  return apiFetchJson(
+    "/api/auth/register",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password, display_name: displayName }),
+    },
+    apiBaseUrl,
+    () => {},
+    "",
+  );
+}
+
+export function fetchUserProfile(apiBaseUrl, authToken) {
+  return apiFetchJson("/api/auth/profile", undefined, apiBaseUrl, () => {}, authToken);
+}
