@@ -2670,12 +2670,14 @@ button:disabled {
    Login Page
    ============================================= */
 .login-page {
-  min-height: 100vh;
+  position: fixed;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: linear-gradient(160deg, #f0f4ff 0%, #e8f0fe 30%, #fdf2f8 70%, #fef3c7 100%);
   padding: 24px;
+  z-index: 100;
 }
 
 .login-card {
@@ -2686,8 +2688,8 @@ button:disabled {
     0 12px 40px rgba(0, 0, 0, 0.06),
     0 0 0 1px rgba(0, 0, 0, 0.03);
   padding: 44px 40px 36px;
-  width: 100%;
-  max-width: 400px;
+  width: 400px;
+  max-width: calc(100vw - 48px);
 }
 
 .login-card__brand {
