@@ -104,22 +104,20 @@ const Sidebar = React.memo(function Sidebar({
         </div>
 
         <div className="sidebar-actions">
-          {currentUser && (
-            <div className="sidebar-auth-card">
-              <div className="sidebar-auth-card__head">
-                <strong>{currentUser.username || currentUser.user_id}</strong>
-                <span className="role-badge">{currentUser.role === "admin" ? "管理员" : "用户"}</span>
-              </div>
-              <button
-                type="button"
-                className="sidebar-logout-btn"
-                onClick={onLogout}
-              >
-                <LogOut size={14} />
-                退出登录
-              </button>
+          <div className="sidebar-auth-card">
+            <div className="sidebar-auth-card__head">
+              <strong>{currentUser ? (currentUser.username || currentUser.user_id) : "已登录"}</strong>
+              <span className="role-badge">{currentUser?.role === "admin" ? "管理员" : "用户"}</span>
             </div>
-          )}
+            <button
+              type="button"
+              className="sidebar-logout-btn"
+              onClick={onLogout}
+            >
+              <LogOut size={14} />
+              退出登录
+            </button>
+          </div>
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
           <button
             type="button"
