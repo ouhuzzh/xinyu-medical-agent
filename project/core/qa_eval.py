@@ -1,3 +1,12 @@
+"""Retrieval quality evaluator — offline benchmarking for the RAG pipeline.
+
+Evaluates:
+    - Retrieval quality: source type match, keyword coverage, confidence buckets
+    - Answer quality: keyword coverage, safety keywords, tone (patient-friendly vs clinical)
+    - Route quality: intent classification hit rate, compound request handling
+    - Supports pipeline_config for ablation studies
+"""
+
 from __future__ import annotations
 import json
 import re
@@ -150,6 +159,10 @@ class RetrievalEvalResult:
     retrieved_source_types: List[str]
     answer_text: str
     snippets: List[str]
+    retrieval_latency_ms: float = 0.0
+    vector_search_latency_ms: float = 0.0
+    keyword_search_latency_ms: float = 0.0
+    rerank_latency_ms: float = 0.0
 
     def to_dict(self):
         return asdict(self)
@@ -242,10 +255,12 @@ def _confidence_bucket_from_docs(docs) -> str:
 
 
 class RetrievalQualityEvaluator:
-    def __init__(self, collection, *, limit: int = 3, score_threshold: float = 0.7):
+    def __init__(self, collection, *, limit: int = 3, score_threshold: float = 0.7,
+                 pipeline_config=None):
         self.tool_factory = ToolFactory(collection)
         self.limit = limit
         self.score_threshold = score_threshold
+        self.pipeline_config = pipeline_config
 
     @staticmethod
     def _score_answer(sample: QAEvalSample, answer_text: str) -> dict:
@@ -334,11 +349,37 @@ class RetrievalQualityEvaluator:
             "topic_focus": "",
         }
         route_result = analyze_turn(route_state)
-        docs = self.tool_factory.search_documents(
-            search_query,
-            limit=self.limit,
-            score_threshold=self.score_threshold,
-        )
+
+        import time as _time
+        t0 = _time.perf_counter()
+        # Use pipeline_config-aware search if config is provided
+        if self.pipeline_config is not None:
+            docs = self.tool_factory.search_documents_with_config(
+                search_query,
+                limit=self.limit,
+                score_threshold=self.score_threshold,
+                pipeline_config=self.pipeline_config,
+            )
+        else:
+            docs = self.tool_factory.search_documents(
+                search_query,
+                limit=self.limit,
+                score_threshold=self.score_threshold,
+            )
+        retrieval_latency_ms = (_time.perf_counter() - t0) * 1000
+
+        # Extract per-component latency from doc metadata
+        vector_latency = 0.0
+        keyword_latency = 0.0
+        rerank_latency = 0.0
+        for doc in docs:
+            meta = doc.metadata or {}
+            if meta.get("_vector_latency_ms"):
+                vector_latency = max(vector_latency, float(meta["_vector_latency_ms"]))
+            if meta.get("_keyword_latency_ms"):
+                keyword_latency = max(keyword_latency, float(meta["_keyword_latency_ms"]))
+            if meta.get("_rerank_latency_ms"):
+                rerank_latency = max(rerank_latency, float(meta["_rerank_latency_ms"]))
         preferred_layers = self.tool_factory.preferred_source_layers(search_query)
         confidence_bucket = _confidence_bucket_from_docs(docs)
         retrieved_sources = [str((doc.metadata or {}).get("source", "")) for doc in docs]
@@ -441,6 +482,10 @@ class RetrievalQualityEvaluator:
             retrieved_source_types=retrieved_source_types,
             answer_text=answer_text or "",
             snippets=[doc.page_content[:220] for doc in docs],
+            retrieval_latency_ms=round(retrieval_latency_ms, 1),
+            vector_search_latency_ms=round(vector_latency, 1),
+            keyword_search_latency_ms=round(keyword_latency, 1),
+            rerank_latency_ms=round(rerank_latency, 1),
         )
 
     def evaluate_samples(

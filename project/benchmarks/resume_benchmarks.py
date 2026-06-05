@@ -9,7 +9,7 @@ from typing import Iterable, List
 
 import config
 from core.chat_interface import ChatInterface
-from document_chunker import DocumentChuncker
+from core.document_chunker import DocumentChuncker
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_text_splitters import RecursiveCharacterTextSplitter
