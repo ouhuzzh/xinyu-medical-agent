@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Annotated, Set, Dict
+from typing import Any, List, Annotated, Set, Dict
 from langgraph.graph import MessagesState
 import operator
 
@@ -57,6 +57,7 @@ class State(MessagesState):
     rewrittenQuestions: List[str] = []
     grounding_evidence_score: float | None = None
     agent_answers: Annotated[List[dict], accumulate_or_reset] = []
+    skill_data: Dict[str, Any] = {}
 
 class AgentState(MessagesState):
     """State for individual agent subgraph"""

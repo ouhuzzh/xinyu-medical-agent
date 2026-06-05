@@ -1,3 +1,14 @@
+"""LangGraph tool definitions for the agentic RAG pipeline.
+
+Key components:
+    - ToolFactory: creates search_child_chunks and retrieve_parent_chunks tools
+    - Layered similarity search with source-type priority tiers
+    - Hybrid retrieval: pgvector cosine + tsvector keyword → RRF fusion → rerank
+    - Document grading, evidence sufficiency check, and one-shot retry
+    - Grounding guardrail: safety disclaimers for medical answers
+    - Retrieval logging and context tracking via ContextVar
+"""
+
 from __future__ import annotations
 from contextvars import ContextVar
 from typing import List
@@ -313,11 +324,19 @@ class ToolFactory:
     def _rrf_fuse(vector_results: List[Document], keyword_results: List[Document], limit: int) -> List[Document]:
         fused_scores = {}
         chosen_docs = {}
-        for result_set in (vector_results, keyword_results):
+        # Track which result set each chosen doc came from
+        for result_set, _tag in ((vector_results, "vector"), (keyword_results, "keyword")):
             for rank, doc in enumerate(result_set, start=1):
                 key = ToolFactory._doc_key(doc)
                 fused_scores[key] = fused_scores.get(key, 0.0) + (1.0 / (_RRF_K + rank))
-                chosen_docs.setdefault(key, doc)
+                if key not in chosen_docs:
+                    chosen_docs[key] = doc
+                # Merge latency metadata from both result sets
+                existing = chosen_docs[key].metadata
+                new_meta = doc.metadata or {}
+                for lat_key in ("_vector_latency_ms", "_keyword_latency_ms", "_rerank_latency_ms"):
+                    if lat_key in new_meta and lat_key not in existing:
+                        existing[lat_key] = new_meta[lat_key]
 
         fused_docs = []
         for key, doc in chosen_docs.items():
@@ -399,7 +418,15 @@ class ToolFactory:
                 ]
             return results[:limit]
 
-    def _layered_similarity_search(self, query: str, limit: int, score_threshold: float) -> List[Document]:
+    def _layered_similarity_search(self, query: str, limit: int, score_threshold: float,
+                                    pipeline_config=None) -> List[Document]:
+        # Resolve effective flags: pipeline_config overrides config module globals
+        use_hybrid = config.ENABLE_HYBRID_RETRIEVAL
+        use_rerank = config.ENABLE_RERANK
+        if pipeline_config is not None:
+            use_hybrid = pipeline_config.enable_hybrid_search
+            use_rerank = pipeline_config.enable_rerank
+
         per_tier_limit = max(limit, 3)
         layered_results = []
         source_layers = self._preferred_source_layers(query)
@@ -412,7 +439,7 @@ class ToolFactory:
                 rerank=False,
             )
             tier_results = vector_results
-            if config.ENABLE_HYBRID_RETRIEVAL:
+            if use_hybrid:
                 keyword_results = self._keyword_search_with_optional_filters(
                     query,
                     limit=per_tier_limit,
@@ -435,7 +462,7 @@ class ToolFactory:
                 rerank=False,
             )
             fallback_results = fallback_vector_results
-            if config.ENABLE_HYBRID_RETRIEVAL:
+            if use_hybrid:
                 fallback_keyword_results = self._keyword_search_with_optional_filters(
                     query,
                     limit=max(limit * 2, 6),
@@ -449,14 +476,46 @@ class ToolFactory:
             layered_results = self._dedupe_docs(layered_results + fallback_results)
 
         layered_results = self._sort_docs_by_source_priority(layered_results, preferred_layers=source_layers)
-        rerank_candidates = getattr(self.collection, "rerank_candidates", None)
-        if callable(rerank_candidates):
-            layered_results = rerank_candidates(query, layered_results, limit)
-            layered_results = self._sort_docs_by_source_priority(layered_results, preferred_layers=source_layers)
+        if use_rerank:
+            import time as _time
+            rerank_candidates = getattr(self.collection, "rerank_candidates", None)
+            if callable(rerank_candidates):
+                _tr0 = _time.perf_counter()
+                layered_results = rerank_candidates(query, layered_results, limit)
+                rerank_ms = (_time.perf_counter() - _tr0) * 1000
+                for doc in layered_results:
+                    doc.metadata["_rerank_latency_ms"] = round(rerank_ms, 1)
+                layered_results = self._sort_docs_by_source_priority(layered_results, preferred_layers=source_layers)
         return layered_results[:limit]
 
     def search_documents(self, query: str, limit: int = 4, score_threshold: float = 0.7) -> List[Document]:
         return self._layered_similarity_search(query, limit=limit, score_threshold=score_threshold)
+
+    def search_documents_with_config(self, query: str, limit: int = 4,
+                                      score_threshold: float = 0.7,
+                                      pipeline_config=None) -> List[Document]:
+        """Search with pipeline config overrides for ablation studies.
+
+        Also attaches per-component latency metadata to each doc for
+        downstream latency reporting.
+        """
+        import time as _time
+
+        # Track per-component latency
+        vector_t0 = _time.perf_counter()
+        results = self._layered_similarity_search(
+            query, limit=limit, score_threshold=score_threshold,
+            pipeline_config=pipeline_config,
+        )
+        total_ms = (_time.perf_counter() - vector_t0) * 1000
+
+        # Stamp latency metadata on results for downstream consumption
+        for doc in results:
+            meta = doc.metadata if doc.metadata is not None else {}
+            meta["_retrieval_latency_ms"] = round(total_ms, 1)
+            doc.metadata = meta
+
+        return results
 
     def _log_retrieval(
         self,

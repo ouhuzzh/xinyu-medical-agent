@@ -38,8 +38,15 @@ def _build_checkpointer():
         return PersistentInMemorySaver(config.LANGGRAPH_CHECKPOINT_PATH)
     return InMemorySaver()
 
-def create_agent_graph(llm, tools_list, appointment_service=None):
-    llm_with_tools = llm.bind_tools(tools_list)
+def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=None):
+    # Determine which LLM to use for each tier of node
+    _light_llm = llm
+    _strong_llm = llm
+    if llm_router is not None and llm_router.has_tiers:
+        _light_llm = llm_router.get_llm("light")
+        _strong_llm = llm_router.get_llm("strong")
+
+    llm_with_tools = _strong_llm.bind_tools(tools_list)
     tool_node = ToolNode(tools_list)
 
     checkpointer = _build_checkpointer()
@@ -48,8 +55,8 @@ def create_agent_graph(llm, tools_list, appointment_service=None):
     agent_builder = StateGraph(AgentState)
     agent_builder.add_node("orchestrator", partial(orchestrator, llm_with_tools=llm_with_tools))
     agent_builder.add_node("tools", tool_node)
-    agent_builder.add_node("compress_context", partial(compress_context, llm=llm))
-    agent_builder.add_node("fallback_response", partial(fallback_response, llm=llm))
+    agent_builder.add_node("compress_context", partial(compress_context, llm=_strong_llm))
+    agent_builder.add_node("fallback_response", partial(fallback_response, llm=_strong_llm))
     agent_builder.add_node(should_compress_context)
     agent_builder.add_node(collect_answer)
 
@@ -63,31 +70,63 @@ def create_agent_graph(llm, tools_list, appointment_service=None):
     agent_subgraph = agent_builder.compile()
 
     graph_builder = StateGraph(State)
-    graph_builder.add_node("summarize_history", partial(summarize_history, llm=llm))
+    # light tier: intent classification, summarization, query planning
+    graph_builder.add_node("summarize_history", partial(summarize_history, llm=_light_llm))
     graph_builder.add_node("analyze_turn", analyze_turn)
-    graph_builder.add_node("intent_router", partial(intent_router, llm=llm))
-    graph_builder.add_node("rewrite_query", partial(rewrite_query, llm=llm))
-    graph_builder.add_node("plan_retrieval_queries", partial(plan_retrieval_queries, llm=llm))
-    graph_builder.add_node("recommend_department", partial(recommend_department, llm=llm))
-    graph_builder.add_node("handle_appointment_skill", partial(handle_appointment_skill, llm=llm, appointment_service=appointment_service))
-    graph_builder.add_node("handle_appointment", partial(handle_appointment, llm=llm, appointment_service=appointment_service))
-    graph_builder.add_node("handle_cancel_appointment", partial(handle_cancel_appointment, llm=llm, appointment_service=appointment_service))
+    graph_builder.add_node("intent_router", partial(intent_router, llm=_light_llm))
+    graph_builder.add_node("rewrite_query", partial(rewrite_query, llm=_light_llm))
+    graph_builder.add_node("plan_retrieval_queries", partial(plan_retrieval_queries, llm=_light_llm))
+    # strong tier: answer generation, department recommendation
+    graph_builder.add_node("recommend_department", partial(recommend_department, llm=_strong_llm))
+    graph_builder.add_node("handle_appointment_skill", partial(handle_appointment_skill, llm=_strong_llm, appointment_service=appointment_service))
+    graph_builder.add_node("handle_appointment", partial(handle_appointment, llm=_strong_llm, appointment_service=appointment_service))
+    graph_builder.add_node("handle_cancel_appointment", partial(handle_cancel_appointment, llm=_strong_llm, appointment_service=appointment_service))
     graph_builder.add_node(request_clarification)
     graph_builder.add_node("prepare_secondary_turn", prepare_secondary_turn)
     graph_builder.add_node("agent", agent_subgraph)
-    graph_builder.add_node("grounded_answer_generation", partial(grounded_answer_generation, llm=llm))
-    graph_builder.add_node("answer_grounding_check", partial(answer_grounding_check, llm=llm))
+    graph_builder.add_node("grounded_answer_generation", partial(grounded_answer_generation, llm=_strong_llm))
+    graph_builder.add_node("answer_grounding_check", partial(answer_grounding_check, llm=_strong_llm))
+
+    # Register skill nodes (if any skills are registered)
+    _skill_route_targets = {}
+    try:
+        from skills.registry import get_skill_registry
+        registry = get_skill_registry()
+        if registry.skills:
+            registry.register_all_nodes(
+                graph_builder,
+                llm_router=llm_router,
+                tools_list=tools_list,
+                services={"appointment_service": appointment_service},
+            )
+            _skill_route_targets = registry.get_route_mapping()
+    except Exception:
+        pass  # Skills not available
 
     graph_builder.add_edge(START, "summarize_history")
     graph_builder.add_edge("summarize_history", "analyze_turn")
     graph_builder.add_edge("analyze_turn", "intent_router")
-    graph_builder.add_conditional_edges("intent_router", route_after_intent, {
+
+    # Build the intent_router conditional edges mapping, merging static + skill routes
+    _intent_route_map = {
         "rewrite_query": "rewrite_query",
         "recommend_department": "recommend_department",
         "handle_appointment_skill": "handle_appointment_skill",
         "request_clarification": "request_clarification",
         "__end__": END,
-    })
+    }
+    # Add skill route targets (e.g., "greeting_handler")
+    for intent_label, node_name in _skill_route_targets.items():
+        if node_name not in _intent_route_map.values():
+            _intent_route_map[node_name] = node_name
+
+    graph_builder.add_conditional_edges("intent_router", route_after_intent, _intent_route_map)
+
+    # Skill handler nodes that don't have their own edges need a path to END
+    for intent_label, node_name in _skill_route_targets.items():
+        if node_name not in ("rewrite_query", "recommend_department",
+                              "handle_appointment_skill", "request_clarification"):
+            graph_builder.add_edge(node_name, END)
     graph_builder.add_conditional_edges("rewrite_query", route_after_rewrite, {
         "request_clarification": "request_clarification",
         "plan_retrieval_queries": "plan_retrieval_queries",

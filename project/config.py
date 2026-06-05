@@ -1,3 +1,21 @@
+"""Central configuration — reads project/.env and exposes all settings as module-level constants.
+
+All env vars have sensible defaults for local development. See .env.example for the
+full list of overridable settings.
+
+Groups:
+    - Directory paths (MARKDOWN_DIR, RUNTIME_DIR, etc.)
+    - Multi-provider model config (LLM, embedding, rerank)
+    - PostgreSQL + pgvector connection
+    - Redis session memory
+    - API auth, CORS, rate limiting, upload limits
+    - RAG relevance/confidence thresholds
+    - Knowledge base sync (official sources, scheduling)
+    - Text splitter (chunk size, overlap)
+    - Agent graph limits (iterations, tool calls, recursion)
+    - Observability (Langfuse)
+"""
+
 from __future__ import annotations
 
 import json
@@ -74,6 +92,13 @@ DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+
+# --- Tiered LLM Routing ---
+LLM_TIERS_JSON = os.environ.get("LLM_TIERS_JSON", "")
+LLM_FALLBACK_PROVIDER = os.environ.get("LLM_FALLBACK_PROVIDER", "")
+
+# --- Skill Plugin Framework ---
+SKILLS_ENABLED = os.environ.get("SKILLS_ENABLED", "false").lower() == "true"
 
 # Backward-compatible aliases used by the current vector layer.
 DENSE_MODEL = EMBEDDING_MODEL

@@ -110,6 +110,23 @@ def _intent_for_clarification_target(target: str, current_intent: str) -> str:
 
 
 def _classify_query_by_rules(user_query: str, *, conversation_summary: str = "", recent_context: str = "", topic_focus: str = "") -> tuple[str, str]:
+    # Try skill registry first (if enabled and skills registered)
+    try:
+        from skills.registry import get_skill_registry
+        registry = get_skill_registry()
+        if registry.skills:
+            context = {
+                "conversation_summary": conversation_summary,
+                "recent_context": recent_context,
+                "topic_focus": topic_focus,
+            }
+            skill_match = registry.classify_intent(user_query, context=context)
+            if skill_match:
+                intent, skill_name = skill_match
+                return intent, f"skill:{skill_name}"
+    except Exception:
+        pass  # Skill registry not available — fall through to rules
+
     if _looks_like_greeting(user_query):
         return "greeting", "greeting_rule"
     if _looks_like_explicit_cancel_intent(user_query):

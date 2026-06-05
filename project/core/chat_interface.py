@@ -1,3 +1,13 @@
+"""ChatInterface — the main facade between FastAPI and the LangGraph agent graph.
+
+Handles:
+    - SSE streaming of AI responses and system messages
+    - Session state read/write via Redis (with in-memory fallback)
+    - Long-term summary persistence to PostgreSQL
+    - Thread-level checkpoint resume for interrupted flows
+    - Tool call rendering and error fallback messages
+"""
+
 import json
 import logging
 import re
@@ -69,6 +79,7 @@ SESSION_STATE_DEFAULTS = {
     "pending_action_payload": {},
     "pending_confirmation_id": "",
     "pending_candidates": [],
+    "skill_data": {},
 }
 
 # --- Helpers ---

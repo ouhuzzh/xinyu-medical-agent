@@ -4,18 +4,35 @@ from langgraph.types import Send
 from .graph_state import State, AgentState
 from config import MAX_ITERATIONS, MAX_TOOL_CALLS
 
-def route_after_intent(state: State) -> Literal["rewrite_query", "recommend_department", "handle_appointment_skill", "request_clarification", "__end__"]:
+def route_after_intent(state: State) -> str:
+    """Route based on intent.  Merges static routes with skill-registered routes."""
+    # Static routing table (existing behavior)
+    _STATIC_ROUTES = {
+        "greeting": "__end__",
+        "triage": "recommend_department",
+        "appointment": "handle_appointment_skill",
+        "cancel_appointment": "handle_appointment_skill",
+        "clarification": "request_clarification",
+    }
+
     intent = state.get("intent", "")
-    if intent == "greeting":
-        return "__end__"
-    if intent == "triage":
-        return "recommend_department"
-    if intent == "appointment":
-        return "handle_appointment_skill"
-    if intent == "cancel_appointment":
-        return "handle_appointment_skill"
-    if intent == "clarification":
-        return "request_clarification"
+
+    # Check static routes first
+    if intent in _STATIC_ROUTES:
+        return _STATIC_ROUTES[intent]
+
+    # Check skill-registered routes
+    try:
+        from skills.registry import get_skill_registry
+        registry = get_skill_registry()
+        if registry.skills:
+            skill_routes = registry.get_route_mapping()
+            if intent in skill_routes:
+                return skill_routes[intent]
+    except Exception:
+        pass
+
+    # Default: medical RAG pipeline
     return "rewrite_query"
 
 
