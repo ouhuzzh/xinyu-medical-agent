@@ -549,7 +549,7 @@ class ChatInterface:
                 if session_state:
                     self.rag_system.agent_graph.update_state(graph_config, self._graph_state_from_session(active_thread_id, session_state))
                 if not session_state:
-                    self.rag_system.agent_graph.update_state(graph_config, {"thread_id": active_thread_id})
+                    self.rag_system.agent_graph.update_state(graph_config, {"thread_id": active_thread_id, "agent_answers": [{"__reset__": True}]})
                 stream_input = {
                     "messages": [*state_messages, *stored_messages, HumanMessage(content=user_message)],
                     "request_id": request_id,
@@ -591,6 +591,20 @@ class ChatInterface:
                     conversation_summary = latest_values.get("conversation_summary", "")
                     if conversation_summary:
                         self.rag_system.summary_store.save_summary(active_thread_id, conversation_summary, recent_count)
+
+            # Run summarize_history as post-chat cleanup (was in graph, now off critical path)
+            if combined_assistant_text:
+                try:
+                    from rag_agent.routing_nodes import summarize_history
+                    from model_factory import get_chat_model
+                    summary_llm = get_chat_model().with_config(temperature=0.2)
+                    summary_result = summarize_history(latest_values, summary_llm)
+                    new_summary = (summary_result or {}).get("conversation_summary", "")
+                    if new_summary and new_summary != latest_values.get("conversation_summary", ""):
+                        recent_count = self.rag_system.session_memory.recent_message_count(active_thread_id)
+                        self.rag_system.summary_store.save_summary(active_thread_id, new_summary, recent_count)
+                except Exception:
+                    logger.warning("Post-chat summarization failed for thread_id=%s", active_thread_id, exc_info=True)
 
             # Extract user memories (async, fire-and-forget)
             if user_id and config.USER_MEMORY_ENABLED and config.USER_MEMORY_EXTRACTION_ENABLED and combined_assistant_text:

@@ -263,44 +263,17 @@ def rewrite_query(state: State, llm):
 
 
 def plan_retrieval_queries(state: State, llm):
+    """Build retrieval queries from rewritten questions using rule-based expansion.
+
+    Previously used an LLM call here, but the rule-based plan_queries fallback
+    produces equivalent quality for ~0 cost (no LLM latency).  The rewrite_query
+    node already does the heavy semantic lifting.
+    """
     rewritten = [item for item in (state.get("rewrittenQuestions") or []) if str(item).strip()]
     original_query = state.get("originalQuery") or state.get("primary_user_query") or ""
-    recent_context = state.get("recent_context", "")
-    topic_focus = state.get("topic_focus", "")
     base_query = rewritten[0] if rewritten else original_query
-    fallback_plan = plan_queries(base_query, topic_focus=topic_focus, recent_context=recent_context)
-
-    if not base_query:
-        return {"planned_queries": fallback_plan}
-
-    try:
-        planner = _structured_output_llm(llm, RetrievalQueryPlan, temperature=0.1)
-        response = planner.invoke(
-            [
-                SystemMessage(content=get_retrieval_query_plan_prompt()),
-                HumanMessage(
-                    content=(
-                        f"Original query:\n{original_query}\n\n"
-                        f"Rewritten query:\n{base_query}\n\n"
-                        f"Recent context:\n{recent_context}\n\n"
-                        f"Topic focus:\n{topic_focus}"
-                    )
-                ),
-            ]
-        )
-        planned = []
-        seen = set()
-        for item in (response.queries or []) + fallback_plan:
-            text = re.sub(r"\s+", " ", str(item or "").strip())
-            key = text.lower()
-            if not text or key in seen:
-                continue
-            seen.add(key)
-            planned.append(text)
-        return {"planned_queries": planned[:4] or fallback_plan}
-    except Exception:
-        logger.exception("Failed to plan retrieval queries")
-        return {"planned_queries": fallback_plan}
+    planned = plan_queries(base_query, topic_focus=state.get("topic_focus", ""), recent_context=state.get("recent_context", ""))
+    return {"planned_queries": planned}
 
 
 # --- Agent Nodes ---
@@ -588,6 +561,11 @@ def answer_grounding_check(state: State, llm):
         for item in state.get("agent_answers") or []
         if str(item.get("confidence_bucket") or "").strip()
     ]
+    # Fast-path: skip grounding check when evidence is clearly strong
+    has_low = any(c in ("low", "no_evidence") for c in confidence_levels)
+    evidence_score = state.get("grounding_evidence_score")
+    if not has_low and evidence_score is not None and evidence_score >= config.RAG_HIGH_CONFIDENCE_SCORE:
+        return {}
     evidence_score = state.get("grounding_evidence_score")
     pseudo_docs = []
     if evidence_score is not None:

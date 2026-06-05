@@ -103,8 +103,11 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     except Exception:
         pass  # Skills not available
 
-    graph_builder.add_edge(START, "summarize_history")
-    graph_builder.add_edge("summarize_history", "analyze_turn")
+    # summarize_history was moved off the critical path — the summary from the
+    # previous turn is pre-loaded via update_state before graph invocation.
+    # It now runs as post-chat cleanup in ChatInterface to avoid blocking the
+    # user on the first token.
+    graph_builder.add_edge(START, "analyze_turn")
     graph_builder.add_edge("analyze_turn", "intent_router")
 
     # Build the intent_router conditional edges mapping, merging static + skill routes
