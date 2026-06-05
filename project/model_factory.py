@@ -87,6 +87,52 @@ def get_chat_model(provider=None):
     raise ValueError(f"Unsupported LLM provider: {provider_name}")
 
 
+def get_chat_model_for_tier(*, provider: str, model: str, temperature: float,
+                            timeout: float, max_tokens: int):
+    """Create a chat model with explicit tier parameters.
+
+    Reuses the same provider logic as :func:`get_chat_model` but allows
+    overriding ``model``, ``temperature``, ``timeout`` and ``max_tokens``
+    per tier — without touching global config.
+    """
+    provider_name = provider.lower()
+
+    if provider_name == "deepseek":
+        api_key = _require_setting(config.DEEPSEEK_API_KEY, "DEEPSEEK_API_KEY", provider_name)
+        return _create_openai_chat(
+            model=model,
+            temperature=temperature,
+            api_key=api_key,
+            base_url=config.DEEPSEEK_BASE_URL,
+        )
+
+    if provider_name == "openai":
+        api_key = _require_setting(config.OPENAI_API_KEY, "OPENAI_API_KEY", provider_name)
+        return _create_openai_chat(
+            model=model,
+            temperature=temperature,
+            api_key=api_key,
+            base_url=config.OPENAI_BASE_URL or None,
+        )
+
+    if provider_name == "ollama":
+        from langchain_ollama import ChatOllama
+
+        kwargs = {
+            "model": model,
+            "temperature": temperature,
+            "base_url": config.OLLAMA_BASE_URL,
+            "timeout": timeout,
+        }
+        try:
+            return ChatOllama(**kwargs)
+        except TypeError:
+            kwargs.pop("timeout", None)
+            return ChatOllama(**kwargs)
+
+    raise ValueError(f"Unsupported LLM provider: {provider_name}")
+
+
 def get_embedding_model(provider=None):
     provider_name = (provider or config.ACTIVE_EMBEDDING_PROVIDER).lower()
 
