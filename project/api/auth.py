@@ -1,3 +1,12 @@
+"""Authentication module — JWT-first with static token backward compatibility.
+
+Auth flow:
+1. Bearer Token is checked against JWT tokens first (primary)
+2. Falls back to static API_AUTH_TOKENS (legacy/dev mode)
+3. JWT tokens carry user_id, username, role in the payload
+4. Static tokens map to user_id/role from config
+"""
+
 from __future__ import annotations
 
 import threading
@@ -16,6 +25,7 @@ class AuthenticatedUser:
     user_id: str
     role: str
     token: str
+    username: str = ""
 
 
 class InMemoryRateLimiter:
@@ -46,29 +56,62 @@ def _auth_error(detail: str, status_code: int = status.HTTP_401_UNAUTHORIZED):
     raise HTTPException(status_code=status_code, detail=detail, headers=headers)
 
 
+def _authenticate_jwt(token: str) -> AuthenticatedUser | None:
+    """Try to authenticate via JWT.  Returns AuthenticatedUser or None."""
+    from api.jwt_utils import decode_token
+    payload = decode_token(token)
+    if payload is None:
+        return None
+    if payload.get("type") != "access":
+        return None
+    user_id = str(payload.get("user_id", "")).strip()
+    username = str(payload.get("username", "")).strip()
+    role = str(payload.get("role", "user")).strip().lower()
+    if not user_id or role not in ("user", "admin"):
+        return None
+    return AuthenticatedUser(user_id=user_id, role=role, token=token, username=username)
+
+
+def _authenticate_static_token(token: str) -> AuthenticatedUser | None:
+    """Try to authenticate via static API_AUTH_TOKENS (legacy/dev mode)."""
+    auth_record = config.API_AUTH_TOKENS.get(token)
+    if not isinstance(auth_record, dict):
+        return None
+    user_id = str(auth_record.get("user_id") or "").strip()
+    role = str(auth_record.get("role") or "user").strip().lower()
+    if not user_id or role not in ("user", "admin"):
+        return None
+    return AuthenticatedUser(user_id=user_id, role=role, token=token, username=user_id)
+
+
 def require_current_user(
     request: Request,
     authorization: str | None = Header(default=None),
 ) -> AuthenticatedUser:
+    """Authenticate user — JWT first, then static token fallback."""
     if not authorization:
         _auth_error("缺少 Bearer Token。")
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         _auth_error("Bearer Token 格式无效。")
 
-    auth_record = config.API_AUTH_TOKENS.get(token.strip())
-    if not isinstance(auth_record, dict):
-        _auth_error("Bearer Token 无效。")
+    token = token.strip()
 
-    user_id = str(auth_record.get("user_id") or "").strip()
-    role = str(auth_record.get("role") or "user").strip().lower()
-    if not user_id or role not in {"user", "admin"}:
-        _auth_error("Bearer Token 配置无效。")
+    # Try JWT first
+    user = _authenticate_jwt(token)
+    if user is not None:
+        request.state.user_id = user.user_id
+        request.state.user_role = user.role
+        return user
 
-    user = AuthenticatedUser(user_id=user_id, role=role, token=token.strip())
-    request.state.user_id = user.user_id
-    request.state.user_role = user.role
-    return user
+    # Fallback to static token
+    user = _authenticate_static_token(token)
+    if user is not None:
+        request.state.user_id = user.user_id
+        request.state.user_role = user.role
+        return user
+
+    _auth_error("Token 无效或已过期。")
 
 
 def require_admin_user(

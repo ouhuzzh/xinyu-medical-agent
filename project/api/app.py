@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import config
 from api.dependencies import get_container
-from api.routes import chat, documents, system
+from api.routes import auth_routes, chat, documents, system
 
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,7 @@ def create_app() -> FastAPI:
                 response.headers["X-Request-ID"] = request_id
 
     app.include_router(system.router)
+    app.include_router(auth_routes.router)
     app.include_router(chat.router)
     app.include_router(documents.router)
     if config.APP_ENV != "development":

@@ -5,6 +5,7 @@ from core.chat_interface import ChatInterface
 from core.document_manager import DocumentManager
 from core.rag_system import RAGSystem
 from db.chat_session_store import ChatSessionStore
+from db.user_store import UserStore
 
 
 class ThreadLockRegistry:
@@ -31,6 +32,7 @@ class ApiContainer:
         self.chat_interface = ChatInterface(self.rag_system)
         self.document_manager = DocumentManager(self.rag_system)
         self.chat_sessions = ChatSessionStore()
+        self.user_store = UserStore()
         self.thread_locks = ThreadLockRegistry()
 
     def get_thread_lock(self, thread_id: str):

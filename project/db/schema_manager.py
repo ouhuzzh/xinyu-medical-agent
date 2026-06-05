@@ -399,6 +399,28 @@ class SchemaManager:
                 """,
             ],
         ),
+        (
+            "013_users_table",
+            "User accounts table for registration/login authentication.",
+            [
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                    id              BIGSERIAL PRIMARY KEY,
+                    username        VARCHAR(64) NOT NULL UNIQUE,
+                    display_name    VARCHAR(128) NOT NULL DEFAULT '',
+                    password_hash   VARCHAR(256) NOT NULL,
+                    role            VARCHAR(32) NOT NULL DEFAULT 'user',
+                    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_users_username
+                ON users(username)
+                """,
+            ],
+        ),
     ]
 
     def __init__(self, conninfo: str):

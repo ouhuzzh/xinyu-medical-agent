@@ -142,6 +142,13 @@ API_RATE_LIMIT_CHAT_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_CHAT_PER_MIN
 API_RATE_LIMIT_UPLOADS_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_UPLOADS_PER_MINUTE", "6"))
 API_RATE_LIMIT_SYNCS_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_SYNCS_PER_MINUTE", "3"))
 
+# --- JWT Authentication ---
+JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "change-me-in-production-please")
+JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24h
+JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+PASSWORD_MIN_LENGTH = int(os.environ.get("PASSWORD_MIN_LENGTH", "6"))
+
 _DEFAULT_AUTH_TOKENS = (
     {
         "demo-user-token": {"user_id": "demo-user", "role": "user"},

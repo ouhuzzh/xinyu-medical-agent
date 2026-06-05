@@ -136,3 +136,33 @@ class OfficialSyncRequest(BaseModel):
 class OfficialSyncResponse(BaseModel):
     message: str
     result: dict[str, Any] = Field(default_factory=dict)
+
+
+# --- Auth schemas ---
+
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=2, max_length=64, description="用户名，支持中英文、数字、下划线")
+    password: str = Field(..., min_length=6, description="密码")
+    display_name: str = Field("", max_length=128, description="显示名称")
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1)
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str = Field(..., min_length=6)
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+class UserProfileResponse(BaseModel):
+    user_id: str
+    username: str
+    display_name: str
+    role: str
