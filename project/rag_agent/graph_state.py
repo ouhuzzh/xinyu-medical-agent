@@ -59,9 +59,6 @@ class State(MessagesState):
     agent_answers: Annotated[List[dict], accumulate_or_reset] = []
     skill_data: Dict[str, Any] = {}
     user_memories: str = ""
-    core_memory: str = ""
-    episodic_memories: str = ""
-    reflection_memories: str = ""
 
 class AgentState(MessagesState):
     """State for individual agent subgraph"""

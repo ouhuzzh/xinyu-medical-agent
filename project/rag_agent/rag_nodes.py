@@ -143,18 +143,12 @@ def rewrite_query(state: State, llm):
         }
 
     context_parts = []
-    if state.get("core_memory"):
-        context_parts.append(f"[Core Memory - Always Visible]\n{state['core_memory']}\n")
     if conversation_summary.strip():
         context_parts.append(f"Conversation Context:\n{conversation_summary}\n")
     if recent_context.strip():
         context_parts.append(f"Recent Dialogue Context:\n{recent_context}\n")
     if state.get("user_memories"):
         context_parts.append(f"Known user context:\n{state['user_memories']}\n")
-    if state.get("reflection_memories"):
-        context_parts.append(f"Insights about user:\n{state['reflection_memories']}\n")
-    if state.get("episodic_memories"):
-        context_parts.append(f"Relevant past conversations:\n{state['episodic_memories']}\n")
     if topic_focus.strip():
         context_parts.append(f"Topic focus:\n{topic_focus}\n")
     context_parts.append(f"User Query:\n{user_query}\n")

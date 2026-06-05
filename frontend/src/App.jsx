@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, lazy, Suspense } from "react";
+import React, { useState, useRef, useCallback, useEffect, lazy, Suspense } from "react";
 import Sidebar from "./components/Sidebar";
 import ClearConfirmDialog from "./components/ClearConfirmDialog";
 import LoginPage from "./pages/LoginPage";
@@ -10,7 +10,6 @@ import { useSystemStatus } from "./hooks/useSystemStatus";
 import { useSearch } from "./hooks/useSearch";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts";
 import { exportChat } from "./lib/export";
-import { initialAuthToken } from "./lib/api";
 import { AUTH_TOKEN_KEY } from "./constants/app";
 
 const ChatPage = lazy(() => import("./pages/ChatPage"));
@@ -29,12 +28,8 @@ function AppInner() {
   const [activeView, setActiveView] = useState("chat");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
-  // If there's already a stored token, start with loggedIn=true so we show the app
-  // immediately. useSystemStatus will gate with onAuthExpired if the token is bad.
-  const [loggedIn, setLoggedIn] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return !!(localStorage.getItem(AUTH_TOKEN_KEY) || initialAuthToken());
-  });
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   const composerRef = useRef(null);
   const { theme, toggleTheme } = useTheme();
   const system = useSystemStatus({ onAuthExpired: () => setLoggedIn(false) });
@@ -55,6 +50,20 @@ function AppInner() {
     system.setCurrentUser(null);
     setLoggedIn(false);
   }, [system]);
+
+  // Auto-login when token is valid (e.g. from localStorage or env var)
+  useEffect(() => {
+    if (system.currentUser && system.authToken) {
+      setLoggedIn(true);
+      setCheckingAuth(false);
+    } else if (!system.isConnected && system.authToken) {
+      // Token exists but API failed — could be network issue, keep showing login
+      setCheckingAuth(false);
+    } else if (!system.authToken) {
+      // No token at all — show login
+      setCheckingAuth(false);
+    }
+  }, [system.currentUser, system.authToken, system.isConnected]);
 
   const chat = useChatSession({
     apiBaseUrl: system.apiBaseUrl,
@@ -97,6 +106,11 @@ function AppInner() {
 
   // Expose composerRef to ChatPage via chat object
   const chatWithRef = { ...chat, composerRef, search, onExport: handleExport };
+
+  // Show brief loader while checking existing token
+  if (checkingAuth && system.authToken && !system.currentUser) {
+    return <PageLoader />;
+  }
 
   // Login gate — show login page if not authenticated
   if (!loggedIn) {

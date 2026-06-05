@@ -478,17 +478,11 @@ def intent_router(state: State, llm):
         user_memories_section = ""
         if state.get("user_memories"):
             user_memories_section = f"\nKnown user context:\n{state['user_memories']}\n"
-        if state.get("reflection_memories"):
-            user_memories_section += f"\nInsights about user:\n{state['reflection_memories']}\n"
-        core_memory_section = ""
-        if state.get("core_memory"):
-            core_memory_section = f"\n[Core Memory - Always Visible]\n{state['core_memory']}\n"
         response = llm_with_structure.invoke(
             [
                 SystemMessage(content=get_intent_router_prompt()),
                 HumanMessage(
                     content=(
-                        f"{core_memory_section}"
                         f"Conversation summary:\n{state.get('conversation_summary', '')}\n\n"
                         f"Recent dialogue context:\n{recent_context}\n"
                         f"{user_memories_section}"
@@ -619,15 +613,10 @@ def recommend_department(state: State, llm):
         user_memories_section = ""
         if state.get("user_memories"):
             user_memories_section = f"\nKnown user context:\n{state['user_memories']}\n"
-        if state.get("reflection_memories"):
-            user_memories_section += f"\nInsights about user:\n{state['reflection_memories']}\n"
-        core_memory_section = ""
-        if state.get("core_memory"):
-            core_memory_section = f"\n[Core Memory - Always Visible]\n{state['core_memory']}\n"
         response = llm_with_structure.invoke(
             [
                 SystemMessage(content=get_department_recommendation_prompt()),
-                HumanMessage(content=f"{core_memory_section}Conversation summary:\n{conversation_summary}\n{user_memories_section}\nUser query:\n{user_query}"),
+                HumanMessage(content=f"Conversation summary:\n{conversation_summary}\n{user_memories_section}\nUser query:\n{user_query}"),
             ]
         )
     except Exception:
