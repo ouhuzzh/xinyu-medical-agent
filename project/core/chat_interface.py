@@ -330,7 +330,7 @@ class ChatInterface:
                 f"- {danger_note}\n\n"
                 "这次回答**未充分基于知识库检索结果**，仅供一般健康信息参考，不能替代医生面对面诊断。你也可以再发一次问题，我会继续帮你细化。"
             )
-        return "刚才聊天链路短暂不稳定，但我还在。你可以再发一次问题，我会继续帮你处理。"
+        return "AI 暂时没能给出有效回答，可能是模型接口超时或异常。请稍后再试一次。"
 
     @staticmethod
     def _infer_risk_level(user_message: str, existing_state: dict):
