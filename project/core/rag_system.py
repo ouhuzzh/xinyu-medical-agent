@@ -24,6 +24,9 @@ from memory.summary_store import SummaryStore
 from memory.user_memory_store import UserMemoryStore
 from memory.memory_extractor import MemoryExtractor
 from db.chat_session_store import ChatSessionStore
+from mcp_integration.hospital_registry import HospitalRegistry
+from mcp_integration.user_hospital_store import UserHospitalStore
+from mcp_integration.user_mcp_pool import UserMCPPool
 from model_factory import get_chat_model
 from rag_agent.tools import ToolFactory
 from rag_agent.graph import create_agent_graph
@@ -46,6 +49,9 @@ class RAGSystem:
         self.user_memory_store = UserMemoryStore()
         self.chat_sessions = ChatSessionStore()
         self.memory_extractor = MemoryExtractor(self.user_memory_store, self.chat_sessions)
+        self.hospital_registry = HospitalRegistry()
+        self.user_hospital_store = UserHospitalStore()
+        self.user_mcp_pool = UserMCPPool(self.hospital_registry, self.user_hospital_store)
         self.appointment_service = AppointmentService()
         self.observability = Observability()
         self.document_manager = None
@@ -347,12 +353,23 @@ class RAGSystem:
                     from skills.registry import get_skill_registry
                     from skills.greeting_skill import GreetingSkill
                     from skills.medical_rag_skill import MedicalRagSkill
+                    from mcp_integration.mcp_skill import MCPSkill
                     registry = get_skill_registry()
                     registry.register(GreetingSkill())
                     registry.register(MedicalRagSkill())
+                    registry.register(MCPSkill())
                     logger.info("Skill plugin framework enabled: %d skills registered", len(registry.skills))
 
-                self.agent_graph = create_agent_graph(llm, tools, appointment_service=self.appointment_service, llm_router=llm_router)
+                extra_services = {
+                    "user_mcp_pool": self.user_mcp_pool,
+                    "chat_sessions": self.chat_sessions,
+                }
+                self.agent_graph = create_agent_graph(
+                    llm, tools,
+                    appointment_service=self.appointment_service,
+                    llm_router=llm_router,
+                    extra_services=extra_services,
+                )
                 self._set_startup_step("graph_compile", "completed", "代理图已就绪。")
 
                 self._set_startup_step("knowledge_base_bootstrap", "completed", "知识库状态检查完成。")

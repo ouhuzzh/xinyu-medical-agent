@@ -154,7 +154,10 @@ class UserMemoryStore:
         # Three-factor scoring
         scored = []
         for mem in candidates:
-            recency = self._recency_score(mem.get("last_accessed_at") or mem["created_at"])
+            recency = self._recency_score(
+                mem.get("last_accessed_at") or mem["created_at"],
+                memory_type=mem.get("memory_type", "fact"),
+            )
             importance = mem["importance"] / 10.0
             relevance = max(0.0, 1.0 - (mem.get("distance", 1.0)))
             score = (
@@ -211,6 +214,16 @@ class UserMemoryStore:
             "source_thread_id", "access_count", "last_accessed_at", "created_at", "updated_at",
         ]
         return [dict(zip(columns, row)) for row in rows]
+
+    def _update_importance(self, memory_id: int, new_importance: int):
+        """Update the importance of a memory (used for contradiction deprecation)."""
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE user_memories SET importance = %s, updated_at = NOW() WHERE id = %s",
+                    (new_importance, memory_id),
+                )
+            conn.commit()
 
     def clear_user_memories(self, user_id: str):
         """Delete all memories for a user (for testing/cleanup)."""
@@ -368,9 +381,24 @@ class UserMemoryStore:
         self._update_access_stats([m["id"] for m in result])
         return result
 
+    # P1: type-specific decay rates (lower = slower decay = stays relevant longer)
+    _TYPE_DECAY_RATES = {
+        "medical": 0.0005,     # very slow — allergies/chronic conditions persist
+        "preference": 0.002,   # moderate — preferences may change
+        "fact": 0.001,         # slow — personal facts are stable
+        "decision": 0.005,     # fast — decisions expire quickly
+    }
+
     @staticmethod
-    def _recency_score(timestamp) -> float:
-        """Exponential decay: recent items score higher.  ~1.0 within 1h, ~0.19 after 1 week."""
+    def _recency_score(timestamp, memory_type: str = "fact") -> float:
+        """Exponential decay with type-specific rates.
+
+        Lower decay rate = slower decay = stays relevant longer.
+        - medical: ~0.90 after 1 week, ~0.67 after 1 month
+        - fact: ~0.85 after 1 week, ~0.55 after 1 month
+        - preference: ~0.71 after 1 week, ~0.37 after 1 month
+        - decision: ~0.43 after 1 week, ~0.10 after 1 month
+        """
         if timestamp is None:
             return 0.5
         from datetime import datetime, timezone
@@ -379,7 +407,8 @@ class UserMemoryStore:
         now = datetime.now(timezone.utc)
         ts = timestamp if timestamp.tzinfo else timestamp.replace(tzinfo=timezone.utc)
         hours = max(0.0, (now - ts).total_seconds() / 3600)
-        return math.exp(-0.01 * hours)
+        rate = UserMemoryStore._TYPE_DECAY_RATES.get(memory_type, 0.001)
+        return math.exp(-rate * hours)
 
     def _update_access_stats(self, memory_ids: List[int]):
         """Increment access_count and set last_accessed_at for retrieved memories."""

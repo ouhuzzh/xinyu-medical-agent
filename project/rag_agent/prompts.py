@@ -257,12 +257,21 @@ Memory types:
 - medical: Medical information (chronic conditions, allergies, medications, past diagnoses, family medical history)
 - decision: Decisions the user made (chose a doctor, selected a time, declined a procedure)
 
+Each extracted memory object must have these keys:
+- memory_type: one of preference/fact/medical/decision
+- content: a single self-contained factual statement in Chinese
+- importance: 1-10 (10=life-threatening allergy, 7-9=chronic condition, 4-6=useful, 1-3=trivial)
+- action: "add" (default), "update" (modify existing), or "deprecate" (old info is no longer true)
+
 Rules:
 1. Extract ONLY user-specific, durable information. Do not extract ephemeral context.
 2. Each memory must be a single, self-contained factual statement in Chinese.
-3. Rate importance 1-10: 10=life-threatening allergy, 7-9=chronic condition/strong preference, 4-6=useful context, 1-3=trivial detail.
-4. Do NOT extract: greetings, general medical knowledge, questions asked, temporary states.
-5. Return a JSON array of objects with keys: memory_type, content, importance.
-6. Return an empty array [] if no memories should be extracted.
+3. If the user says something that contradicts an existing memory (e.g., "我血压正常了" vs "有高血压"),
+   use action="deprecate" for the old fact AND action="add" for the new fact.
+4. If the user clarifies or refines an existing memory (e.g., "不是每天头晕，是偶尔"),
+   use action="update" with the refined content.
+5. Do NOT extract: greetings, general medical knowledge, questions asked, temporary states.
+6. Return a JSON array of objects with keys: memory_type, content, importance, action.
+7. Return an empty array [] if no memories should be extracted.
 
 Return ONLY the JSON array, no explanation."""

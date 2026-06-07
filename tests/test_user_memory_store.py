@@ -12,17 +12,30 @@ from memory.user_memory_store import UserMemoryStore  # noqa: E402
 
 
 class TestUserMemoryStoreRecencyScore(unittest.TestCase):
-    """Test the static _recency_score method."""
+    """Test the static _recency_score method with type-based decay."""
 
     def test_recent_timestamp_scores_high(self):
         now = datetime.now(timezone.utc)
         score = UserMemoryStore._recency_score(now)
         self.assertGreater(score, 0.95)
 
-    def test_one_week_ago_scores_low(self):
+    def test_decision_decays_fast(self):
+        """Decision memories decay quickly — 1 week = ~43%."""
         one_week_ago = datetime.now(timezone.utc) - timedelta(days=7)
-        score = UserMemoryStore._recency_score(one_week_ago)
-        self.assertLess(score, 0.25)
+        score = UserMemoryStore._recency_score(one_week_ago, memory_type="decision")
+        self.assertLess(score, 0.50)  # 0.005 * 168 = 0.84 decay → ~0.43
+
+    def test_medical_decays_slow(self):
+        """Medical memories persist — 1 week still ~92%."""
+        one_week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        score = UserMemoryStore._recency_score(one_week_ago, memory_type="medical")
+        self.assertGreater(score, 0.85)  # 0.0005 * 168 = 0.084 → ~0.92
+
+    def test_one_month_decision_near_zero(self):
+        """Decision after 30 days should be effectively expired."""
+        one_month_ago = datetime.now(timezone.utc) - timedelta(days=30)
+        score = UserMemoryStore._recency_score(one_month_ago, memory_type="decision")
+        self.assertLess(score, 0.10)  # 0.005 * 720 = 3.6 → ~0.027
 
     def test_none_returns_default(self):
         score = UserMemoryStore._recency_score(None)

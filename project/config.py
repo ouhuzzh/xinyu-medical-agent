@@ -188,6 +188,16 @@ USER_MEMORY_SKIP_TRIVIAL_INTENT = os.environ.get("USER_MEMORY_SKIP_TRIVIAL_INTEN
 USER_MEMORY_CACHE_TTL_SECONDS = int(os.environ.get("USER_MEMORY_CACHE_TTL_SECONDS", "300"))  # 5min
 USER_MEMORY_CACHE_MAX_TURNS = int(os.environ.get("USER_MEMORY_CACHE_MAX_TURNS", "5"))
 
+# --- MCP (Model Context Protocol) Integration ---
+MCP_ENABLED = os.environ.get("MCP_ENABLED", "true").lower() == "true"
+MCP_DEFAULT_TIMEOUT_SECONDS = float(os.environ.get("MCP_DEFAULT_TIMEOUT_SECONDS", "10"))
+MCP_HEALTH_CHECK_INTERVAL_SECONDS = int(os.environ.get("MCP_HEALTH_CHECK_INTERVAL_SECONDS", "300"))
+MCP_TOOL_NAMESPACE_SEPARATOR = os.environ.get("MCP_TOOL_NAMESPACE_SEPARATOR", "__")
+# Fernet key (44-char base64) for encrypting per-user hospital tokens. Generate with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# If empty in development, falls back to a deterministic dev key (UNSAFE for production).
+MCP_TOKEN_ENCRYPTION_KEY = os.environ.get("MCP_TOKEN_ENCRYPTION_KEY", "")
+
 # --- Episodic Memory Configuration (L4) ---
 # 默认关闭，需要时在 .env 中设 EPISODIC_MEMORY_ENABLED=true
 EPISODIC_MEMORY_ENABLED = os.environ.get("EPISODIC_MEMORY_ENABLED", "false").lower() == "true"

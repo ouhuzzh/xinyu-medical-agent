@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import config
 from api.dependencies import get_container
-from api.routes import auth_routes, chat, documents, system
+from api.routes import auth_routes, chat, documents, hospitals, memory, system
 
 
 logger = logging.getLogger(__name__)
@@ -62,6 +62,8 @@ def create_app() -> FastAPI:
     app.include_router(auth_routes.router)
     app.include_router(chat.router)
     app.include_router(documents.router)
+    app.include_router(hospitals.router)
+    app.include_router(memory.router)
     if config.APP_ENV != "development":
         get_container()
     return app

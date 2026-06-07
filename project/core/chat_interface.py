@@ -475,9 +475,19 @@ class ChatInterface:
 
         text = ""
         if memories:
-            text = "\n".join(
-                f"- [{m['memory_type']}|{m['importance']}] {m['content']}" for m in memories
-            )
+            lines = ["[以下为用户相关记忆，请参考这些信息回答问题]"]
+            for m in memories:
+                mem_type = m.get("memory_type", "fact")
+                type_label = {"medical": "病史", "preference": "偏好", "fact": "事实", "decision": "决策"}.get(mem_type, mem_type)
+                # P4: add type label + priority hint for medical/decision
+                if mem_type == "medical":
+                    hint = " ← 用药安全相关，必须参考"
+                elif mem_type == "decision":
+                    hint = " ← 用户的近期操作意向"
+                else:
+                    hint = ""
+                lines.append(f"- [{type_label}|重要性:{m['importance']}] {m['content']}{hint}")
+            text = "\n".join(lines)
 
         self._set_memory_cache(user_id, thread_id, text)
         return text

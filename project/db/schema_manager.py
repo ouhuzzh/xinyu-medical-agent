@@ -421,6 +421,53 @@ class SchemaManager:
                 """,
             ],
         ),
+        (
+            "014_mcp_hospitals",
+            "MCP hospital registry and per-user encrypted credentials for remote appointment booking.",
+            [
+                # Platform-curated list of hospitals exposing MCP servers
+                """
+                CREATE TABLE IF NOT EXISTS hospitals (
+                    id              BIGSERIAL PRIMARY KEY,
+                    code            VARCHAR(64) NOT NULL UNIQUE,
+                    name            VARCHAR(128) NOT NULL,
+                    description     TEXT NOT NULL DEFAULT '',
+                    mcp_url         TEXT NOT NULL,
+                    auth_type       VARCHAR(32) NOT NULL DEFAULT 'bearer',
+                    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+                    created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_hospitals_code
+                ON hospitals(code)
+                """,
+                # Per-user encrypted tokens for hospital MCP servers
+                """
+                CREATE TABLE IF NOT EXISTS user_hospital_credentials (
+                    id                  BIGSERIAL PRIMARY KEY,
+                    user_id             VARCHAR(128) NOT NULL,
+                    hospital_code       VARCHAR(64) NOT NULL,
+                    token_encrypted     TEXT NOT NULL,
+                    label               VARCHAR(128) NOT NULL DEFAULT '',
+                    last_used_at        TIMESTAMP,
+                    last_health_status  VARCHAR(32) NOT NULL DEFAULT 'unknown',
+                    last_health_at      TIMESTAMP,
+                    created_at          TIMESTAMP NOT NULL DEFAULT NOW(),
+                    updated_at          TIMESTAMP NOT NULL DEFAULT NOW()
+                )
+                """,
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_user_hospital_credentials_user_hospital
+                ON user_hospital_credentials(user_id, hospital_code)
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_user_hospital_credentials_user_id
+                ON user_hospital_credentials(user_id)
+                """,
+            ],
+        ),
     ]
 
     def __init__(self, conninfo: str):
@@ -509,7 +556,10 @@ class SchemaManager:
                           'idx_episodic_memories_user_time',
                           'idx_episodic_memories_embedding_cosine',
                           'idx_reflection_memories_user_id',
-                          'idx_reflection_memories_embedding_cosine'
+                          'idx_reflection_memories_embedding_cosine',
+                          'idx_hospitals_code',
+                          'uq_user_hospital_credentials_user_hospital',
+                          'idx_user_hospital_credentials_user_id'
                       )
                     """
                 )

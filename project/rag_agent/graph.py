@@ -38,7 +38,7 @@ def _build_checkpointer():
         return PersistentInMemorySaver(config.LANGGRAPH_CHECKPOINT_PATH)
     return InMemorySaver()
 
-def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=None):
+def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=None, extra_services=None):
     # Determine which LLM to use for each tier of node
     _light_llm = llm
     _strong_llm = llm
@@ -93,11 +93,14 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
         from skills.registry import get_skill_registry
         registry = get_skill_registry()
         if registry.skills:
+            services_dict = {"appointment_service": appointment_service}
+            if extra_services:
+                services_dict.update(extra_services)
             registry.register_all_nodes(
                 graph_builder,
                 llm_router=llm_router,
                 tools_list=tools_list,
-                services={"appointment_service": appointment_service},
+                services=services_dict,
             )
             _skill_route_targets = registry.get_route_mapping()
     except Exception:
