@@ -626,14 +626,33 @@ class ChatInterface:
                 }
 
             response_messages  = []
+            import time as _time
+            _node_timings = {}
+            _node_start = {}
+            _last_node = None
+            _graph_start = _time.time()
 
             for chunk, metadata in self.rag_system.agent_graph.stream(stream_input, config=graph_config, stream_mode="messages"):
                 node = metadata.get("langgraph_node", "")
+
+                # Track node-level timing
+                if node and node != _last_node:
+                    if _last_node and _last_node in _node_start:
+                        _node_timings[_last_node] = _node_timings.get(_last_node, 0) + (_time.time() - _node_start[_last_node])
+                    _node_start[node] = _time.time()
+                    _last_node = node
 
                 if isinstance(chunk, AIMessageChunk) and chunk.content and node not in SILENT_NODES and node not in SYSTEM_NODES:
                     self._handle_llm_token(chunk, node, response_messages)
 
                 yield self._prepare_visible_messages(response_messages, reveal_diagnostics=reveal_diagnostics)
+
+            # Close out the last node timer
+            if _last_node and _last_node in _node_start:
+                _node_timings[_last_node] = _node_timings.get(_last_node, 0) + (_time.time() - _node_start[_last_node])
+            total = _time.time() - _graph_start
+            timing_summary = ", ".join(f"{n}={t:.1f}s" for n, t in sorted(_node_timings.items(), key=lambda x: -x[1]))
+            logger.warning("Graph timing: total=%.1fs nodes={%s}", total, timing_summary)
 
             final_assistant = self._extract_final_assistant_text(response_messages)
             all_visible_assistant_texts = self._extract_all_visible_assistant_texts(response_messages)

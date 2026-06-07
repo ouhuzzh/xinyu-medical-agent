@@ -112,15 +112,40 @@ _RESCHEDULE_HINTS = ("改约", "改到", "换到", "换成", "改成", "挪到")
 # ---------------------------------------------------------------------------
 
 def _structured_output_llm(llm, schema, *, temperature: float = 0.1, max_tokens: int | None = None):
-    """Create a structured-output runnable with conservative limits when supported."""
+    """Return a callable that invokes the LLM and parses JSON output.
+
+    Avoids LangChain's with_structured_output (uses response_format: json_object
+    which SiliconFlow/Qwen doesn't support — 110s+ retry loop).
+    Instead: get raw text, extract JSON manually.
+    """
+    import json as _json, re as _re
+
     base = llm.with_config(temperature=temperature)
-    token_limit = max_tokens if max_tokens is not None else getattr(config, "LLM_STRUCTURED_MAX_TOKENS", 384)
-    if token_limit and token_limit > 0:
+    token_limit = max_tokens if max_tokens is not None else 256
+    base = base.bind(max_tokens=token_limit)
+
+    def _call(messages: list):
+        raw_response = base.invoke(messages)
+        raw = str(raw_response.content or "").strip()
+        if not raw:
+            return schema()
+        # Extract JSON from the output
+        for pattern in [r"```(?:json)?\s*\n?(.*?)```", r"(\{.*\})"]:
+            match = _re.search(pattern, raw, _re.DOTALL)
+            if match:
+                try:
+                    return schema(**_json.loads(match.group(1)))
+                except Exception:
+                    pass
         try:
-            return base.bind(max_tokens=token_limit).with_structured_output(schema)
+            return schema(**_json.loads(raw))
         except Exception:
-            logger.debug("Structured LLM max_tokens binding is not supported; using unbound model.", exc_info=True)
-    return base.with_structured_output(schema)
+            pass
+        return schema()
+
+    # Support .invoke() so callers can write llm.invoke([...])
+    _call.invoke = lambda msgs: _call(msgs)
+    return _call
 
 
 def _clear_pending_action_state() -> dict:

@@ -24,13 +24,14 @@ def get_rewrite_query_prompt() -> str:
 
 Rules:
 1. Fix common Chinese typos and pinyin-input errors (e.g. "头通"→"头痛", "发shao"→"发烧", "gan冒"→"感冒"). Preserve medical intent, correct the spelling.
-2. Use conversation summary to resolve short follow-ups like "那会头晕吗", "怎么办", "严重吗".
+2. Use conversation summary, recent context, and known user context to resolve short follow-ups.
 3. Keep meaning unchanged. Do not invent details.
 4. Prefer directly usable rewrites over asking clarification.
 5. Only mark unclear when the request is truly unintelligible or dangerously underspecified.
 6. If known user context (medical history, medications) is provided, use it to resolve ambiguous follow-up queries. For example, "那药还能继续吃吗" is clearer if you know the user's specific medication.
 
-Return structured fields only.
+Return JSON with these fields:
+{"is_clear": true/false, "questions": ["rewritten query 1", "rewritten query 2"], "clarification_needed": "ask user if unclear, else empty string"}
 """
 
 
@@ -55,7 +56,8 @@ Rules:
 7. If known user context (medical history, allergies, preferences) is provided,
    use it to better classify intent.
 
-Return structured fields only.
+Return raw JSON with these fields:
+{"intent": "medical_rag|triage|appointment|cancel_appointment|clarification", "is_clear": true/false, "clarification_needed": "explain why unclear, or empty string"}
 """
 
 
@@ -79,7 +81,8 @@ Rules:
 4. Use known user context (chronic conditions, allergies) to inform the recommendation.
 5. Only ask one short clarification question if you truly cannot recommend a safe department.
 
-Return structured fields only.
+Return raw JSON with these fields:
+{"department": "科室名称", "reason": "简短理由", "needs_clarification": true/false, "clarification_needed": "question to ask user, or empty string"}
 """
 
 
