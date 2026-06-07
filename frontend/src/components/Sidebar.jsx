@@ -1,5 +1,5 @@
 import React from "react";
-import { Activity, Building2, Database, MessageCircle, Trash2, ExternalLink, X, LogOut } from "lucide-react";
+import { Activity, Building2, Database, MessageCircle, Trash2, ExternalLink, X, LogOut, User, ChevronRight } from "lucide-react";
 import StatusIndicator from "./StatusIndicator";
 import XinyuLogo from "./XinyuLogo";
 import ThemeToggle from "./ThemeToggle";
@@ -113,9 +113,14 @@ const Sidebar = React.memo(function Sidebar({
 
         <div className="sidebar-actions">
           <div className="sidebar-auth-card">
-            <div className="sidebar-auth-card__head">
-              <strong>{currentUser ? (currentUser.username || currentUser.user_id) : "已登录"}</strong>
-              <span className="role-badge">{currentUser?.role === "admin" ? "管理员" : "用户"}</span>
+            <div className="sidebar-auth-card__user">
+              <div className="sidebar-auth-card__avatar">
+                <User size={16} strokeWidth={2} />
+              </div>
+              <div className="sidebar-auth-card__identity">
+                <strong>{currentUser?.username || currentUser?.display_name || currentUser?.user_id || "已登录"}</strong>
+                <span className="role-badge">{currentUser?.role === "admin" ? "管理员" : "用户"}</span>
+              </div>
             </div>
             <button
               type="button"
@@ -124,6 +129,7 @@ const Sidebar = React.memo(function Sidebar({
             >
               <LogOut size={14} />
               退出登录
+              <ChevronRight size={13} className="sidebar-logout-btn__arrow" />
             </button>
           </div>
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />

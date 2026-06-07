@@ -47,6 +47,7 @@ class KnowledgeBaseStatusResponse(BaseModel):
 class CurrentUserResponse(BaseModel):
     user_id: str
     role: Literal["user", "admin"]
+    username: str = ""
 
 
 class SystemStatusResponse(BaseModel):

@@ -7,30 +7,31 @@ def _require_setting(value, name, provider):
     raise ValueError(f"Missing required setting `{name}` for provider `{provider}`.")
 
 
-def _create_openai_chat(model, temperature, api_key, base_url=None):
+def _create_openai_chat(model, temperature, api_key, base_url=None, *,
+                         max_tokens: int = 0, timeout: float = 0):
     from langchain_openai import ChatOpenAI
+
+    timeout_sec = timeout if timeout > 0 else config.LLM_TIMEOUT_SECONDS
+    max_tok = max_tokens if max_tokens > 0 else config.LLM_MAX_TOKENS
 
     kwargs = {
         "model": model,
         "temperature": temperature,
         "api_key": api_key,
-        "timeout": config.LLM_TIMEOUT_SECONDS,
+        "timeout": timeout_sec,
         "max_retries": 2,
-        "extra_body": {
-            "enable_thinking": config.OPENAI_ENABLE_THINKING,
-            "thinking_budget": config.OPENAI_THINKING_BUDGET,
-        },
     }
-    if config.LLM_MAX_TOKENS > 0:
-        kwargs["max_tokens"] = config.LLM_MAX_TOKENS
+    # OpenAI renamed max_tokens → max_completion_tokens; send both for compat
+    if max_tok > 0:
+        kwargs["max_tokens"] = max_tok
+        kwargs["max_completion_tokens"] = max_tok
     if base_url:
         kwargs["base_url"] = base_url
     try:
         return ChatOpenAI(**kwargs)
     except TypeError:
-        # Some OpenAI-compatible wrappers reject provider-specific kwargs.
-        # Keep startup robust and fall back to the minimum portable set.
         kwargs.pop("max_tokens", None)
+        kwargs.pop("max_completion_tokens", None)
         kwargs.pop("timeout", None)
         kwargs.pop("max_retries", None)
         return ChatOpenAI(**kwargs)
@@ -100,19 +101,17 @@ def get_chat_model_for_tier(*, provider: str, model: str, temperature: float,
     if provider_name == "deepseek":
         api_key = _require_setting(config.DEEPSEEK_API_KEY, "DEEPSEEK_API_KEY", provider_name)
         return _create_openai_chat(
-            model=model,
-            temperature=temperature,
-            api_key=api_key,
+            model=model, temperature=temperature, api_key=api_key,
             base_url=config.DEEPSEEK_BASE_URL,
+            max_tokens=max_tokens, timeout=timeout,
         )
 
     if provider_name == "openai":
         api_key = _require_setting(config.OPENAI_API_KEY, "OPENAI_API_KEY", provider_name)
         return _create_openai_chat(
-            model=model,
-            temperature=temperature,
-            api_key=api_key,
+            model=model, temperature=temperature, api_key=api_key,
             base_url=config.OPENAI_BASE_URL or None,
+            max_tokens=max_tokens, timeout=timeout,
         )
 
     if provider_name == "ollama":

@@ -269,10 +269,16 @@
 }
 
 [data-theme="dark"] .sidebar-auth-card {
-  background: rgba(15, 23, 42, 0.7);
-  border-color: rgba(148, 163, 184, 0.1);
+  background: rgba(15, 23, 42, 0.72);
+  border-color: rgba(148, 163, 184, 0.10);
 }
-[data-theme="dark"] .sidebar-auth-card__head strong {
+
+[data-theme="dark"] .sidebar-auth-card__avatar {
+  background: linear-gradient(135deg, rgba(20, 184, 166, 0.7) 0%, rgba(99, 102, 241, 0.5) 100%);
+  box-shadow: 0 2px 8px rgba(20, 184, 166, 0.15);
+}
+
+[data-theme="dark"] .sidebar-auth-card__identity strong {
   color: #e2e8f0;
 }
 [data-theme="dark"] .sidebar-auth-card__input {

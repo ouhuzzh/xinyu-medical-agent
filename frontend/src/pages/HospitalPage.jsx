@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { ArrowLeft, Plus, Trash2, Wifi, ExternalLink } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Wifi, ExternalLink, Building2, CheckCircle2, XCircle, Loader2, Unlink, ShieldCheck, Clock } from "lucide-react";
 import {
   fetchHospitalList,
   fetchHospitalCredentials,
@@ -101,6 +101,12 @@ export default function HospitalPage({ apiBaseUrl, authToken, onMenuClick, onNav
   const boundCodes = new Set(credentials.map((c) => c.hospital_code));
   const unboundHospitals = hospitals.filter((h) => !boundCodes.has(h.code));
 
+  const healthConfig = {
+    healthy: { color: "var(--green-500)", bg: "rgba(34,197,94,0.08)", label: "在线", icon: CheckCircle2 },
+    failed: { color: "var(--red-600)", bg: "rgba(220,38,38,0.07)", label: "离线", icon: XCircle },
+    unknown: { color: "var(--slate-400)", bg: "rgba(148,163,184,0.06)", label: "未知", icon: Wifi },
+  };
+
   return (
     <div className="page">
       <header className="page-header">
@@ -108,6 +114,7 @@ export default function HospitalPage({ apiBaseUrl, authToken, onMenuClick, onNav
           <ArrowLeft size={20} />
         </button>
         <h2>医院绑定</h2>
+        <span className="page-header__badge">{credentials.length}/{hospitals.length}</span>
       </header>
 
       <div className="page-body">
@@ -120,9 +127,10 @@ export default function HospitalPage({ apiBaseUrl, authToken, onMenuClick, onNav
           <>
             {/* Bound credentials */}
             {credentials.length === 0 && (
-              <div className="empty-state">
-                <p>你还没有绑定任何外部医院。</p>
-                <p className="empty-state__hint">绑定后即可在心语上挂该院的号。</p>
+              <div className="empty-state empty-state--hospital">
+                <div className="empty-state__icon"><Building2 size={36} strokeWidth={1.4} /></div>
+                <p className="empty-state__title">你还没有绑定任何外部医院</p>
+                <p className="empty-state__subtitle">绑定后即可在心语上挂该院的号，享受一站式预约服务。</p>
               </div>
             )}
 
@@ -130,42 +138,60 @@ export default function HospitalPage({ apiBaseUrl, authToken, onMenuClick, onNav
               const hospital = hospitals.find((h) => h.code === c.hospital_code);
               const name = hospital?.name || c.hospital_code;
               const healthStatus = c.last_health_status || "unknown";
-              const healthColor =
-                healthStatus === "healthy" ? "var(--green-500)"
-                : healthStatus === "failed" ? "var(--red-600)"
-                : "var(--slate-400)";
+              const hc = healthConfig[healthStatus] || healthConfig.unknown;
+              const HealthIcon = hc.icon;
 
               return (
                 <div key={c.hospital_code} className="hospital-card">
+                  <div className="hospital-card__icon-wrap">
+                    <Building2 size={18} strokeWidth={1.6} />
+                  </div>
+
                   <div className="hospital-card__info">
                     <div className="hospital-card__head">
                       <strong>{name}</strong>
-                      <span className="health-dot" style={{ color: healthColor }} title={healthStatus}>
-                        <Wifi size={14} />
+                      <span
+                        className="hospital-badge"
+                        style={{ color: hc.color, background: hc.bg }}
+                        title={`${hc.label}${healthStatus !== "unknown" ? ` (${healthStatus})` : ""}`}
+                      >
+                        <HealthIcon size={12} strokeWidth={2.2} />
+                        {hc.label}
                       </span>
                     </div>
-                    <span className="hospital-card__meta">
-                      {c.label || c.hospital_code}
-                      {c.last_used_at && ` · 上次调用 ${new Date(c.last_used_at).toLocaleDateString()}`}
-                    </span>
+                    <div className="hospital-card__meta-row">
+                      <span className="hospital-card__meta">
+                        <ShieldCheck size={11} />
+                        {c.label || c.hospital_code}
+                      </span>
+                      {c.last_used_at && (
+                        <span className="hospital-card__meta">
+                          <Clock size={11} />
+                          上次调用 {new Date(c.last_used_at).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="hospital-card__actions">
                     <button
                       type="button"
-                      className="secondary-btn"
+                      className="secondary-btn secondary-btn--test"
                       disabled={testing[c.hospital_code]}
                       onClick={() => handleTest(c.hospital_code)}
                     >
-                      {testing[c.hospital_code] ? "测试中…" : "测试连接"}
+                      {testing[c.hospital_code]
+                        ? <><Loader2 size={13} className="spin" /> 测试中</>
+                        : <><Wifi size={13} /> 连接测试</>
+                      }
                     </button>
                     <button
                       type="button"
-                      className="icon-button danger"
+                      className="icon-btn-danger"
                       onClick={() => handleDelete(c.hospital_code)}
-                      aria-label="解除绑定"
+                      title="解除绑定"
                     >
-                      <Trash2 size={16} />
+                      <Unlink size={16} />
                     </button>
                   </div>
                 </div>
@@ -180,17 +206,20 @@ export default function HospitalPage({ apiBaseUrl, authToken, onMenuClick, onNav
             )}
 
             {!showAdd && unboundHospitals.length === 0 && hospitals.length > 0 && (
-              <p className="hint-text" style={{ marginTop: 16, textAlign: "center", color: "var(--slate-400)", fontSize: 13 }}>
-                已绑定所有平台支持的医院。
-              </p>
+              <div className="hospital-all-bound">
+                <CheckCircle2 size={18} strokeWidth={1.8} />
+                <span>已绑定所有平台支持的医院</span>
+              </div>
             )}
 
             {showAdd && (
               <form className="hospital-add-form" onSubmit={handleAdd}>
-                <h3>绑定新医院</h3>
+                <h3 className="hospital-add-form__title">
+                  <Plus size={17} strokeWidth={2} /> 绑定新医院
+                </h3>
 
                 <div className="hospital-add-form__field">
-                  <label>选择医院</label>
+                  <label><Building2 size={13} /> 选择医院</label>
                   <select value={selectedCode} onChange={(e) => setSelectedCode(e.target.value)}>
                     <option value="">请选择…</option>
                     {unboundHospitals.map((h) => (
@@ -202,7 +231,7 @@ export default function HospitalPage({ apiBaseUrl, authToken, onMenuClick, onNav
                 {selectedCode && (
                   <>
                     <div className="hospital-add-form__field">
-                      <label>Bearer Token</label>
+                      <label><ShieldCheck size={13} /> Bearer Token</label>
                       <input
                         type="password"
                         value={tokenInput}
@@ -210,6 +239,7 @@ export default function HospitalPage({ apiBaseUrl, authToken, onMenuClick, onNav
                         placeholder={`粘贴 ${hospitals.find((h) => h.code === selectedCode)?.name || selectedCode} 的 token`}
                         autoFocus
                       />
+                      <span className="field-hint">Token 仅用于与该院 MCP 服务通信，不会存储明文。</span>
                     </div>
                     <div className="hospital-add-form__field">
                       <label>备注（可选）</label>
@@ -222,7 +252,7 @@ export default function HospitalPage({ apiBaseUrl, authToken, onMenuClick, onNav
                     </div>
                     <div className="hospital-add-form__actions">
                       <button type="submit" className="primary-btn" disabled={saving}>
-                        {saving ? "保存中…" : "绑定"}
+                        {saving ? <><Loader2 size={14} className="spin" /> 绑定中</> : "确认绑定"}
                       </button>
                       <button type="button" className="secondary-btn" onClick={() => { setShowAdd(false); setError(""); }}>
                         取消

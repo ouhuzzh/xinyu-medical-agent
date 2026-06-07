@@ -32,7 +32,9 @@ def system_status(
         last_error=system.get("last_error") or "",
         steps=system.get("steps") or {},
         degraded_components=system.get("degraded_components") or [],
-        current_user=CurrentUserResponse(user_id=current_user.user_id, role=current_user.role),
+        current_user=CurrentUserResponse(
+            user_id=current_user.user_id, role=current_user.role, username=current_user.username or ""
+        ),
         knowledge_base=KnowledgeBaseStatusResponse(
             status=knowledge["status"],
             message=knowledge["message"],
