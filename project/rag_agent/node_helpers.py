@@ -112,40 +112,60 @@ _RESCHEDULE_HINTS = ("改约", "改到", "换到", "换成", "改成", "挪到")
 # ---------------------------------------------------------------------------
 
 def _structured_output_llm(llm, schema, *, temperature: float = 0.1, max_tokens: int | None = None):
-    """Return a callable that invokes the LLM and parses JSON output.
+    """Return an object with .invoke() that calls LLM and parses JSON.
 
     Avoids LangChain's with_structured_output (uses response_format: json_object
-    which SiliconFlow/Qwen doesn't support — 110s+ retry loop).
-    Instead: get raw text, extract JSON manually.
+    which SiliconFlow/Qwen doesn't support — long retry loop).
+    Instead: get raw text, extract JSON via regex.
     """
     import json as _json, re as _re
 
     base = llm.with_config(temperature=temperature)
-    token_limit = max_tokens if max_tokens is not None else 256
-    base = base.bind(max_tokens=token_limit)
+    base = base.bind(max_tokens=max_tokens or 256)
 
-    def _call(messages: list):
-        raw_response = base.invoke(messages)
-        raw = str(raw_response.content or "").strip()
-        if not raw:
-            return schema()
-        # Extract JSON from the output
-        for pattern in [r"```(?:json)?\s*\n?(.*?)```", r"(\{.*\})"]:
-            match = _re.search(pattern, raw, _re.DOTALL)
-            if match:
-                try:
-                    return schema(**_json.loads(match.group(1)))
-                except Exception:
-                    pass
-        try:
-            return schema(**_json.loads(raw))
-        except Exception:
-            pass
-        return schema()
+    class _StructureParser:
+        """Thin wrapper: __call__ + .invoke()."""
 
-    # Support .invoke() so callers can write llm.invoke([...])
-    _call.invoke = lambda msgs: _call(msgs)
-    return _call
+        def __call__(self, messages: list):
+            try:
+                raw = str(base.invoke(messages).content or "").strip()
+            except Exception:
+                return _default()
+            if not raw:
+                return _default()
+            # Try JSON patterns
+            for pattern in [r"```(?:json)?\s*\n?(.*?)```", r"(\{.*\})"]:
+                m = _re.search(pattern, raw, _re.DOTALL)
+                if m:
+                    try:
+                        return schema(**_json.loads(m.group(1)))
+                    except Exception:
+                        pass
+            try:
+                return schema(**_json.loads(raw))
+            except Exception:
+                pass
+            return _default()
+
+        def invoke(self, messages: list):
+            return self(messages)
+
+    def _default():
+        """Return a safe default based on the schema."""
+        vals = {}
+        for fn, fi in schema.model_fields.items():
+            t = str(fi.annotation)
+            if "str" in t:
+                vals[fn] = ""
+            elif "bool" in t:
+                vals[fn] = False
+            elif "int" in t:
+                vals[fn] = 0
+            else:
+                vals[fn] = ""
+        return schema(**vals)
+
+    return _StructureParser()
 
 
 def _clear_pending_action_state() -> dict:
