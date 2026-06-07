@@ -112,6 +112,7 @@ class LLMTierConfig:
     temperature: float = 0.0
     max_tokens: int = 2048
     timeout_seconds: float = 45.0
+    fallback_model: Optional[str] = None  # model name to use when falling back to another provider
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +205,7 @@ class TieredLLMRouter:
                     temperature=float(item.get("temperature", 0.0)),
                     max_tokens=int(item.get("max_tokens", 2048)),
                     timeout_seconds=float(item.get("timeout_seconds", 45.0)),
+                    fallback_model=str(item["fallback_model"]) if "fallback_model" in item else None,
                 )
                 tiers[cfg.name] = cfg
             except (KeyError, ValueError, TypeError) as exc:
@@ -230,44 +232,73 @@ class TieredLLMRouter:
         If the primary provider's circuit is open, attempts the fallback
         provider.  Falls back to ``get_chat_model()`` when no tier config
         matches.
+
+        Circuit-breaker check and LLM creation are done under a single lock
+        so that concurrent callers see a consistent view of breaker state.
         """
         tier_cfg = self._tiers.get(tier)
         if tier_cfg is None:
-            # Unknown tier — fall back to default
             if tier != "default":
                 logger.debug("Unknown tier %r, falling back to default", tier)
                 return self.get_llm("default")
-            # Should not happen, but safety net
             from model_factory import get_chat_model
             return get_chat_model()
 
+        with self._lock:
+            return self._get_or_create_llm_locked(tier_cfg)
+
+    def _get_or_create_llm_locked(self, tier_cfg: LLMTierConfig):
+        """Must be called while holding ``self._lock``."""
         provider = tier_cfg.provider
         breaker = self._breakers.get(provider)
 
+        # --- Choose provider (circuit-breaker aware) ---
+        use_provider = provider
+        use_model = tier_cfg.model
+
         if breaker and not breaker.allow_request():
-            # Primary provider circuit is open — try fallback
             if self._fallback_provider and self._fallback_provider != provider:
                 logger.info(
                     "Provider %r circuit open, falling back to %r for tier %r",
+                    provider, self._fallback_provider, tier_cfg.name,
+                )
+                use_provider = self._fallback_provider
+                if tier_cfg.fallback_model:
+                    use_model = tier_cfg.fallback_model
+            else:
+                logger.warning(
+                    "Provider %r circuit open and no fallback; request will likely fail",
                     provider,
-                    self._fallback_provider,
-                    tier,
                 )
-                return self._get_or_create_llm(
-                    tier_cfg, override_provider=self._fallback_provider
-                )
-            # No fallback available — return the model anyway and let it fail
-            logger.warning(
-                "Provider %r circuit open and no fallback; request will likely fail",
-                provider,
-            )
 
-        return self._get_or_create_llm(tier_cfg)
+        cache_key = f"{tier_cfg.name}:{use_provider}:{use_model}"
+        if cache_key in self._llm_cache:
+            return self._llm_cache[cache_key]
+
+        from model_factory import get_chat_model_for_tier
+
+        llm = get_chat_model_for_tier(
+            provider=use_provider,
+            model=use_model,
+            temperature=tier_cfg.temperature,
+            timeout=tier_cfg.timeout_seconds,
+            max_tokens=tier_cfg.max_tokens,
+        )
+
+        # Wrap with circuit-breaker tracking if we have a breaker for the provider
+        # actually being used (could be the fallback provider)
+        actual_breaker = self._breakers.get(use_provider)
+        if actual_breaker:
+            llm = _CircuitBreakerWrapper(llm, actual_breaker)
+
+        self._llm_cache[cache_key] = llm
+        return llm
 
     def get_status(self) -> dict:
         """Return circuit-breaker status for all providers (for health endpoint)."""
         return {
-            "tiers": {name: {"provider": cfg.provider, "model": cfg.model}
+            "tiers": {name: {"provider": cfg.provider, "model": cfg.model,
+                              "fallback_model": cfg.fallback_model}
                       for name, cfg in self._tiers.items()},
             "circuit_breakers": {
                 provider: {"state": breaker.state,
@@ -277,59 +308,21 @@ class TieredLLMRouter:
             "fallback_provider": self._fallback_provider,
         }
 
-    # -- internal ----------------------------------------------------------
-
-    def _get_or_create_llm(
-        self,
-        tier_cfg: LLMTierConfig,
-        override_provider: Optional[str] = None,
-    ):
-        """Create or return a cached LLM for the given tier (or override provider)."""
-        provider = override_provider or tier_cfg.provider
-        cache_key = f"{tier_cfg.name}:{provider}:{tier_cfg.model}"
-
-        with self._lock:
-            if cache_key in self._llm_cache:
-                return self._llm_cache[cache_key]
-
-        from model_factory import get_chat_model_for_tier
-
-        llm = get_chat_model_for_tier(
-            provider=provider,
-            model=tier_cfg.model,
-            temperature=tier_cfg.temperature,
-            timeout=tier_cfg.timeout_seconds,
-            max_tokens=tier_cfg.max_tokens,
-        )
-
-        # Wrap with circuit-breaker tracking if we have a breaker for the provider
-        breaker = self._breakers.get(provider)
-        if breaker:
-            llm = _CircuitBreakerWrapper(llm, breaker, router=self, tier_cfg=tier_cfg)
-
-        with self._lock:
-            self._llm_cache[cache_key] = llm
-        return llm
-
-
 # ---------------------------------------------------------------------------
 # Circuit-breaker wrapper around an LLM instance
 # ---------------------------------------------------------------------------
 
 class _CircuitBreakerWrapper:
-    """Wraps an LLM instance so that every ``invoke`` / ``ainvoke`` call
-    records success/failure with the circuit breaker.
+    """Transparent proxy around an LLM that records success/failure on every
+    ``invoke`` / ``ainvoke`` call.
 
-    This is a transparent proxy — it delegates all attribute access to the
-    wrapped LLM except for ``invoke`` and ``ainvoke``, which are augmented
-    with breaker tracking.
+    Fallback logic lives exclusively in ``TieredLLMRouter.get_llm()`` —
+    this wrapper only tracks outcomes so the breaker knows when to open/close.
     """
 
-    def __init__(self, wrapped_llm, breaker: CircuitBreaker, *, router: TieredLLMRouter, tier_cfg: LLMTierConfig):
+    def __init__(self, wrapped_llm, breaker: CircuitBreaker):
         object.__setattr__(self, "_wrapped", wrapped_llm)
         object.__setattr__(self, "_breaker", breaker)
-        object.__setattr__(self, "_router", router)
-        object.__setattr__(self, "_tier_cfg", tier_cfg)
 
     # -- invoke / ainvoke with breaker tracking ----------------------------
 
@@ -340,14 +333,6 @@ class _CircuitBreakerWrapper:
             return result
         except Exception:
             self._breaker.record_failure()
-            # If primary provider is now open and we have a fallback, retry
-            if self._breaker.state == "open" and self._router._fallback_provider:
-                fallback_llm = self._router.get_llm(self._tier_cfg.name)
-                # Avoid infinite recursion: if the fallback is also this wrapper,
-                # just re-raise
-                if fallback_llm is not self:
-                    logger.info("Retrying with fallback provider for tier %r", self._tier_cfg.name)
-                    return fallback_llm.invoke(*args, **kwargs)
             raise
 
     async def ainvoke(self, *args, **kwargs):
@@ -357,11 +342,6 @@ class _CircuitBreakerWrapper:
             return result
         except Exception:
             self._breaker.record_failure()
-            if self._breaker.state == "open" and self._router._fallback_provider:
-                fallback_llm = self._router.get_llm(self._tier_cfg.name)
-                if fallback_llm is not self:
-                    logger.info("Retrying with fallback provider for tier %r", self._tier_cfg.name)
-                    return await fallback_llm.ainvoke(*args, **kwargs)
             raise
 
     # -- transparent proxy for everything else ------------------------------
@@ -369,19 +349,10 @@ class _CircuitBreakerWrapper:
     def __getattr__(self, name):
         return getattr(self._wrapped, name)
 
-    def __setattr__(self, name, value):
-        setattr(self._wrapped, name, value)
-
     def bind_tools(self, tools, **kwargs):
-        """bind_tools must return a wrapper too so that invoke still tracks."""
         bound = self._wrapped.bind_tools(tools, **kwargs)
-        return _CircuitBreakerWrapper(
-            bound, self._breaker, router=self._router, tier_cfg=self._tier_cfg
-        )
+        return _CircuitBreakerWrapper(bound, self._breaker)
 
     def with_config(self, **kwargs):
-        """with_config must return a wrapper too so that invoke still tracks."""
         configured = self._wrapped.with_config(**kwargs)
-        return _CircuitBreakerWrapper(
-            configured, self._breaker, router=self._router, tier_cfg=self._tier_cfg
-        )
+        return _CircuitBreakerWrapper(configured, self._breaker)
