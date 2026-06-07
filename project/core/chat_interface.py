@@ -425,6 +425,118 @@ class ChatInterface:
             updated_state["pending_clarification"] = clarification_text or None
         return updated_state
 
+    @staticmethod
+    def _should_skip_memory_retrieval(user_message: str) -> bool:
+        """Rule-based pre-filter: skip vector retrieval for trivial intents.
+
+        Greetings, thanks, and explicit cancel-appointment requests don't benefit
+        from long-term memory (allergy/history). Skipping saves ~300-500ms per turn
+        on these messages.
+        """
+        if not config.USER_MEMORY_SKIP_TRIVIAL_INTENT:
+            return False
+        from rag_agent.node_helpers import (
+            _looks_like_greeting,
+            _looks_like_explicit_cancel_intent,
+        )
+        if _looks_like_greeting(user_message):
+            return True
+        if _looks_like_explicit_cancel_intent(user_message):
+            return True
+        return False
+
+    def _fetch_user_memories(self, user_id: str, user_message: str, thread_id: str) -> str:
+        """Fetch user memories with rule-based skip + thread-level cache.
+
+        Strategy:
+          A. Skip retrieval entirely for trivial intents (greetings/cancel).
+          B. Cache per-thread for up to USER_MEMORY_CACHE_MAX_TURNS turns within
+             USER_MEMORY_CACHE_TTL_SECONDS, so follow-up questions on the same
+             topic don't re-embed and re-search.
+          Cache is invalidated on extraction (new memories saved → drop cache).
+        """
+        # A: rule-based skip
+        if self._should_skip_memory_retrieval(user_message):
+            return ""
+
+        # B: try cache first
+        cached = self._get_memory_cache(user_id, thread_id)
+        if cached is not None:
+            return cached
+
+        # Cache miss → real retrieval
+        try:
+            memories = self.rag_system.user_memory_store.retrieve_memories(
+                user_id, user_message, top_k=config.USER_MEMORY_MAX_RETRIEVED
+            )
+        except Exception:
+            logger.warning("User memory retrieval failed; continuing without memories.", exc_info=True)
+            return ""
+
+        text = ""
+        if memories:
+            text = "\n".join(
+                f"- [{m['memory_type']}|{m['importance']}] {m['content']}" for m in memories
+            )
+
+        self._set_memory_cache(user_id, thread_id, text)
+        return text
+
+    def _memory_cache_key(self, user_id: str, thread_id: str) -> str:
+        return f"memory_cache:{user_id}:{thread_id}"
+
+    def _get_memory_cache(self, user_id: str, thread_id: str):
+        """Return cached memory text, or None if cache miss/expired/maxed out."""
+        try:
+            client = self.rag_system.session_memory._get_client()
+        except Exception:
+            return None
+        if client is None:
+            return None
+        try:
+            key = self._memory_cache_key(user_id, thread_id)
+            raw = client.get(key)
+            if raw is None:
+                return None
+            data = json.loads(raw)
+            turns_used = int(data.get("turns_used", 0))
+            if turns_used >= config.USER_MEMORY_CACHE_MAX_TURNS:
+                client.delete(key)
+                return None
+            # Bump usage counter
+            data["turns_used"] = turns_used + 1
+            client.setex(key, config.USER_MEMORY_CACHE_TTL_SECONDS, json.dumps(data, ensure_ascii=False))
+            return str(data.get("text", ""))
+        except Exception:
+            return None
+
+    def _set_memory_cache(self, user_id: str, thread_id: str, text: str):
+        try:
+            client = self.rag_system.session_memory._get_client()
+        except Exception:
+            return
+        if client is None:
+            return
+        try:
+            key = self._memory_cache_key(user_id, thread_id)
+            data = {"text": text, "turns_used": 1}
+            client.setex(key, config.USER_MEMORY_CACHE_TTL_SECONDS, json.dumps(data, ensure_ascii=False))
+        except Exception:
+            pass
+
+    def _invalidate_memory_cache(self, user_id: str, thread_id: str):
+        """Drop the cache after new memories are extracted (so next turn re-retrieves)."""
+        try:
+            client = self.rag_system.session_memory._get_client()
+        except Exception:
+            return
+        if client is None:
+            return
+        try:
+            client.delete(self._memory_cache_key(user_id, thread_id))
+        except Exception:
+            pass
+
     def _get_graph_config(self, thread_id: str):
         try:
             return self.rag_system.get_config(thread_id)
@@ -459,18 +571,15 @@ class ChatInterface:
                 logger.warning("Failed to resolve user_id for memory injection", exc_info=True)
 
         # Retrieve user-level memories (L3 semantic)
+        # Optimization A: skip retrieval for trivial intents (rules-based, 0 latency)
+        # Optimization B: cache results within thread to avoid repeated embedding+pgvector calls
         user_memories_text = ""
         if user_id and config.USER_MEMORY_ENABLED and config.USER_MEMORY_INJECTION_ENABLED:
-            try:
-                memories = self.rag_system.user_memory_store.retrieve_memories(
-                    user_id, user_message, top_k=config.USER_MEMORY_MAX_RETRIEVED
-                )
-                if memories:
-                    user_memories_text = "\n".join(
-                        f"- [{m['memory_type']}|{m['importance']}] {m['content']}" for m in memories
-                    )
-            except Exception:
-                logger.warning("User memory retrieval failed; continuing without memories.", exc_info=True)
+            user_memories_text = self._fetch_user_memories(
+                user_id=user_id,
+                user_message=user_message,
+                thread_id=active_thread_id,
+            )
 
         try:
             if current_state.next:
@@ -556,12 +665,16 @@ class ChatInterface:
             # Extract user memories (async, fire-and-forget)
             if user_id and config.USER_MEMORY_ENABLED and config.USER_MEMORY_EXTRACTION_ENABLED and combined_assistant_text:
                 try:
-                    self.rag_system.memory_extractor.extract_and_save(
+                    saved = self.rag_system.memory_extractor.extract_and_save(
                         thread_id=active_thread_id,
                         user_message=user_message,
                         assistant_message=combined_assistant_text,
                         conversation_summary=latest_values.get("conversation_summary", ""),
                     )
+                    # If new memories were saved, invalidate the per-thread cache
+                    # so the next turn retrieves the fresh set.
+                    if saved:
+                        self._invalidate_memory_cache(user_id, active_thread_id)
                 except Exception:
                     logger.warning("Memory extraction failed for thread_id=%s", active_thread_id, exc_info=True)
 
@@ -608,4 +721,13 @@ class ChatInterface:
 
     def clear_session(self, thread_id=None):
         self.rag_system.reset_thread(thread_id)
+        # Drop memory cache for this thread (across all users — keys are scoped per user)
+        try:
+            client = self.rag_system.session_memory._get_client()
+            if client and thread_id:
+                # Wildcard delete all memory caches tied to this thread
+                for key in client.scan_iter(match=f"memory_cache:*:{thread_id}"):
+                    client.delete(key)
+        except Exception:
+            pass
         self.rag_system.observability.flush()

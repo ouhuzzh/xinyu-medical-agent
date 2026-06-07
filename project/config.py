@@ -181,6 +181,13 @@ USER_MEMORY_RECENCY_WEIGHT = float(os.environ.get("USER_MEMORY_RECENCY_WEIGHT", 
 USER_MEMORY_IMPORTANCE_WEIGHT = float(os.environ.get("USER_MEMORY_IMPORTANCE_WEIGHT", "0.4"))
 USER_MEMORY_RELEVANCE_WEIGHT = float(os.environ.get("USER_MEMORY_RELEVANCE_WEIGHT", "0.3"))
 
+# --- Memory Retrieval Optimization ---
+# Skip retrieval for trivial intents (greeting/thanks/cancel-only) — pure rule-based, 0 latency cost.
+USER_MEMORY_SKIP_TRIVIAL_INTENT = os.environ.get("USER_MEMORY_SKIP_TRIVIAL_INTENT", "true").lower() == "true"
+# Cache retrieval results within a thread for N turns. Avoids re-running embedding+pgvector on follow-up turns.
+USER_MEMORY_CACHE_TTL_SECONDS = int(os.environ.get("USER_MEMORY_CACHE_TTL_SECONDS", "300"))  # 5min
+USER_MEMORY_CACHE_MAX_TURNS = int(os.environ.get("USER_MEMORY_CACHE_MAX_TURNS", "5"))
+
 # --- Episodic Memory Configuration (L4) ---
 # 默认关闭，需要时在 .env 中设 EPISODIC_MEMORY_ENABLED=true
 EPISODIC_MEMORY_ENABLED = os.environ.get("EPISODIC_MEMORY_ENABLED", "false").lower() == "true"
