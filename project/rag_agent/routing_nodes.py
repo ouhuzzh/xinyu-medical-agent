@@ -469,6 +469,32 @@ def intent_router(state: State, llm):
             **pending_updates,
         }
 
+    # Short-circuit: if analyze_turn (or skill registry) already determined a
+    # non-empty intent, use it directly.  Skill-registered intents like
+    # "mcp_hospital" are NOT in the LLM's intent list — letting the LLM
+    # override them would route back to the wrong handler.
+    if primary_intent and primary_intent not in ("medical_rag", ""):
+        return {
+            "intent": primary_intent,
+            "primary_intent": primary_intent,
+            "secondary_intent": secondary_intent or "",
+            "primary_user_query": primary_user_query,
+            "secondary_user_query": secondary_user_query or "",
+            "decision_source": decision_source or "rule",
+            "route_reason": route_reason,
+            "last_route_reason": route_reason,
+            "risk_level": risk_level,
+            "pending_clarification": "",
+            "clarification_target": "",
+            "recent_context": recent_context,
+            "topic_focus": topic_focus,
+            "deferred_user_question": state.get("deferred_user_question", "") or secondary_user_query or "",
+            "clarification_attempts": 0,
+            "recommended_department": state.get("recommended_department", ""),
+            "appointment_context": state.get("appointment_context", {}),
+            "last_appointment_no": state.get("last_appointment_no", ""),
+        }
+
     try:
         llm_with_structure = _structured_output_llm(llm, IntentAnalysis, temperature=0.1)
         user_memories_section = ""
