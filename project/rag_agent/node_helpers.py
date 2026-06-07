@@ -54,8 +54,11 @@ _ABORT_WORDS = (
     "先不用", "先不", "不用了", "算了", "取消这个操作", "放弃", "暂不", "不预约了", "不取消了",
 )
 _MEDICAL_FOLLOW_UP_HINTS = (
-    "那", "这个", "这种情况", "这会", "还会", "严重吗", "怎么办", "注意什么", "要紧吗",
-    "what about", "does that", "is that", "should i", "what should",
+    "那", "这个", "这种情况", "这会", "还会", "严重吗", "怎么办", "怎么处理",
+    "注意什么", "要紧吗", "能不能", "会不会", "会好吗", "会好吗",
+    "能治吗", "需要去", "要去吗", "该去", "该挂", "要吃药",
+    "要多久", "几天", "能好吗",
+    "what about", "does that", "is that", "should i",
 )
 _MEDICAL_TERMS = (
     "高血压", "糖尿病", "感冒", "发烧", "发热", "低烧", "高烧", "头疼", "头痛", "偏头痛",
@@ -217,8 +220,19 @@ def _looks_like_medication_risk_query(query: str) -> bool:
 
 
 def _context_has_medical_signal(text: str) -> bool:
+    """Check if the context text contains medical signals."""
     normalized = (text or "").strip().lower()
-    return any(term in normalized for term in _MEDICAL_TERMS)
+    if not normalized:
+        return False
+    if any(term in normalized for term in _MEDICAL_TERMS):
+        return True
+    # Broader medical signals
+    broader = [
+        "吃什么药", "怎么治", "症状", "挂科", "挂号", "科室",
+        "医生", "医院", "过敏", "血压", "血糖", "检查",
+        "该去", "要去", "需要去",
+    ]
+    return any(kw in normalized for kw in broader)
 
 
 def _looks_like_medical_request(query: str, *, conversation_summary: str = "", recent_context: str = "", topic_focus: str = "") -> bool:
@@ -257,11 +271,13 @@ def _looks_like_general_non_medical_query(query: str) -> bool:
         return True
     if _looks_like_medical_request(query) or _looks_like_explicit_appointment_intent(query) or _looks_like_explicit_cancel_intent(query):
         return False
+    # Medical-symptom trap: "累" can be fatigue, "烦" can be dysphoria —
+    # don't classify as non-medical if there's any medical context in the query
+    if any(kw in normalized for kw in ("累", "乏力", "疲劳", "困", "烦", "焦虑", "紧张", "睡不着")):
+        return False  # These are potential medical symptoms, let medical_rag handle
     if any(token in normalized for token in _GENERAL_CHAT_HINTS):
         return True
     if any(token in normalized for token in _NON_MEDICAL_TOPIC_HINTS):
-        return True
-    if len(normalized) <= 20 and any(token in normalized for token in ("烦", "累", "无聊", "难过", "开心", "聊", "心情")):
         return True
     return False
 

@@ -23,13 +23,12 @@ def get_rewrite_query_prompt() -> str:
     return """Rewrite the user's latest query into 1-3 retrieval-friendly, self-contained queries.
 
 Rules:
-1. Use conversation summary only when needed to resolve short follow-ups like "那会头晕吗" or "那应该注意什么".
-2. Keep meaning unchanged. Do not invent details.
-3. Fix obvious grammar/spelling issues and keep important medical terms.
-4. Common medical knowledge questions, light follow-ups, ordinary non-medical questions, and casual conversation are usually clear enough without extra clarification.
-5. Prefer directly usable rewrites over asking clarification.
-6. Only mark unclear when the request is truly unintelligible or dangerously underspecified.
-7. If known user context (medical history, medications) is provided, use it to resolve ambiguous follow-up queries. For example, "那药还能继续吃吗" is clearer if you know the user's specific medication.
+1. Fix common Chinese typos and pinyin-input errors (e.g. "头通"→"头痛", "发shao"→"发烧", "gan冒"→"感冒"). Preserve medical intent, correct the spelling.
+2. Use conversation summary to resolve short follow-ups like "那会头晕吗", "怎么办", "严重吗".
+3. Keep meaning unchanged. Do not invent details.
+4. Prefer directly usable rewrites over asking clarification.
+5. Only mark unclear when the request is truly unintelligible or dangerously underspecified.
+6. If known user context (medical history, medications) is provided, use it to resolve ambiguous follow-up queries. For example, "那药还能继续吃吗" is clearer if you know the user's specific medication.
 
 Return structured fields only.
 """
@@ -44,14 +43,17 @@ def get_intent_router_prompt() -> str:
 - clarification
 
 Rules:
-1. "挂什么科/看什么科" style questions are triage.
-2. General health questions, causes, symptoms, precautions, and treatment principles are medical_rag.
-3. Booking requests are appointment.
-4. Cancellation requests are cancel_appointment.
-5. Ordinary non-medical questions, light small talk, emotional support, and general conversation should also go to medical_rag rather than clarification.
-6. Prefer medical_rag over clarification whenever a useful first response is possible.
-7. Use clarification only when the request is truly too vague to route safely.
-8. If known user context (medical history, allergies, preferences) is provided, use it to better classify intent. For example, a user with a known chronic condition asking about symptoms may need medical_rag rather than clarification.
+1. Short follow-ups ("怎么办", "会好吗", "严重吗", "那呢") are almost always medical_rag
+   when the conversation context clearly mentions health topics. Only use clarification
+   if the context is truly empty or the follow-up is genuinely ambiguous.
+2. "挂什么科/看什么科/去哪个科室" → triage.
+3. General health questions, symptoms, treatments, precautions → medical_rag.
+4. Booking requests → appointment. Cancellation → cancel_appointment.
+5. Casual chat, small talk, emotional support → medical_rag (can still answer helpfully).
+6. PREFER MEDICAL_RAG OVER CLARIFICATION in all borderline cases. Only clarify when
+   the request is genuinely too vague AND no useful medical context exists.
+7. If known user context (medical history, allergies, preferences) is provided,
+   use it to better classify intent.
 
 Return structured fields only.
 """
