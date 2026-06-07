@@ -60,25 +60,30 @@ class MCPSkill(BaseSkill):
         return "mcp_hospital"
 
     def match(self, query: str, *, context: Dict[str, Any]) -> bool:
-        """Match queries that explicitly mention an external hospital."""
+        """Match queries mentioning external hospitals, including follow-ups."""
         import config
         if not config.MCP_ENABLED:
             return False
         normalized = (query or "").lower()
-        # Need both a hospital keyword AND an appointment-related verb
+
+        # Direct match: hospital keyword + appointment verb
         has_hospital = any(kw in query for kw in _HOSPITAL_KEYWORDS)
-        if not has_hospital:
-            return False
-        from rag_agent.node_helpers import (
-            _looks_like_appointment_discovery_query,
-            _looks_like_explicit_appointment_intent,
-            _looks_like_explicit_cancel_intent,
-        )
-        return (
-            _looks_like_appointment_discovery_query(query)
-            or _looks_like_explicit_appointment_intent(query)
-            or _looks_like_explicit_cancel_intent(query)
-        )
+        if has_hospital:
+            return True  # any mention of a known hospital → we handle it
+
+        # Context-aware: if last turn was about MCP hospitals, short answers
+        # like "神经科" or "张医生" are likely follow-ups
+        recent_context = context.get("recent_context", "") or ""
+        if any(kw in recent_context for kw in _HOSPITAL_KEYWORDS):
+            # User is responding to an MCP-related prompt — keep it in context
+            if len(normalized) <= 10:
+                return True
+            from rag_agent.node_helpers import (
+                _looks_like_clarification_response,
+            )
+            return True  # any follow-up after hospital mention stays in MCP
+
+        return False
 
     def get_state_schema(self) -> Dict[str, Any]:
         return {}

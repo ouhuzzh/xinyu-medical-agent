@@ -98,7 +98,7 @@ LLM_TIERS_JSON = os.environ.get("LLM_TIERS_JSON", "")
 LLM_FALLBACK_PROVIDER = os.environ.get("LLM_FALLBACK_PROVIDER", "")
 
 # --- Skill Plugin Framework ---
-SKILLS_ENABLED = os.environ.get("SKILLS_ENABLED", "false").lower() == "true"
+SKILLS_ENABLED = os.environ.get("SKILLS_ENABLED", "true").lower() == "true"
 
 # Backward-compatible aliases used by the current vector layer.
 DENSE_MODEL = EMBEDDING_MODEL
