@@ -66,23 +66,28 @@ class MCPSkill(BaseSkill):
             return False
         normalized = (query or "").lower()
 
-        # Direct match: hospital keyword + appointment verb
+        # Must mention a known hospital
         has_hospital = any(kw in query for kw in _HOSPITAL_KEYWORDS)
-        if has_hospital:
-            return True  # any mention of a known hospital → we handle it
-
-        # Context-aware: if last turn was about MCP hospitals, short answers
-        # like "神经科" or "张医生" are likely follow-ups
-        recent_context = context.get("recent_context", "") or ""
-        if any(kw in recent_context for kw in _HOSPITAL_KEYWORDS):
-            # User is responding to an MCP-related prompt — keep it in context
-            if len(normalized) <= 10:
+        if not has_hospital:
+            # Context-aware follow-up: "神经科" after asking about 协和
+            recent_context = context.get("recent_context", "") or ""
+            if any(kw in recent_context for kw in _HOSPITAL_KEYWORDS) and len(normalized) <= 10:
                 return True
-            from rag_agent.node_helpers import (
-                _looks_like_clarification_response,
-            )
-            return True  # any follow-up after hospital mention stays in MCP
+            return False
 
+        # Hospital mentioned + appointment-related action: route to MCP
+        from rag_agent.node_helpers import (
+            _looks_like_appointment_discovery_query,
+            _looks_like_explicit_appointment_intent,
+            _looks_like_explicit_cancel_intent,
+        )
+        if (_looks_like_appointment_discovery_query(query)
+                or _looks_like_explicit_appointment_intent(query)
+                or _looks_like_explicit_cancel_intent(query)):
+            return True
+
+        # Hospital mentioned but no action (e.g. "协和医院很厉害吗"):
+        # let medical_rag handle general knowledge questions
         return False
 
     def get_state_schema(self) -> Dict[str, Any]:

@@ -142,7 +142,7 @@ class UserMCPPool:
                 continue
 
             connections[code] = {
-                "transport": "streamable_http",
+                "transport": "http",
                 "url": hospital["mcp_url"],
                 "headers": {"Authorization": f"Bearer {token}"},
             }
@@ -187,6 +187,12 @@ class UserMCPPool:
                 finally:
                     loop.close()
             raise
+        except BaseException as e:
+            # Catch ExceptionGroup and any other BaseException leaking out of asyncio.run
+            err_msg = type(e).__name__ + ": " + str(e)[:200]
+            logger.error("Unhandled exception in _sync_load_tools: %s", err_msg)
+            failed = {code: err_msg for code in connections}
+            return [], [], failed
 
     async def _async_load_tools(
         self,
@@ -206,8 +212,16 @@ class UserMCPPool:
                 failed[code] = "package_missing"
             return [], [], failed
 
-        # Build client for ALL servers (the adapter will lazy-connect per call)
-        client = MultiServerMCPClient(connections)
+        # langchain-mcp-adapters 0.1.0+: DO NOT use as async context manager.
+        # Create client directly, then use client.session() per-server.
+        try:
+            client = MultiServerMCPClient(connections)
+        except BaseException as e:
+            err_msg = type(e).__name__ + ": " + str(e)[:200]
+            logger.warning("Failed to create MCP client: %s", err_msg)
+            for code in connections:
+                failed[code] = err_msg
+            return [], [], failed
 
         # Load tools per-server so a single failure doesn't kill all
         for code in connections.keys():
@@ -226,16 +240,24 @@ class UserMCPPool:
                 connected.append(code)
                 logger.info("Loaded %d tools from hospital %s for user %s",
                             len(server_tools), code, pool.user_id)
-            except Exception as e:
-                err_msg = type(e).__name__ + ": " + str(e)[:200]
+            except BaseException as e:
+                err_msg = self._extract_error_msg(e)
                 logger.warning("Failed to load tools from hospital %s: %s", code, err_msg)
                 failed[code] = err_msg
 
         return all_tools, connected, failed
 
+    @staticmethod
+    def _extract_error_msg(e: BaseException) -> str:
+        """Extract a readable error message, unwrapping ExceptionGroup if needed."""
+        if hasattr(e, 'exceptions') and e.exceptions:
+            inner = e.exceptions[0]
+            inner_msg = type(inner).__name__ + ": " + str(inner)[:180]
+            return f"{type(e).__name__} → {inner_msg}"
+        return type(e).__name__ + ": " + str(e)[:200]
+
     async def _load_one_server_tools(self, client, server_code: str) -> List[Any]:
         """Load tools from a single named server."""
-        # MultiServerMCPClient exposes a per-server session context manager
         async with client.session(server_code) as session:
             from langchain_mcp_adapters.tools import load_mcp_tools
             return await load_mcp_tools(session)

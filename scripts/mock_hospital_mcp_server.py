@@ -238,7 +238,8 @@ def _handle(body: dict) -> dict:
 
     if method == "initialize":
         return {"jsonrpc": "2.0", "id": rid, "result": {
-            "protocolVersion": "1.0",
+            "protocolVersion": "2024-11-05",
+            "capabilities": {"tools": {}},
             "serverInfo": {"name": "mock-hospital", "version": "1.0"},
         }}
 

@@ -3479,7 +3479,7 @@ button:disabled {
   border-color: var(--slate-600);
   opacity: 0.75;
 }
-[data-theme="dark] .hospital-badge--muted {
+[data-theme="dark"] .hospital-badge--muted {
   background: var(--slate-700);
   color: var(--slate-400);
 }
