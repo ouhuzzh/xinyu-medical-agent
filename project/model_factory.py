@@ -20,6 +20,7 @@ def _create_openai_chat(model, temperature, api_key, base_url=None, *,
         "api_key": api_key,
         "timeout": timeout_sec,
         "max_retries": 2,
+        "extra_body": {"enable_thinking": False},
     }
     # OpenAI renamed max_tokens → max_completion_tokens; send both for compat
     if max_tok > 0:

@@ -3148,7 +3148,9 @@ button:disabled {
   color: var(--green-600);
 }
 
-/* Page layout — shared across sub-pages */
+/* =============================================
+   Hospital Bindings — Grid Layout
+   ============================================= */
 .page {
   display: flex;
   flex-direction: column;
@@ -3159,183 +3161,354 @@ button:disabled {
 .page-body {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 24px 32px;
+}
+
+.page-body--hospitals {
+  padding: 20px 28px 40px;
+}
+
+/* Grid: fills available space */
+.hospital-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* ── Card base ── */
+.hospital-card {
   display: flex;
   flex-direction: column;
-  align-items: center;
-}
-
-.page-body > * {
-  max-width: 560px;
-  width: 100%;
-  margin-left: auto;
-  margin-right: auto;
-}
-
-.page-body > .toast,
-.page-body > .page-loader {
-  max-width: none;
-  width: 100%;
-}
-
-/* Force center for hospital-specific elements */
-.page-body > .empty-state,
-.page-body > .primary-btn,
-.page-body > .hospital-add-form {
-  text-align: left;
-}
-
-.hospital-add-form {
-  margin-top: 20px;
-  max-width: 520px;
-  margin-left: auto;
-  margin-right: auto;
-  width: 100%;
-  padding: 28px 28px 24px;
+  justify-content: space-between;
   background: #fff;
-  border: 1px solid var(--border-soft);
+  border: 1.5px solid var(--border-soft);
   border-radius: var(--radius-lg);
+  padding: 20px 22px 18px;
   box-shadow: var(--shadow-xs);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
 }
 
-.hospital-add-form__title {
-  margin: 0 0 18px;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--slate-800);
+.hospital-card:hover {
+  border-color: rgba(13, 148, 136, 0.25);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-2px);
+}
+
+/* ── Bound card ── */
+.hospital-card--bound {
+  position: relative;
+}
+
+.hospital-card--bound::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  right: 0; height: 3px;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  background: linear-gradient(90deg, var(--teal-500), rgba(99,102,241,0.5));
+}
+
+/* ── Unbound card (ghost style) ── */
+.hospital-card--unbound {
+  opacity: 0.88;
+  border-style: dashed;
+}
+.hospital-card--unbound:hover {
+  opacity: 1;
+  border-style: solid;
+  border-color: var(--teal-300);
+}
+
+.hospital-card--expanding {
+  opacity: 1 !important;
+  border-style: solid !important;
+  border-color: var(--teal-300) !important;
+  animation: expandIn 0.25s var(--ease-out);
+}
+@keyframes expandIn {
+  from { opacity: 0.7; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* ── Icon wrap ── */
+.hospital-card__icon-wrap {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--teal-50), rgba(99,102,241,0.06));
+  color: var(--teal-600);
+}
+
+.hospital-card__icon-wrap--dim {
+  background: linear-gradient(135deg, var(--slate-100), rgba(148,163,184,0.06));
+  color: var(--slate-400);
+}
+
+[data-theme="dark"] .hospital-card__icon-wrap {
+  background: linear-gradient(135deg, rgba(13,148,136,0.12), rgba(99,102,241,0.08));
+  color: var(--teal-400);
+}
+[data-theme="dark"] .hospital-card__icon-wrap--dim {
+  background: linear-gradient(135deg, rgba(51,65,85,0.5), rgba(71,85,105,0.2));
+  color: var(--slate-500);
+}
+
+/* ── Top row (icon + info) ── */
+.hospital-card__top {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.hospital-card__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.hospital-card__head {
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--teal-700);
+  flex-wrap: wrap;
+  margin-bottom: 4px;
 }
 
-[data-theme="dark"] .hospital-add-form__title { color: var(--teal-400); }
-
-.hospital-add-form__field {
-  margin-bottom: 16px;
+.hospital-card__head strong {
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--slate-800);
+  letter-spacing: -0.2px;
 }
 
-.hospital-add-form__field label {
+.hospital-card__code {
+  margin: 0;
+  font-size: 12px;
+  color: var(--slate-400);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* ── Badge ── */
+.hospital-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+  line-height: 1.6;
+}
+
+.hospital-badge--muted {
+  color: var(--slate-400);
+  background: var(--slate-100);
+}
+
+/* ── Meta row ── */
+.hospital-card__meta-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.hospital-card__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--slate-400);
+}
+
+/* ── Action area ── */
+.hospital-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-faint, rgba(226,232,240,0.7));
+}
+
+/* ── Inline bind form (inside unbound expanding card) ── */
+.hospital-bind-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hospital-bind-form__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.hospital-bind-form__name {
+  display: block;
+  font-size: 14.5px;
+  color: var(--slate-800);
+}
+
+.hospital-bind-form__field {
+  display: flex;
+  flex-direction: column;
+}
+
+.hospital-bind-form__field label {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 650;
   color: var(--slate-550, var(--slate-600));
-  margin-bottom: 6px;
-  letter-spacing: 0.01em;
+  margin-bottom: 5px;
 }
 
-.field-hint {
-  display: block;
-  margin-top: 4px;
-  font-size: 11.5px;
-  color: var(--slate-400);
-  opacity: 0.85;
-  line-height: 1.45;
-}
-
-.hospital-add-form__field input,
-.hospital-add-form__field select {
+.hospital-bind-form__field input {
   width: 100%;
-  padding: 11px 14px;
-  font-size: 14px;
+  padding: 9px 12px;
+  font-size: 13.5px;
   line-height: 1.4;
   border: 1.5px solid var(--slate-200);
   border-radius: var(--radius-md);
   background: var(--slate-50);
   color: var(--slate-800);
   outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
   box-sizing: border-box;
-  transition: border-color 0.2s var(--ease-out), box-shadow 0.2s var(--ease-out), background 0.2s;
 }
 
-.hospital-add-form__field input::placeholder {
-  color: var(--slate-350, #94a3b8);
-}
-
-.hospital-add-form__field select {
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  padding-right: 34px;
-}
-
-.hospital-add-form__field input:focus,
-.hospital-add-form__field select:focus {
+.hospital-bind-form__field input:focus {
   border-color: var(--teal-400);
-  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.10);
+  box-shadow: 0 0 0 3px rgba(13,148,136,0.10);
   background: #fff;
 }
 
-[data-theme="dark"] .hospital-add-form__field input,
-[data-theme="dark"] .hospital-add-form__field select {
-  background: rgba(30, 41, 59, 0.5);
+.hospital-bind-form__field input::placeholder {
+  color: var(--slate-350, #94a3b8);
+}
+
+.hospital-bind-form__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.primary-btn--sm {
+  padding: 7px 16px;
+  font-size: 13px;
+  border-radius: var(--radius-md);
+  white-space: nowrap;
+}
+
+/* ── Buttons ── */
+.secondary-btn--test {
+  padding: 6px 12px;
+  font-size: 12.5px;
+  gap: 5px;
+  border: 1px solid var(--border-soft);
+  background: #fff;
+  color: var(--slate-600);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.secondary-btn--test:hover:not(:disabled) { border-color: var(--teal-300); color: var(--teal-700); background: var(--teal-50); }
+.secondary-btn--test:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.icon-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--slate-400);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.icon-btn-danger:hover { background: var(--red-50); border-color: var(--red-100); color: var(--red-500); }
+
+/* ── Field hint ── */
+.field-hint {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--slate-400);
+  line-height: 1.4;
+}
+
+/* ── Spin ── */
+.spin { animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── All bound banner ── */
+.hospital-all-bound {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  border-radius: var(--radius-md);
+  background: var(--green-50);
+  color: var(--green-600);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+/* ── Dark mode ── */
+[data-theme="dark"] .hospital-card {
+  background: var(--slate-800, #1e293b);
+  border-color: var(--slate-650, #334155);
+}
+[data-theme="dark"] .hospital-card:hover {
+  border-color: rgba(13,148,136,0.35);
+}
+[data-theme="dark"] .hospital-card--unbound {
+  border-color: var(--slate-600);
+  opacity: 0.75;
+}
+[data-theme="dark] .hospital-badge--muted {
+  background: var(--slate-700);
+  color: var(--slate-400);
+}
+[data-theme="dark"] .hospital-card__head strong { color: var(--slate-200); }
+[data-theme="dark"] .secondary-btn--test {
+  border-color: var(--slate-600);
+  background: transparent;
+  color: var(--slate-300);
+}
+[data-theme="dark"] .secondary-btn--test:hover:not(:disabled) {
+  border-color: var(--teal-500);
+  color: var(--teal-400);
+  background: rgba(13,148,136,0.10);
+}
+[data-theme="dark"] .hospital-bind-form__field input {
+  background: rgba(30,41,59,0.5);
   border-color: var(--slate-600);
   color: var(--slate-200);
 }
-
-[data-theme="dark"] .hospital-add-form__field input:focus,
-[data-theme="dark"] .hospital-add-form__field select:focus {
-  background: rgba(15, 23, 42, 0.6);
-  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.15);
+[data-theme="dark"] .hospital-bind-form__field input:focus {
+  background: rgba(15,23,42,0.6);
+  box-shadow: 0 0 0 3px rgba(13,148,136,0.15);
+}
+[data-theme="dark"] .hospital-bind-form__name { color: var(--slate-200); }
+[data-theme="dark"] .hospital-all-bound {
+  background: rgba(34,197,94,0.08);
 }
 
-[data-theme="dark"] .hospital-add-form__field input::placeholder {
-  color: var(--slate-500);
-}
-
-[data-theme="dark"] .hospital-add-form {
-  background: var(--slate-800);
-  border-color: var(--slate-650, #334155);
-}
-
-.hospital-add-form__actions {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 22px;
-}
-
-.hint-text { margin: 0; }
-
-/* Empty state — enhanced */
-.empty-state--hospital {
-  text-align: center;
-  padding: 48px 20px 36px;
-}
-
-.empty-state__icon {
-  display: inline-grid;
-  place-items: center;
-  width: 64px;
-  height: 64px;
-  margin: 0 auto 16px;
-  border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--teal-50) 0%, rgba(79, 70, 229, 0.05) 100%);
-  color: var(--teal-500);
-}
-
-[data-theme="dark"] .empty-state__icon {
-  background: linear-gradient(135deg, rgba(13, 148, 136, 0.10) 0%, rgba(79, 70, 229, 0.08) 100%);
-  color: var(--teal-400);
-}
-
-.empty-state__title {
-  font-size: 15px;
-  font-weight: 650;
-  color: var(--slate-700);
-  margin: 0 0 6px;
-}
-
-.empty-state__subtitle {
-  font-size: 13px;
-  color: var(--slate-400);
-  margin: 0;
-}
+/* Legacy empty state — for other pages if needed */
 
 .toast {
   padding: 10px 14px;

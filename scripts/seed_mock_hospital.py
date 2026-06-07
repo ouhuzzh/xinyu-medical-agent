@@ -41,4 +41,4 @@ for h in HOSPITALS:
         description=h["description"],
         auth_type=h["auth_type"],
     )
-    print(f"✅ {h['name']} registered (id={rid})")
+    print(f"[OK] {h['name']} registered (id={rid})")
