@@ -85,8 +85,9 @@ def _looks_like_clarification_response(user_query: str) -> bool:
         return False
     if _looks_like_medical_knowledge_question(user_query):
         return False
+    # Short queries that contain medical signals are NOT clarification
     if len(normalized) <= 40:
-        return True
+        return not _looks_like_medical_request(user_query)
     return bool(
         _normalize_date(user_query)
         or _normalize_time_slot(user_query)
