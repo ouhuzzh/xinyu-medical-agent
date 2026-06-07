@@ -110,7 +110,14 @@ def _intent_for_clarification_target(target: str, current_intent: str) -> str:
 
 
 def _classify_query_by_rules(user_query: str, *, conversation_summary: str = "", recent_context: str = "", topic_focus: str = "") -> tuple[str, str]:
-    # Try skill registry first (if enabled and skills registered)
+    """Rules-based intent pre-classification.
+
+    ONLY catches highly unambiguous intents where rule matching is near-certain.
+    Everything else — medical questions, short follow-ups, vague queries, casual chat —
+    is left to the LLM intent_router which has conversation context and semantic
+    understanding.  This keeps rules lean and avoids an ever-growing keyword list.
+    """
+    # Try skill registry first
     try:
         from skills.registry import get_skill_registry
         registry = get_skill_registry()
@@ -125,31 +132,20 @@ def _classify_query_by_rules(user_query: str, *, conversation_summary: str = "",
                 intent, skill_name = skill_match
                 return intent, f"skill:{skill_name}"
     except Exception:
-        pass  # Skill registry not available — fall through to rules
+        pass
 
+    # --- Unambiguous cases only ---
     if _looks_like_greeting(user_query):
         return "greeting", "greeting_rule"
     if _looks_like_explicit_cancel_intent(user_query):
         return "cancel_appointment", "explicit_cancel_rule"
-    if _looks_like_appointment_discovery_query(user_query):
-        return "appointment", "appointment_discovery_rule"
     if _looks_like_explicit_appointment_intent(user_query):
         return "appointment", "explicit_appointment_rule"
     if _looks_like_department_question(user_query):
         return "triage", "department_question_rule"
-    if _looks_like_medical_knowledge_question(user_query) or _looks_like_medical_request(
-        user_query,
-        conversation_summary=conversation_summary,
-        recent_context=recent_context,
-        topic_focus=topic_focus,
-    ) or _looks_like_medical_follow_up(
-        user_query,
-        "\n".join(part for part in (conversation_summary, topic_focus) if part),
-        recent_context,
-    ):
-        return "medical_rag", "medical_question_rule"
-    if _looks_like_general_non_medical_query(user_query):
-        return "medical_rag", "general_conversation_rule"
+
+    # Everything else — medical questions, follow-ups, symptoms, casual —
+    # is handed to the LLM intent_router for contextual classification.
     return "", "rule_inconclusive"
 
 
