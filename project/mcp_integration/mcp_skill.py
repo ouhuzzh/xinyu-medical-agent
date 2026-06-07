@@ -163,13 +163,25 @@ class MCPSkill(BaseSkill):
                     "decision_source": "skill",
                 }
 
-            # Bind tools to LLM and let it choose
+            # Build context-rich prompt
+            context_parts = []
+            conv_summary = state.get("conversation_summary", "") or ""
+            recent_ctx = state.get("recent_context", "") or ""
+            if conv_summary.strip():
+                context_parts.append(f"对话摘要: {conv_summary}")
+            if recent_ctx.strip():
+                context_parts.append(f"最近对话: {recent_ctx}")
+            context_text = "\n".join(context_parts)
+            prompt_content = user_query
+            if context_text:
+                prompt_content = f"{context_text}\n\n用户当前问题: {user_query}"
+
             try:
                 llm_with_tools = llm.bind_tools(user_tools)
                 response = llm_with_tools.invoke(
                     [
                         SystemMessage(content=_SYSTEM_PROMPT),
-                        HumanMessage(content=user_query),
+                        HumanMessage(content=prompt_content),
                     ]
                 )
             except Exception as e:

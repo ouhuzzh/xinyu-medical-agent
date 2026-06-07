@@ -71,6 +71,7 @@ def route_after_query_plan(state: State):
                 "context_summary": summary,
                 "recent_context": recent_context,
                 "topic_focus": topic_focus,
+                "user_memories": state.get("user_memories", ""),
             },
         )
     ]

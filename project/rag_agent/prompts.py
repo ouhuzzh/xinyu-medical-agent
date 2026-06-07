@@ -60,14 +60,24 @@ Return structured fields only.
 
 
 def get_department_recommendation_prompt() -> str:
-    return """Recommend exactly one primary department.
+    return """Recommend exactly one primary department based on symptoms described.
+
+Common mappings (use as defaults, not rigid rules):
+- Cough/cold/fever/respiratory → 呼吸内科
+- Headache/dizziness/neurological → 神经内科
+- Chest pain/palpitations → 心内科
+- Stomach pain/digestion → 消化内科 or 内科
+- Skin issues → 皮肤科
+- Children under 14 → 儿科
+- Severe/emergency symptoms → 急诊科
+- Unclear/general → 全科医学科 or 内科
 
 Rules:
 1. No diagnosis and no treatment advice.
 2. Keep the reason short and practical.
-3. Prefer a practical default department instead of over-clarifying when routing is still reasonably safe.
-4. Ask one short clarification question only if you truly cannot recommend a safe department.
-5. If known user context (chronic conditions, allergies) is provided, use it to inform the recommendation. For example, a user with known cardiac history and chest discomfort should be routed to cardiology.
+3. Prefer a practical default department instead of over-clarifying.
+4. Use known user context (chronic conditions, allergies) to inform the recommendation.
+5. Only ask one short clarification question if you truly cannot recommend a safe department.
 
 Return structured fields only.
 """

@@ -296,13 +296,18 @@ def orchestrator(state: AgentState, llm_with_tools):
         [HumanMessage(content=f"[TOPIC FOCUS]\n\n{topic_focus}")]
         if topic_focus else []
     )
+    user_memories = state.get("user_memories", "").strip()
+    user_memories_injection = (
+        [HumanMessage(content=f"[已知用户信息: 高血压/过敏/偏好等]\n\n{user_memories}")]
+        if user_memories else []
+    )
     query_plan_injection = (
         [HumanMessage(content="[RETRIEVAL QUERY PLAN]\n\n" + "\n".join(f"- {item}" for item in query_plan))]
         if query_plan else []
     )
     if not state.get("messages"):
         human_msg = HumanMessage(content=question)
-        base_messages = [sys_msg] + summary_injection + recent_context_injection + topic_focus_injection + query_plan_injection + [human_msg]
+        base_messages = [sys_msg] + summary_injection + recent_context_injection + topic_focus_injection + user_memories_injection + query_plan_injection + [human_msg]
         if is_medical_request:
             retrieval_hint = (
                 "For this medical question, call 'search_child_chunks' first unless the injected context already provides enough evidence. "
@@ -312,7 +317,7 @@ def orchestrator(state: AgentState, llm_with_tools):
         response = llm_with_tools.invoke(base_messages)
         return {"messages": [human_msg, response], "tool_call_count": len(response.tool_calls or []), "iteration_count": 1}
 
-    response = llm_with_tools.invoke([sys_msg] + summary_injection + recent_context_injection + topic_focus_injection + query_plan_injection + state["messages"])
+    response = llm_with_tools.invoke([sys_msg] + summary_injection + recent_context_injection + topic_focus_injection + user_memories_injection + query_plan_injection + state["messages"])
     tool_calls = response.tool_calls if hasattr(response, "tool_calls") else []
     return {"messages": [response], "tool_call_count": len(tool_calls) if tool_calls else 0, "iteration_count": 1}
 
