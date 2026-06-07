@@ -1,5 +1,5 @@
 import React from "react";
-import { Activity, Database, MessageCircle, Trash2, ExternalLink, X, LogOut } from "lucide-react";
+import { Activity, Building2, Database, MessageCircle, Trash2, ExternalLink, X, LogOut } from "lucide-react";
 import StatusIndicator from "./StatusIndicator";
 import XinyuLogo from "./XinyuLogo";
 import ThemeToggle from "./ThemeToggle";
@@ -73,6 +73,14 @@ const Sidebar = React.memo(function Sidebar({
             >
               <MessageCircle size={16} />
               聊天咨询
+            </button>
+            <button
+              type="button"
+              className={`sidebar-nav__item${activeView === "hospitals" ? " sidebar-nav__item--active" : ""}`}
+              onClick={() => onNavigate("hospitals")}
+            >
+              <Building2 size={16} />
+              医院绑定
             </button>
             {canManageDocuments && (
               <button

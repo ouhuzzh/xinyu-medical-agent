@@ -14,6 +14,7 @@ import { AUTH_TOKEN_KEY, REFRESH_TOKEN_KEY } from "./constants/app";
 
 const ChatPage = lazy(() => import("./pages/ChatPage"));
 const DocumentsPage = lazy(() => import("./pages/DocumentsPage"));
+const HospitalPage = lazy(() => import("./pages/HospitalPage"));
 
 function PageLoader() {
   return (
@@ -145,6 +146,12 @@ function AppInner() {
         {activeView === "documents" && system.isAdmin ? (
           <DocumentsPage
             documentsState={documents}
+            onMenuClick={() => setSidebarOpen(true)}
+          />
+        ) : activeView === "hospitals" ? (
+          <HospitalPage
+            apiBaseUrl={system.apiBaseUrl}
+            authToken={system.authToken}
             onMenuClick={() => setSidebarOpen(true)}
           />
         ) : (

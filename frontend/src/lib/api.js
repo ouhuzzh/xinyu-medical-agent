@@ -211,3 +211,55 @@ export function refreshAccessToken(apiBaseUrl, refreshToken) {
     "",
   );
 }
+
+// --- Hospital MCP API ---
+
+export function fetchHospitalList(apiBaseUrl, onFallback, authToken) {
+  return apiFetchJson("/api/hospitals/list", undefined, apiBaseUrl, onFallback, authToken);
+}
+
+export function fetchHospitalCredentials(apiBaseUrl, onFallback, authToken) {
+  return apiFetchJson("/api/hospitals/credentials", undefined, apiBaseUrl, onFallback, authToken);
+}
+
+export function addHospitalCredential(apiBaseUrl, onFallback, authToken, hospitalCode, token, label) {
+  return apiFetchJson(
+    "/api/hospitals/credentials/add",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hospital_code: hospitalCode, token, label: label || "" }),
+    },
+    apiBaseUrl,
+    onFallback,
+    authToken,
+  );
+}
+
+export function deleteHospitalCredential(apiBaseUrl, onFallback, authToken, hospitalCode) {
+  return apiFetchJson(
+    "/api/hospitals/credentials/delete",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hospital_code: hospitalCode }),
+    },
+    apiBaseUrl,
+    onFallback,
+    authToken,
+  );
+}
+
+export function testHospitalConnection(apiBaseUrl, onFallback, authToken, hospitalCode) {
+  return apiFetchJson(
+    "/api/hospitals/credentials/test",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hospital_code: hospitalCode }),
+    },
+    apiBaseUrl,
+    onFallback,
+    authToken,
+  );
+}
