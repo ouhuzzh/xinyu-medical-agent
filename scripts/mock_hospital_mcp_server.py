@@ -1,34 +1,37 @@
 #!/usr/bin/env python
-"""Mock Hospital MCP Server — pure FastAPI, zero MCP dependencies.
+"""Mock Hospital MCP Server — pure stdlib, zero dependencies.
 
-Implements the MCP Streamable-HTTP protocol manually: accepts JSON-RPC 2.0
-requests at /mcp and responds with MCP-compliant tool/list + tools/call.
+Implements MCP JSON-RPC 2.0 over HTTP on a configurable port.
+6 tools: list_departments, list_doctors, get_available_slots,
+book_appointment, cancel_appointment, list_my_appointments.
 
 Usage:
     python scripts/mock_hospital_mcp_server.py [--port=8001] [--hospital=协和]
+
+The client must send a valid MCP initialize request first (without session-id
+requirement), then tools/list and tools/call will work.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import sys
 import uuid
 from datetime import date, timedelta
-from pathlib import Path
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
-# ------------------------------------------------------------------
-# In-memory "database"
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# In-memory data
+# ---------------------------------------------------------------------------
 
 DEPARTMENTS = [
-    {"code": "neike", "name": "内科"},
-    {"code": "waike", "name": "外科"},
-    {"code": "xinneike", "name": "心内科"},
+    {"code": "neike",         "name": "内科"},
+    {"code": "waike",         "name": "外科"},
+    {"code": "xinneike",      "name": "心内科"},
     {"code": "shenjingneike", "name": "神经内科"},
-    {"code": "pifuke", "name": "皮肤科"},
-    {"code": "erke", "name": "儿科"},
-    {"code": "jizhenke", "name": "急诊科"},
+    {"code": "pifuke",        "name": "皮肤科"},
+    {"code": "erke",          "name": "儿科"},
+    {"code": "jizhenke",      "name": "急诊科"},
 ]
 
 DOCTOR_POOL = [
@@ -40,11 +43,11 @@ DOCTOR_POOL = [
     {"name": "赵医生", "title": "副主任医师"},
 ]
 
-SCHEDULES: dict[str, dict] = {}  # slot_id → {...}
-APPOINTMENTS: dict[str, dict] = {}  # appointment_id → {...}
+SCHEDULES: dict[str, dict] = {}   # slot_id -> {...}
+APPOINTMENTS: dict[str, dict] = {}  # appointment_no -> {...}
 
 
-def _seed():
+def _seed() -> None:
     if SCHEDULES:
         return
     today = date.today()
@@ -67,19 +70,17 @@ def _seed():
                     }
 
 
-# ------------------------------------------------------------------
-# Tool schemas (MCP tools/list response)
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Tool definitions (MCP-compliant JSON Schema)
+# ---------------------------------------------------------------------------
 
 TOOLS = [
     {
         "name": "list_departments",
-        "description": "查询医院科室列表。可选按名称关键词筛选。",
+        "description": "查询医院科室列表。可选按名称或代码关键词筛选。",
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "按科室名称筛选，可选"}
-            },
+            "properties": {"query": {"type": "string", "description": "按科室名称或代码筛选，可选"}},
         },
     },
     {
@@ -87,9 +88,7 @@ TOOLS = [
         "description": "查询某个科室的医生列表。",
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "department": {"type": "string", "description": "科室名称，必填"}
-            },
+            "properties": {"department": {"type": "string", "description": "科室名称，必填"}},
             "required": ["department"],
         },
     },
@@ -109,7 +108,7 @@ TOOLS = [
     },
     {
         "name": "book_appointment",
-        "description": "确认预约。成功后返回 appointment_no。",
+        "description": "确认预约挂号。成功后返回 appointment_no。",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -127,9 +126,7 @@ TOOLS = [
         "description": "按 appointment_no 取消预约。",
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "appointment_no": {"type": "string", "description": "预约号，必填"}
-            },
+            "properties": {"appointment_no": {"type": "string", "description": "预约号，必填"}},
             "required": ["appointment_no"],
         },
     },
@@ -138,19 +135,15 @@ TOOLS = [
         "description": "列出某患者的所有预约。",
         "inputSchema": {
             "type": "object",
-            "properties": {
-                "patient_name": {"type": "string", "description": "患者姓名，默认 AI患者"}
-            },
+            "properties": {"patient_name": {"type": "string", "description": "患者姓名，默认 AI患者"}},
         },
     },
 ]
 
-TOOL_MAP = {t["name"]: t for t in TOOLS}
 
-
-# ------------------------------------------------------------------
-# Tool execution
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Tool executors
+# ---------------------------------------------------------------------------
 
 def _exec_list_departments(args: dict) -> dict:
     _seed()
@@ -163,16 +156,14 @@ def _exec_list_departments(args: dict) -> dict:
 
 def _exec_list_doctors(args: dict) -> dict:
     _seed()
-    dept_name = args["department"]
-    docs = [
-        {"name": doc["name"], "title": doc["title"]}
-        for slot in SCHEDULES.values()
-        if slot["department"] == dept_name
-        for doc in DOCTOR_POOL[:3]
-        if slot["doctor_name"] == doc["name"]
-    ]
-    unique = list({d["name"]: d for d in docs}.values())
-    return {"department": dept_name, "doctors": unique, "count": len(unique)}
+    dept = args["department"]
+    seen = set()
+    docs = []
+    for s in SCHEDULES.values():
+        if s["department"] == dept and s["doctor_name"] not in seen:
+            seen.add(s["doctor_name"])
+            docs.append({"name": s["doctor_name"], "title": s["doctor_title"]})
+    return {"department": dept, "doctors": docs, "count": len(docs)}
 
 
 def _exec_get_available_slots(args: dict) -> dict:
@@ -197,7 +188,7 @@ def _exec_book_appointment(args: dict) -> dict:
     _seed()
     slots = _exec_get_available_slots(args)["slots"]
     if not slots:
-        return {"error": f"无可用号源: {args['department']} {args['date']} {args['time_slot']}", "appointment_no": ""}
+        return {"error": f"无可用号源", "appointment_no": ""}
     target = slots[0]
     sid = target["schedule_id"]
     SCHEDULES[sid]["quota_available"] = max(0, SCHEDULES[sid]["quota_available"] - 1)
@@ -227,95 +218,95 @@ def _exec_list_my_appointments(args: dict) -> dict:
     return {"appointments": results, "count": len(results)}
 
 
-EXEC_MAP = {
-    "list_departments": _exec_list_departments,
-    "list_doctors": _exec_list_doctors,
-    "get_available_slots": _exec_get_available_slots,
-    "book_appointment": _exec_book_appointment,
-    "cancel_appointment": _exec_cancel_appointment,
-    "list_my_appointments": _exec_list_my_appointments,
+_EXEC_MAP = {
+    "list_departments":      _exec_list_departments,
+    "list_doctors":          _exec_list_doctors,
+    "get_available_slots":   _exec_get_available_slots,
+    "book_appointment":      _exec_book_appointment,
+    "cancel_appointment":    _exec_cancel_appointment,
+    "list_my_appointments":  _exec_list_my_appointments,
 }
 
 
-# ------------------------------------------------------------------
-# JSON-RPC 2.0 handler
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# JSON-RPC 2.0 dispatcher
+# ---------------------------------------------------------------------------
 
-def _handle_request(body: dict) -> dict:
+def _handle(body: dict) -> dict:
     method = body.get("method", "")
-    rpc_id = body.get("id")
+    rid = body.get("id")
+
+    if method == "initialize":
+        return {"jsonrpc": "2.0", "id": rid, "result": {
+            "protocolVersion": "1.0",
+            "serverInfo": {"name": "mock-hospital", "version": "1.0"},
+        }}
 
     if method == "tools/list":
-        return {"jsonrpc": "2.0", "id": rpc_id, "result": {"tools": TOOLS}}
+        return {"jsonrpc": "2.0", "id": rid, "result": {"tools": TOOLS}}
 
     if method == "tools/call":
         params = body.get("params", {})
-        tool_name = params.get("name", "")
+        name = params.get("name", "")
         tool_args = params.get("arguments", {}) or {}
-        if tool_name not in EXEC_MAP:
-            return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32601, "message": f"Tool not found: {tool_name}"}}
+        if name not in _EXEC_MAP:
+            return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": f"Tool not found: {name}"}}
         try:
-            result = EXEC_MAP[tool_name](tool_args)
-            return {
-                "jsonrpc": "2.0",
-                "id": rpc_id,
-                "result": {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]},
-            }
+            result = _EXEC_MAP[name](tool_args)
+            return {"jsonrpc": "2.0", "id": rid, "result": {
+                "content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}],
+            }}
         except Exception as e:
-            return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32000, "message": str(e)}}
+            return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32000, "message": str(e)}}
 
-    if method == "initialize":
-        return {"jsonrpc": "2.0", "id": rpc_id, "result": {"protocolVersion": "1.0", "serverInfo": {"name": "mock-hospital", "version": "1.0"}}}
-
-    return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": -32601, "message": f"Unknown method: {method}"}}
+    return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": f"Unknown method: {method}"}}
 
 
-# ------------------------------------------------------------------
-# FastAPI app (or standalone HTTP server)
-# ------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# HTTP server
+# ---------------------------------------------------------------------------
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--port", type=int, default=8001)
-    parser.add_argument("--hospital", type=str, default="北京协和医院")
-    args = parser.parse_args()
+class _Handler(BaseHTTPRequestHandler):
+    def do_POST(self) -> None:
+        if self.path != "/mcp":
+            self.send_error(404)
+            return
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length))
+            resp = _handle(body)
+        except Exception as e:
+            resp = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": str(e)}}
+        data = json.dumps(resp, ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
-    from http.server import HTTPServer, BaseHTTPRequestHandler
+    def do_GET(self) -> None:
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'{"status":"ok"}')
 
-    class MCPHandler(BaseHTTPRequestHandler):
-        def do_POST(self):
-            if self.path != "/mcp":
-                self.send_error(404)
-                return
-            try:
-                length = int(self.headers.get("Content-Length", 0))
-                body = json.loads(self.rfile.read(length))
-                resp = _handle_request(body)
-            except Exception as e:
-                resp = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": str(e)}}
-            data = json.dumps(resp, ensure_ascii=False).encode("utf-8")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+    def log_message(self, *args) -> None:
+        pass
 
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'{"status":"ok"}')
 
-        def log_message(self, format, *args):
-            pass  # silent
+def main() -> None:
+    p = argparse.ArgumentParser(description="Mock Hospital MCP Server")
+    p.add_argument("--port", type=int, default=8001)
+    p.add_argument("--hospital", type=str, default="北京协和医院")
+    args = p.parse_args()
 
-    server = HTTPServer(("127.0.0.1", args.port), MCPHandler)
-    print(f"[Mock Hospital] {args.hospital} MCP Server")
+    srv = HTTPServer(("127.0.0.1", args.port), _Handler)
+    print(f"[{args.hospital}] Mock MCP Server")
     print(f"   MCP endpoint: http://127.0.0.1:{args.port}/mcp")
     print(f"   Press Ctrl+C to stop")
     try:
-        server.serve_forever()
+        srv.serve_forever()
     except KeyboardInterrupt:
-        server.shutdown()
+        srv.shutdown()
 
 
 if __name__ == "__main__":
