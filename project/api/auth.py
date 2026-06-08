@@ -51,6 +51,100 @@ class InMemoryRateLimiter:
 _rate_limiter = InMemoryRateLimiter()
 
 
+class LoginLockoutTracker:
+    """Tracks consecutive failed-login attempts per username and locks them out.
+
+    Sliding-window counter: only failures inside ``window_seconds`` count toward
+    the threshold.  On the Nth failure, the account is locked for ``lockout_seconds``.
+    A successful login clears the counter.
+
+    In-memory only — fine for single-process deployment.  For horizontal scaling
+    swap to Redis (the API mirrors that of :class:`InMemoryRateLimiter`).
+    """
+
+    def __init__(self):
+        self._failures: dict[str, deque[float]] = defaultdict(deque)
+        self._locked_until: dict[str, float] = {}
+        self._lock = threading.Lock()
+
+    def _normalize(self, username: str) -> str:
+        return (username or "").strip().lower()
+
+    def assert_not_locked(self, username: str):
+        key = self._normalize(username)
+        if not key:
+            return
+        now = time.time()
+        with self._lock:
+            locked_until = self._locked_until.get(key, 0.0)
+            if locked_until > now:
+                remaining = int(locked_until - now)
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail=f"账号已被临时锁定，请在 {remaining} 秒后重试。",
+                )
+            elif locked_until:
+                # lockout expired — clear it and the stale failure window
+                self._locked_until.pop(key, None)
+                self._failures.pop(key, None)
+
+    def record_failure(self, username: str):
+        key = self._normalize(username)
+        if not key:
+            return
+        now = time.time()
+        boundary = now - config.LOGIN_LOCKOUT_WINDOW_SECONDS
+        with self._lock:
+            events = self._failures[key]
+            events.append(now)
+            while events and events[0] < boundary:
+                events.popleft()
+            if len(events) >= config.LOGIN_LOCKOUT_MAX_ATTEMPTS:
+                self._locked_until[key] = now + config.LOGIN_LOCKOUT_SECONDS
+                events.clear()
+
+    def record_success(self, username: str):
+        key = self._normalize(username)
+        if not key:
+            return
+        with self._lock:
+            self._failures.pop(key, None)
+            self._locked_until.pop(key, None)
+
+
+_login_lockout = LoginLockoutTracker()
+
+
+def _client_ip(request: Request) -> str:
+    """Best-effort client IP extraction; honours X-Forwarded-For for proxy setups."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",", 1)[0].strip()
+    client = request.client
+    return client.host if client else "anonymous"
+
+
+def enforce_auth_rate_limit(request: Request):
+    """Per-IP throttle for unauthenticated auth endpoints."""
+    _rate_limiter.check(
+        bucket="auth",
+        key=_client_ip(request),
+        limit=config.API_RATE_LIMIT_AUTH_PER_MINUTE,
+    )
+
+
+def assert_login_not_locked(username: str):
+    _login_lockout.assert_not_locked(username)
+
+
+def record_login_failure(username: str):
+    _login_lockout.record_failure(username)
+
+
+def record_login_success(username: str):
+    _login_lockout.record_success(username)
+
+
 def _auth_error(detail: str, status_code: int = status.HTTP_401_UNAUTHORIZED):
     headers = {"WWW-Authenticate": "Bearer"} if status_code == status.HTTP_401_UNAUTHORIZED else None
     raise HTTPException(status_code=status_code, detail=detail, headers=headers)

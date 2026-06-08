@@ -141,6 +141,16 @@ API_UPLOAD_MAX_FILE_SIZE_MB = int(os.environ.get("API_UPLOAD_MAX_FILE_SIZE_MB", 
 API_RATE_LIMIT_CHAT_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_CHAT_PER_MINUTE", "20"))
 API_RATE_LIMIT_UPLOADS_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_UPLOADS_PER_MINUTE", "6"))
 API_RATE_LIMIT_SYNCS_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_SYNCS_PER_MINUTE", "3"))
+# Per-IP throttle for unauthenticated auth endpoints (login/register/refresh).
+# Defends against password spraying and registration spam.
+API_RATE_LIMIT_AUTH_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_AUTH_PER_MINUTE", "10"))
+
+# --- Login Lockout (defense-in-depth alongside bcrypt) ---
+# After N consecutive failed logins for the same username, lock the account
+# for LOGIN_LOCKOUT_SECONDS.  Counter resets on successful login.
+LOGIN_LOCKOUT_MAX_ATTEMPTS = int(os.environ.get("LOGIN_LOCKOUT_MAX_ATTEMPTS", "5"))
+LOGIN_LOCKOUT_SECONDS = int(os.environ.get("LOGIN_LOCKOUT_SECONDS", "900"))  # 15 min
+LOGIN_LOCKOUT_WINDOW_SECONDS = int(os.environ.get("LOGIN_LOCKOUT_WINDOW_SECONDS", "600"))  # 10 min sliding window
 
 # --- JWT Authentication ---
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "change-me-in-production-please")

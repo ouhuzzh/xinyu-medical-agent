@@ -2,7 +2,14 @@
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
-from api.auth import AuthenticatedUser, require_current_user
+from api.auth import (
+    AuthenticatedUser,
+    assert_login_not_locked,
+    enforce_auth_rate_limit,
+    record_login_failure,
+    record_login_success,
+    require_current_user,
+)
 from api.dependencies import get_container
 from api.jwt_utils import create_token_pair, decode_token, create_access_token
 from api.schemas import (
@@ -20,6 +27,7 @@ router = APIRouter()
 @router.post("/api/auth/register", response_model=TokenResponse)
 def register(request: Request, payload: RegisterRequest):
     request.state.route_type = "auth_register"
+    enforce_auth_rate_limit(request)
     container = get_container()
     try:
         user = container.user_store.create_user(
@@ -42,14 +50,21 @@ def register(request: Request, payload: RegisterRequest):
 @router.post("/api/auth/login", response_model=TokenResponse)
 def login(request: Request, payload: LoginRequest):
     request.state.route_type = "auth_login"
+    enforce_auth_rate_limit(request)
+    username = payload.username.strip()
+    # Reject early if the account is currently locked out — avoids the bcrypt
+    # round-trip and gives the attacker no signal about credentials.
+    assert_login_not_locked(username)
     container = get_container()
     user = container.user_store.verify_password(
-        username=payload.username.strip(),
+        username=username,
         password=payload.password,
     )
     if user is None:
+        record_login_failure(username)
         raise HTTPException(status_code=401, detail="用户名或密码不正确。")
 
+    record_login_success(username)
     tokens = create_token_pair(
         user_id=str(user["id"]),
         username=user["username"],
@@ -62,6 +77,7 @@ def login(request: Request, payload: LoginRequest):
 @router.post("/api/auth/refresh", response_model=TokenResponse)
 def refresh_token(request: Request, payload: RefreshRequest):
     request.state.route_type = "auth_refresh"
+    enforce_auth_rate_limit(request)
     decoded = decode_token(payload.refresh_token)
     if decoded is None or decoded.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Refresh token 无效或已过期。")
