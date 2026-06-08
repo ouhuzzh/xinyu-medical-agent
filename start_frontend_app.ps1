@@ -63,37 +63,54 @@ if ($Restart) {
     Stop-PortProcess -Port $ApiPort -Name "FastAPI backend"
     Stop-PortProcess -Port $FrontendPort -Name "React frontend"
     if (-not $SkipMockHospital) {
-        Stop-PortProcess -Port $MockHospitalPort -Name "Mock hospital MCP"
+        # Stop any mock servers that may already be running on the ports we manage
+        foreach ($p in @($MockHospitalPort, 8002)) {
+            Stop-PortProcess -Port $p -Name "Mock MCP server"
+        }
     }
 }
 
-# --- Mock Hospital MCP Server (optional) ---
-if (-not $SkipMockHospital) {
-    $existingMock = Get-ListeningProcessId -Port $MockHospitalPort
-    if (-not $existingMock) {
-        $mockScript = Join-Path $ScriptsDir "mock_hospital_mcp_server.py"
-        if (Test-Path $mockScript) {
-            Write-Host "Starting Mock Hospital MCP on http://127.0.0.1:$MockHospitalPort/mcp ..."
-            Start-Process `
-                -FilePath $PythonExe `
-                -ArgumentList "scripts\mock_hospital_mcp_server.py", "--port", $MockHospitalPort `
-                -WorkingDirectory $Root `
-                -RedirectStandardOutput $mockHospitalLog `
-                -RedirectStandardError $mockHospitalErr `
-                -WindowStyle Hidden
-            Start-Sleep -Seconds 2
+# --- Mock Hospital MCP Server(s) ---
+# Runs one mock server per port listed in MockHospitalPorts.
+# The DB seed registers xiehe on :8001 and renji on :8002.
+$MockHospitalPorts = @($MockHospitalPort)
+# If only one port was given (the default), also start :8002 for renji
+if ($MockHospitalPorts.Count -eq 1 -and $MockHospitalPorts[0] -eq 8001) {
+    $MockHospitalPorts += 8002
+}
 
-            # Seed mock hospital into DB (idempotent — safe to re-run)
-            $seedScript = Join-Path $ScriptsDir "seed_mock_hospital.py"
-            if (Test-Path $seedScript) {
-                Write-Host "Seeding mock hospital registry ..."
-                & $PythonExe $seedScript 2>&1 | ForEach-Object { Write-Host "  $_" }
-            }
-        } else {
-            Write-Host "Mock hospital script not found at $mockScript, skipping." -ForegroundColor Yellow
-        }
+if (-not $SkipMockHospital) {
+    $mockScript = Join-Path $ScriptsDir "mock_hospital_mcp_server.py"
+    if (-not (Test-Path $mockScript)) {
+        Write-Host "Mock hospital script not found at $mockScript, skipping." -ForegroundColor Yellow
     } else {
-        Write-Host "Mock hospital already running on port $MockHospitalPort."
+        $startedAny = $false
+        foreach ($port in $MockHospitalPorts) {
+            $existingMock = Get-ListeningProcessId -Port $port
+            if (-not $existingMock) {
+                Write-Host "Starting Mock MCP server on http://127.0.0.1:$port/mcp ..."
+                Start-Process `
+                    -FilePath $PythonExe `
+                    -ArgumentList "scripts\mock_hospital_mcp_server.py", "--port", $port `
+                    -WorkingDirectory $Root `
+                    -RedirectStandardOutput $mockHospitalLog `
+                    -RedirectStandardError $mockHospitalErr `
+                    -WindowStyle Hidden
+                $startedAny = $true
+            } else {
+                Write-Host "Mock MCP server already running on port $port."
+            }
+        }
+        if ($startedAny) {
+            Start-Sleep -Seconds 2
+        }
+
+        # Seed mock hospital into DB (idempotent — safe to re-run)
+        $seedScript = Join-Path $ScriptsDir "seed_mock_hospital.py"
+        if (Test-Path $seedScript) {
+            Write-Host "Seeding mock hospital registry ..."
+            & $PythonExe $seedScript 2>&1 | ForEach-Object { Write-Host "  $_" }
+        }
     }
 }
 
@@ -134,7 +151,9 @@ Write-Host "User frontend:   http://127.0.0.1:$FrontendPort"
 Write-Host "API docs:        http://127.0.0.1:$ApiPort/docs"
 Write-Host "API health:      http://127.0.0.1:$ApiPort/api/health"
 if (-not $SkipMockHospital) {
-    Write-Host "Mock hospital:   http://127.0.0.1:$MockHospitalPort/mcp"
+    foreach ($p in $MockHospitalPorts) {
+        Write-Host "Mock MCP:        http://127.0.0.1:$p/mcp"
+    }
 }
 Write-Host ""
 Write-Host "Logs:"

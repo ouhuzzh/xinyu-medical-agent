@@ -160,12 +160,28 @@ class MCPSkill(BaseSkill):
                 user_tools, connected, failed = [], [], {}
 
             if not user_tools:
-                hint = "你还没绑定任何外部服务。请在 设置 → 服务绑定 中添加 token。"
+                # Be specific: which servers failed, and what was the error?
+                # Helps the user (or operator) diagnose quickly instead of seeing
+                # a generic "service unavailable" message.
+                lines = ["你绑定的外部服务暂时无法调用。"]
                 if failed:
-                    hint += f"\n已绑定但连接失败：{', '.join(failed.keys())}"
+                    lines.append("失败详情：")
+                    for code, err in failed.items():
+                        hospital = None
+                        try:
+                            hospital = user_mcp_pool._registry.get_by_code(code)
+                        except Exception:
+                            pass
+                        display_name = (hospital or {}).get("name", code)
+                        lines.append(f"  - {display_name} ({code}): {err}")
+                    lines.append("")
+                    lines.append("常见原因：MCP 服务未启动 / 网络不通 / token 失效。")
+                    lines.append("可前往 设置 → 服务绑定 → 测试连接 重新检查。")
+                else:
+                    lines.append("你还没绑定任何外部服务。请在 设置 → 服务绑定 中添加 token。")
                 return {
                     "intent": "mcp_services",
-                    "messages": [AIMessage(content=hint)],
+                    "messages": [AIMessage(content="\n".join(lines))],
                     "route_reason": "skill:mcp_no_tools",
                     "decision_source": "skill",
                 }
@@ -216,25 +232,40 @@ class MCPSkill(BaseSkill):
             # Execute the tool calls
             tool_map = {t.name: t for t in user_tools}
             tool_outputs = []
+            any_failure = False
             for tc in tool_calls:
                 tool_name = tc.get("name", "")
                 tool_args = tc.get("args", {}) or {}
                 tool = tool_map.get(tool_name)
                 if tool is None:
-                    tool_outputs.append(f"工具 {tool_name} 未找到")
+                    any_failure = True
+                    tool_outputs.append(f"[失败] 工具 {tool_name} 未找到（可能是 MCP 服务未连接）")
                     continue
                 try:
                     result = tool.invoke(tool_args)
-                    tool_outputs.append(str(result))
+                    tool_outputs.append(f"[成功] {tool_name}: {result}")
                 except Exception as te:
-                    logger.warning("Tool %s execution failed", tool_name, exc_info=True)
-                    tool_outputs.append(f"工具 {tool_name} 调用失败: {type(te).__name__}")
+                    any_failure = True
+                    # Surface the real error to the summarizer LLM so it can
+                    # tell the user WHY rather than just "function unavailable"
+                    err_msg = str(te)[:200] or type(te).__name__
+                    logger.warning("Tool %s execution failed: %s", tool_name, err_msg, exc_info=True)
+                    tool_outputs.append(
+                        f"[失败] {tool_name} 调用失败: {type(te).__name__}: {err_msg}"
+                    )
 
-            # Summarize tool results for the user
+            # Summarize tool results for the user — be explicit about failure
+            summary_prompt = (
+                "把工具调用结果用 1-3 句中文回复用户。"
+                "如果有[失败]结果，明确告诉用户哪个工具失败了、原因是什么，"
+                "并建议用户：1) 稍后重试 2) 检查 设置 → 服务绑定 → 测试连接"
+                if any_failure
+                else "把工具调用结果用 1-3 句中文回复用户。"
+            )
             try:
                 summary = llm.invoke(
                     [
-                        SystemMessage(content="把工具调用结果用 1-3 句中文回复用户。"),
+                        SystemMessage(content=summary_prompt),
                         HumanMessage(content="\n\n".join(tool_outputs)),
                     ]
                 )

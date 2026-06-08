@@ -373,6 +373,33 @@ class RAGSystem:
                 self._set_startup_step("graph_compile", "completed", "代理图已就绪。")
 
                 self._set_startup_step("knowledge_base_bootstrap", "completed", "知识库状态检查完成。")
+
+                # Best-effort MCP server reachability self-check.  Logs warnings
+                # for any registered hospital whose mcp_url is unreachable from
+                # the backend — surfaces "you forgot to start the mock server"
+                # at boot instead of when the first user tries to book.
+                if getattr(config, "MCP_ENABLED", False):
+                    try:
+                        results = self.mcp_server_registry.check_reachability(timeout=2.0)
+                        unreachable = [r for r in results if not r["reachable"]]
+                        if unreachable:
+                            for r in unreachable:
+                                logger.warning(
+                                    "MCP server unreachable at boot: code=%s name=%s url=%s err=%s",
+                                    r["code"], r["name"], r["mcp_url"], r["error"],
+                                )
+                            self._set_startup_step(
+                                "mcp_reachability", "completed",
+                                f"{len(unreachable)}/{len(results)} 个 MCP 服务不可达，详见 backend 日志。",
+                            )
+                        elif results:
+                            self._set_startup_step(
+                                "mcp_reachability", "completed",
+                                f"所有 {len(results)} 个 MCP 服务可达。",
+                            )
+                    except Exception:
+                        logger.warning("MCP reachability check failed", exc_info=True)
+
                 self._set_startup_status("ready", "系统已就绪。")
             except Exception as exc:
                 logger.exception("RAG system initialization failed")

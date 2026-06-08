@@ -94,3 +94,46 @@ class MCPServerRegistry:
                 row_id = cur.fetchone()[0]
             conn.commit()
         return row_id
+
+    def check_reachability(self, timeout: float = 2.0) -> List[Dict[str, Any]]:
+        """Best-effort TCP ping each active hospital's mcp_url.
+
+        Returns a list of {code, name, mcp_url, reachable, error} dicts.  Pure
+        TCP connect — does NOT speak the MCP protocol, just confirms there is
+        something listening on the target host:port.  Cheap (~10ms per host)
+        and safe to run at boot.
+        """
+        import socket
+        from urllib.parse import urlparse
+
+        results = []
+        for hospital in self.list_active():
+            url = hospital.get("mcp_url", "")
+            parsed = urlparse(url)
+            host = parsed.hostname or ""
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            result = {
+                "code": hospital["code"],
+                "name": hospital["name"],
+                "mcp_url": url,
+                "reachable": False,
+                "error": "",
+            }
+            if not host:
+                result["error"] = "invalid mcp_url (no host)"
+                results.append(result)
+                continue
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            try:
+                sock.connect((host, int(port)))
+                result["reachable"] = True
+            except (socket.timeout, OSError) as exc:
+                result["error"] = f"{type(exc).__name__}: {exc}"
+            finally:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
+            results.append(result)
+        return results
