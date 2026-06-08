@@ -23,6 +23,7 @@ Generate a key:
 from __future__ import annotations
 
 import base64
+import os
 import hashlib
 import logging
 import threading
@@ -37,9 +38,17 @@ _crypto_lock = threading.Lock()
 
 
 def _derive_dev_key() -> bytes:
-    """Derive a deterministic 32-byte key from the JWT secret for dev convenience."""
-    seed = (config.JWT_SECRET_KEY or "dev-token-key-please-override").encode("utf-8")
-    digest = hashlib.sha256(seed).digest()
+    """Derive a deterministic dev-only Fernet key.
+
+    Uses a dedicated secret (MCP_TOKEN_DEV_SECRET) if available; otherwise
+    derives from a fixed dev-only seed.  NEVER derived from JWT_SECRET_KEY —
+    that would mean compromising the JWT secret also decrypts all PII.
+    """
+    dev_secret = os.environ.get("MCP_TOKEN_DEV_SECRET", "").strip()
+    if not dev_secret:
+        # Fixed dev-only seed — clearly unsafe, but isolated from JWT
+        dev_secret = "xinyu-medical-agent-dev-only-key-do-not-use-in-prod"
+    digest = hashlib.sha256(dev_secret.encode("utf-8")).digest()
     return base64.urlsafe_b64encode(digest)
 
 

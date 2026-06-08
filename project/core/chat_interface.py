@@ -633,6 +633,11 @@ class ChatInterface:
             _graph_start = _time.time()
 
             for chunk, metadata in self.rag_system.agent_graph.stream(stream_input, config=graph_config, stream_mode="messages"):
+                # H7: guard against runaway graph execution (e.g. LLM call hangs)
+                if _time.time() - _graph_start > config.GRAPH_STREAM_MAX_SECONDS:
+                    logger.error("Graph stream timed out after %.1fs, aborting", _time.time() - _graph_start)
+                    break
+
                 node = metadata.get("langgraph_node", "")
 
                 # Track node-level timing

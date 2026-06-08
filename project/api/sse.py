@@ -33,20 +33,31 @@ def stream_chat_events(thread_id: str, message: str) -> Iterable[str]:
     final_content = ""
     yield event_payload(ChatSseEvent(type="session", thread_id=thread_id, content=thread_id))
     yield event_payload(ChatSseEvent(type="status", thread_id=thread_id, content="thinking"))
-    try:
-        with container.get_thread_lock(thread_id):
-            for chunk in container.chat_interface.chat(
-                message,
-                [],
-                reveal_diagnostics=False,
+    lock = container.get_thread_lock(thread_id)
+    acquired = lock.acquire(timeout=120)
+    if not acquired:
+        yield event_payload(
+            ChatSseEvent(
+                type="app-error",
                 thread_id=thread_id,
-            ):
-                content = visible_assistant_text(chunk)
-                if not content:
-                    continue
-                final_content = content
-                yield event_payload(ChatSseEvent(type="message", thread_id=thread_id, content=content))
-        yield event_payload(ChatSseEvent(type="final", thread_id=thread_id, content=final_content, done=True))
+                content="会话繁忙，请稍后再试。",
+                error="thread_lock_timeout",
+                done=True,
+            )
+        )
+        return
+    try:
+        for chunk in container.chat_interface.chat(
+            message,
+            [],
+            reveal_diagnostics=False,
+            thread_id=thread_id,
+        ):
+            content = visible_assistant_text(chunk)
+            if not content:
+                continue
+            final_content = content
+            yield event_payload(ChatSseEvent(type="message", thread_id=thread_id, content=content))
     except Exception as exc:
         logger.exception("API chat stream failed for thread_id=%s", thread_id)
         yield event_payload(
@@ -58,3 +69,7 @@ def stream_chat_events(thread_id: str, message: str) -> Iterable[str]:
                 done=True,
             )
         )
+    else:
+        yield event_payload(ChatSseEvent(type="final", thread_id=thread_id, content=final_content, done=True))
+    finally:
+        lock.release()

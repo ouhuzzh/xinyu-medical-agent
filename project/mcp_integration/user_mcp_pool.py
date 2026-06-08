@@ -118,10 +118,11 @@ class UserMCPPool:
     def _build_pool(self, pool: _UserPool):
         """Connect to all of this user's hospitals and load their tools."""
         creds = self._store.get_all_decrypted(pool.user_id)
+        # Reset state EXCEPT breakers (they track cross-rebuild health)
+        pool.failed_hospitals = {}
         if not creds:
             pool.tools = []
             pool.connected_hospitals = []
-            pool.failed_hospitals = {}
             pool.built_at = time.time()
             return
 
@@ -186,6 +187,8 @@ class UserMCPPool:
                     return loop.run_until_complete(self._async_load_tools(connections, pool))
                 finally:
                     loop.close()
+            raise
+        except (KeyboardInterrupt, SystemExit):
             raise
         except BaseException as e:
             # Catch ExceptionGroup and any other BaseException leaking out of asyncio.run

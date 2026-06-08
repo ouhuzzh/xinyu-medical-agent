@@ -686,6 +686,14 @@ def handle_appointment_skill(state: State, llm, appointment_service):
                 "messages": [AIMessage(content="好的，这次预约我先不提交了。你如果想改时间、科室或重新预约，直接告诉我即可。")],
             }
         if _is_explicit_confirmation(user_query, "appointment"):
+            # Idempotency gate: if pending_confirmation_id is already empty, this
+            # confirmation was already processed — refuse to double-book.
+            if not state.get("pending_confirmation_id", ""):
+                _log_appointment_skill_event(state, skill_mode="action", request_type="confirm_appointment_duplicate", final_action="blocked_duplicate_confirm")
+                return {
+                    **_base_skill_state_update(state, intent="appointment"),
+                    "messages": [AIMessage(content="预约已确认完成，无需重复确认。如需改约或取消，可以直接告诉我。")],
+                }
             booking = skill.confirm_appointment(state["thread_id"], pending_payload)
             merged_context = _build_appointment_context(appointment_context, pending_payload)
             _log_appointment_skill_event(state, skill_mode="action", request_type="confirm_appointment", required_confirmation=True, final_action="confirm_appointment")

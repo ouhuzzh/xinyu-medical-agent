@@ -110,6 +110,9 @@ POSTGRES_PORT = int(os.environ.get("POSTGRES_PORT", "5432"))
 POSTGRES_DB = os.environ.get("POSTGRES_DB", "ai_companion")
 POSTGRES_USER = os.environ.get("POSTGRES_USER", "postgres")
 POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "")
+POSTGRES_POOL_MIN_SIZE = int(os.environ.get("POSTGRES_POOL_MIN_SIZE", "2"))
+POSTGRES_POOL_MAX_SIZE = int(os.environ.get("POSTGRES_POOL_MAX_SIZE", "10"))
+POSTGRES_POOL_TIMEOUT_SECONDS = float(os.environ.get("POSTGRES_POOL_TIMEOUT_SECONDS", "30"))
 VECTOR_INDEX_LISTS = int(os.environ.get("VECTOR_INDEX_LISTS", "100"))
 AUTO_BOOTSTRAP_KNOWLEDGE_BASE = os.environ.get("AUTO_BOOTSTRAP_KNOWLEDGE_BASE", "false").lower() == "true"
 STATUS_REFRESH_SECONDS = float(os.environ.get("STATUS_REFRESH_SECONDS", "2"))
@@ -153,7 +156,8 @@ LOGIN_LOCKOUT_SECONDS = int(os.environ.get("LOGIN_LOCKOUT_SECONDS", "900"))  # 1
 LOGIN_LOCKOUT_WINDOW_SECONDS = int(os.environ.get("LOGIN_LOCKOUT_WINDOW_SECONDS", "600"))  # 10 min sliding window
 
 # --- JWT Authentication ---
-JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "change-me-in-production-please")
+_INSECURE_JWT_DEFAULT = "change-me-in-production-please"
+JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", _INSECURE_JWT_DEFAULT if APP_ENV == "development" else "")
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24h
 JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "30"))
@@ -240,6 +244,7 @@ GRAPH_RECURSION_LIMIT = 50
 BASE_TOKEN_THRESHOLD = 4000
 TOKEN_GROWTH_FACTOR = 0.9
 ENABLE_PERSISTENT_GRAPH_CHECKPOINT = os.environ.get("ENABLE_PERSISTENT_GRAPH_CHECKPOINT", "true").lower() == "true"
+GRAPH_STREAM_MAX_SECONDS = float(os.environ.get("GRAPH_STREAM_MAX_SECONDS", "120"))
 
 # --- Text Splitter Configuration ---
 CHILD_CHUNK_SIZE = 500

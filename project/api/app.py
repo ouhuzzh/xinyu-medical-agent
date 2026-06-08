@@ -20,6 +20,24 @@ logger = logging.getLogger(__name__)
 
 
 def create_app() -> FastAPI:
+    # Startup security checks — fail fast on known-insecure defaults
+    _INSECURE_JWT = "change-me-in-production-please"
+    if not config.JWT_SECRET_KEY:
+        raise RuntimeError(
+            "JWT_SECRET_KEY is not set. Refusing to start. "
+            "Set it in project/.env or the JWT_SECRET_KEY environment variable."
+        )
+    if config.JWT_SECRET_KEY == _INSECURE_JWT and config.APP_ENV != "development":
+        raise RuntimeError(
+            f"JWT_SECRET_KEY is the default insecure value '{_INSECURE_JWT}' "
+            f"and APP_ENV={config.APP_ENV!r}. Refusing to start. "
+            f"Generate a strong key and set JWT_SECRET_KEY."
+        )
+    if config.JWT_SECRET_KEY == _INSECURE_JWT:
+        logger.warning(
+            "JWT_SECRET_KEY is the default insecure value — only acceptable in development mode."
+        )
+
     app = FastAPI(title="Medical Agentic Assistant API", version="0.1.0")
     app.add_middleware(
         CORSMiddleware,

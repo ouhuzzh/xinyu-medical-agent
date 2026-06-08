@@ -34,15 +34,21 @@ _PII_MARKER = "enc:v1:"
 
 
 def _encrypt_content(text: str) -> str:
-    """Encrypt user memory content if PII encryption is on; pass through otherwise."""
+    """Encrypt user memory content if PII encryption is on; pass through otherwise.
+
+    When USER_MEMORY_ENCRYPT_PII is True and encryption fails, stores a sentinel
+    marker rather than leaking PII into the database as plaintext.
+    """
     if not text or not config.USER_MEMORY_ENCRYPT_PII:
         return text
     try:
         from mcp_integration.token_crypto import encrypt_pii
         return _PII_MARKER + encrypt_pii(text)
     except Exception:
-        logger.warning("PII encryption failed; storing plaintext as fallback.", exc_info=True)
-        return text
+        logger.warning("PII encryption failed; storing sentinel instead of plaintext.", exc_info=True)
+        return _PII_MARKER + "[encrypt-failed]"
+
+_PII_SENTINEL = "[encrypt-failed]"
 
 
 def _decrypt_content(stored: str) -> str:
@@ -268,16 +274,6 @@ class UserMemoryStore:
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM user_memories WHERE user_id = %s", (user_id,))
-            conn.commit()
-
-    def _update_importance(self, memory_id: int, new_importance: int):
-        """Set a memory's importance to a new value."""
-        with self._connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE user_memories SET importance = %s, updated_at = NOW() WHERE id = %s",
-                    (new_importance, memory_id),
-                )
             conn.commit()
 
     def _get_memory_embedding(self, memory_id: int):

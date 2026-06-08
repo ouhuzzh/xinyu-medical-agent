@@ -525,10 +525,10 @@ class AppointmentService:
                 cur.execute(
                     """
                     SELECT a.id, a.appointment_no, a.appointment_date, a.time_slot, a.schedule_id, dep.name
-                    FROM appointments
-                    a
+                    FROM appointments a
                     JOIN departments dep ON dep.id = a.department_id
                     WHERE a.id = %s AND a.patient_id = %s AND a.status = 'booked'
+                    FOR UPDATE
                     """,
                     (appointment_id, patient_id),
                 )
@@ -541,10 +541,14 @@ class AppointmentService:
                     """
                     UPDATE appointments
                     SET status = 'cancelled', updated_at = NOW()
-                    WHERE id = %s
+                    WHERE id = %s AND status = 'booked'
                     """,
                     (appointment_id,),
                 )
+                if cur.rowcount == 0:
+                    # Concurrent cancel already changed the status
+                    conn.rollback()
+                    return None
                 cur.execute(
                     """
                     UPDATE doctor_schedules
