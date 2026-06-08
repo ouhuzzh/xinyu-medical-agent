@@ -36,7 +36,7 @@ from openai import OpenAI
 # Config
 # ---------------------------------------------------------------------------
 API_BASE = os.environ.get("EVAL_API_BASE", "http://127.0.0.1:8000")
-JUDGE_MODEL = "deepseek-v4-flash"
+JUDGE_MODEL = "deepseek-chat"
 JUDGE_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "sk-7e382f42370b4cd6809833ebc7167d36")
 JUDGE_BASE_URL = "https://api.deepseek.com/v1"
 
