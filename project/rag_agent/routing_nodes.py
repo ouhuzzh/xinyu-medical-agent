@@ -377,6 +377,23 @@ def intent_router(state: State, llm):
     decision_source = state.get("decision_source", "")
     route_reason = state.get("route_reason", "")
 
+    # Fast-path: very short query with no conversation context → default to medical_rag
+    # rather than hitting the LLM with an empty context (147s timeout on 7B).
+    summary = state.get("conversation_summary", "") or ""
+    has_context = bool(summary.strip() or recent_context.strip() or topic_focus.strip())
+    if not has_context and len(user_query.strip()) <= 5 and not _looks_like_greeting(user_query):
+        logger.debug("Short query without context, defaulting to medical_rag: %r", user_query[:20])
+        return {
+            "intent": "medical_rag",
+            "primary_intent": "medical_rag",
+            "secondary_intent": "",
+            "primary_user_query": user_query,
+            "secondary_user_query": "",
+            "decision_source": "rule_fast_path",
+            "route_reason": "short_query_no_context_default_rag",
+            "last_route_reason": "short_query_no_context_default_rag",
+        }
+
     if _needs_medication_detail_clarification(primary_user_query):
         clarification = "请先告诉我药名、规格或包装上写的剂量信息，我才能更安全地帮你判断怎么用。"
         return {
