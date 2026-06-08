@@ -27,7 +27,7 @@ class TestConnectionRequest(BaseModel):
 def list_hospitals(request: Request, current_user: AuthenticatedUser = Depends(require_current_user)):
     request.state.route_type = "hospitals_list"
     container = get_container()
-    hospitals = container.rag_system.hospital_registry.list_active()
+    hospitals = container.rag_system.mcp_server_registry.list_active()
     return {
         "hospitals": [
             {"code": h["code"], "name": h["name"],
@@ -42,7 +42,7 @@ def list_hospitals(request: Request, current_user: AuthenticatedUser = Depends(r
 def list_credentials(request: Request, current_user: AuthenticatedUser = Depends(require_current_user)):
     request.state.route_type = "hospitals_credentials"
     container = get_container()
-    creds = container.rag_system.user_hospital_store.list_for_user(current_user.user_id)
+    creds = container.rag_system.user_mcp_credential_store.list_for_user(current_user.user_id)
     return {
         "credentials": [
             {"hospital_code": c["hospital_code"], "label": c.get("label", ""),
@@ -64,14 +64,14 @@ def add_credential(
     container = get_container()
 
     # Validate hospital exists
-    hospital = container.rag_system.hospital_registry.get_by_code(payload.hospital_code)
+    hospital = container.rag_system.mcp_server_registry.get_by_code(payload.hospital_code)
     if not hospital:
         raise HTTPException(status_code=404, detail=f"医院 {payload.hospital_code} 不在平台支持列表中。")
     if not hospital.get("is_active"):
         raise HTTPException(status_code=400, detail=f"医院 {payload.hospital_code} 暂不可用。")
 
     try:
-        container.rag_system.user_hospital_store.save_credential(
+        container.rag_system.user_mcp_credential_store.save_credential(
             user_id=current_user.user_id,
             hospital_code=payload.hospital_code,
             plain_token=payload.token,
@@ -94,7 +94,7 @@ def delete_credential(
 ):
     request.state.route_type = "hospitals_credentials_delete"
     container = get_container()
-    deleted = container.rag_system.user_hospital_store.delete_credential(
+    deleted = container.rag_system.user_mcp_credential_store.delete_credential(
         current_user.user_id, payload.hospital_code
     )
     if not deleted:

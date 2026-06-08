@@ -1,4 +1,4 @@
-"""Per-user hospital credential store.
+"""Per-user MCP server credential store.
 
 Stores encrypted tokens for each (user_id, hospital_code) pair. Tokens are
 encrypted at rest with Fernet (see token_crypto.py).
@@ -17,7 +17,7 @@ from .token_crypto import decrypt_token, encrypt_token
 logger = logging.getLogger(__name__)
 
 
-class UserHospitalStore:
+class UserMCPCredentialStore:
     """CRUD for user_hospital_credentials, with transparent encryption."""
 
     def __init__(self):

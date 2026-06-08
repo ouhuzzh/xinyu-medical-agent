@@ -1,14 +1,16 @@
-"""MCPSkill — registers MCP-driven hospital tools into the LangGraph agent.
+"""MCPSkill — registers MCP tools into the LangGraph agent as a pluggable skill.
 
-When user mentions a remote hospital (e.g., "挂协和的号"), this skill:
-  1. Resolves user_id from thread_id via ChatSessionStore
-  2. Fetches the user's MCP tools via UserMCPPool
-  3. Binds those tools to the strong LLM
-  4. Lets the LLM decide which hospital tool to call
-  5. Executes the tool, returns result to user
+Any MCP service a user has bound credentials for (hospital booking, pharmacy
+ordering, lab-result lookup, payment processing, ...) has its tools loaded
+per-user and namespaced by server code.  The LLM sees all available tools
+and decides which to call based on the user's request.
 
-Differs from the local AppointmentSkill in that tools come from external
-MCP servers (per-user, per-hospital) rather than the local PostgreSQL.
+Architecture:
+  1. User binds MCP server credentials (token + URL) via the settings UI.
+  2. On first use, UserMCPPool connects to each server and loads its tools.
+  3. MCPSkill's match() activates whenever the query has an MCP-action verb
+     AND the user has bound servers (checked via context).
+  4. The handler binds all of the user's tools to the LLM and lets it choose.
 """
 
 from __future__ import annotations
@@ -22,72 +24,72 @@ from skills.base_skill import BaseSkill
 
 logger = logging.getLogger(__name__)
 
+# System prompt for the MCP tool-calling agent (generic, service-agnostic)
+_SYSTEM_PROMPT = """你是智能助手中的外部服务调用模块。
 
-# Hospital names commonly mentioned in user queries (used for fast detection)
-# Production should derive this from the hospital_registry dynamically.
-_HOSPITAL_KEYWORDS = (
-    "协和", "仁济", "中山", "同济", "华西", "湘雅",
-    "外院", "外部医院", "其他医院",
-)
-
-_SYSTEM_PROMPT = """你是医疗助手中的外部医院预约模块。
-
-可用工具来自不同医院的 MCP 服务。每个工具名称以医院 code 开头（如 xiehe__book_appointment）。
+可用工具来自不同外部服务的 MCP 接口。每个工具名称以服务代码开头（如 xiehe__book_appointment、yaofang__check_stock）。
 
 规则:
-1. 用户提到的医院名称要匹配到对应的工具前缀（"协和" → xiehe__*）。
-2. 用户没指定医院时，列出可用医院让用户选择。
-3. 调用工具前先组装参数，调用后用自然语言回复用户结果。
-4. 严禁伪造工具调用结果。若所有工具调用都失败，明确告知用户。
+1. 根据用户请求，从工具列表中选择最合适的工具调用。
+2. 调用工具前正确组装参数，用自然语言回复结果。
+3. 用户没指定具体服务时，先描述可选的服务让用户选择。
+4. 严禁伪造工具调用结果。若工具调用全部失败，明确告知用户。
 """
+
+# MCP-action verbs — queries containing these likely need MCP tool access.
+# NOT keyword-matching specific services — that's the LLM's job.
+_MCP_ACTION_VERBS = (
+    "帮我查", "帮我查一下", "帮我挂", "帮我预约", "帮我约", "帮我订",
+    "帮我取消", "退号", "退掉", "查一下", "看一下", "看看",
+    "有没有号", "有没有空", "还有号吗", "带我去", "去查",
+    "有几个", "多少钱", "价格", "支付", "付一下",
+    "有什么", "有哪些", "帮我找", "搜索", "搜一下",
+    "挂号", "预约", "约号", "排号", "取号",
+    "查医生", "查科室", "查排班", "查库存",
+)
 
 
 class MCPSkill(BaseSkill):
-    """Skill that delegates to MCP-provided hospital tools."""
+    """Skill that delegates to MCP-provided tools from any service."""
 
     @property
     def name(self) -> str:
-        return "mcp_hospital"
+        return "mcp_services"
 
     @property
     def priority(self) -> int:
         # Lower than greeting (10) but higher than medical_rag (60)
-        # — explicit mentions of external hospitals should win.
         return 25
 
     @property
     def intent_label(self) -> str:
-        return "mcp_hospital"
+        return "mcp_services"
 
     def match(self, query: str, *, context: Dict[str, Any]) -> bool:
-        """Match queries mentioning external hospitals, including follow-ups."""
+        """Match queries that are likely to need MCP service tool access.
+
+        Strategy: detect action verbs (book, search, cancel, check, ...)
+        rather than hardcoding specific hospital/service names. The LLM
+        decides WHICH service to use based on the available tools.
+        """
         import config
         if not config.MCP_ENABLED:
             return False
-        normalized = (query or "").lower()
 
-        # Must mention a known hospital
-        has_hospital = any(kw in query for kw in _HOSPITAL_KEYWORDS)
-        if not has_hospital:
-            # Context-aware follow-up: "神经科" after asking about 协和
-            recent_context = context.get("recent_context", "") or ""
-            if any(kw in recent_context for kw in _HOSPITAL_KEYWORDS) and len(normalized) <= 10:
-                return True
+        normalized = (query or "").strip()
+        if not normalized:
             return False
 
-        # Hospital mentioned + appointment-related action: route to MCP
-        from rag_agent.node_helpers import (
-            _looks_like_appointment_discovery_query,
-            _looks_like_explicit_appointment_intent,
-            _looks_like_explicit_cancel_intent,
-        )
-        if (_looks_like_appointment_discovery_query(query)
-                or _looks_like_explicit_appointment_intent(query)
-                or _looks_like_explicit_cancel_intent(query)):
+        # Direct action-verb match
+        if any(verb in normalized for verb in _MCP_ACTION_VERBS):
             return True
 
-        # Hospital mentioned but no action (e.g. "协和医院很厉害吗"):
-        # let medical_rag handle general knowledge questions
+        # Context-aware: short follow-up after a previous MCP interaction
+        recent_context = context.get("recent_context", "") or ""
+        if any(verb in recent_context for verb in _MCP_ACTION_VERBS):
+            if len(normalized) <= 10:
+                return True
+
         return False
 
     def get_state_schema(self) -> Dict[str, Any]:
@@ -128,8 +130,8 @@ class MCPSkill(BaseSkill):
             thread_id = state.get("thread_id", "")
             if user_mcp_pool is None or chat_sessions is None or llm is None:
                 return {
-                    "intent": "mcp_hospital",
-                    "messages": [AIMessage(content="外部医院预约功能暂不可用。")],
+                    "intent": "mcp_services",
+                    "messages": [AIMessage(content="外部服务功能暂不可用。")],
                     "route_reason": "skill:mcp_no_services",
                     "decision_source": "skill",
                 }
@@ -142,8 +144,8 @@ class MCPSkill(BaseSkill):
                 user_id = ""
             if not user_id:
                 return {
-                    "intent": "mcp_hospital",
-                    "messages": [AIMessage(content="登录后才能使用外部医院预约功能。")],
+                    "intent": "mcp_services",
+                    "messages": [AIMessage(content="登录后才能使用外部服务功能。")],
                     "route_reason": "skill:mcp_no_user",
                     "decision_source": "skill",
                 }
@@ -158,11 +160,11 @@ class MCPSkill(BaseSkill):
                 user_tools, connected, failed = [], [], {}
 
             if not user_tools:
-                hint = "你还没绑定任何外部医院。请在 账号-医院绑定 中添加 token。"
+                hint = "你还没绑定任何外部服务。请在 设置 → 服务绑定 中添加 token。"
                 if failed:
                     hint += f"\n已绑定但连接失败：{', '.join(failed.keys())}"
                 return {
-                    "intent": "mcp_hospital",
+                    "intent": "mcp_services",
                     "messages": [AIMessage(content=hint)],
                     "route_reason": "skill:mcp_no_tools",
                     "decision_source": "skill",
@@ -176,6 +178,8 @@ class MCPSkill(BaseSkill):
                 context_parts.append(f"对话摘要: {conv_summary}")
             if recent_ctx.strip():
                 context_parts.append(f"最近对话: {recent_ctx}")
+            if connected:
+                context_parts.append(f"可用服务: {', '.join(connected)}")
             context_text = "\n".join(context_parts)
             prompt_content = user_query
             if context_text:
@@ -192,8 +196,8 @@ class MCPSkill(BaseSkill):
             except Exception as e:
                 logger.exception("MCP LLM call failed")
                 return {
-                    "intent": "mcp_hospital",
-                    "messages": [AIMessage(content=f"外部医院调用失败：{type(e).__name__}")],
+                    "intent": "mcp_services",
+                    "messages": [AIMessage(content=f"外部服务调用失败：{type(e).__name__}")],
                     "route_reason": "skill:mcp_llm_error",
                     "decision_source": "skill",
                 }
@@ -203,7 +207,7 @@ class MCPSkill(BaseSkill):
             if not tool_calls:
                 # LLM answered directly without tool call
                 return {
-                    "intent": "mcp_hospital",
+                    "intent": "mcp_services",
                     "messages": [response],
                     "route_reason": "skill:mcp_direct_answer",
                     "decision_source": "skill",
@@ -222,17 +226,9 @@ class MCPSkill(BaseSkill):
                 try:
                     result = tool.invoke(tool_args)
                     tool_outputs.append(str(result))
-                    # Track successful use
-                    if user_mcp_pool and _NAMESPACE_SEP in tool_name:
-                        hospital_code = tool_name.split(_NAMESPACE_SEP)[0]
-                        try:
-                            from .user_hospital_store import UserHospitalStore
-                            UserHospitalStore().mark_used(user_id, hospital_code)
-                        except Exception:
-                            pass
                 except Exception as te:
                     logger.warning("Tool %s execution failed", tool_name, exc_info=True)
-                    tool_outputs.append(f"工具 {tool_name} 调用失败: {type(te).__name__}: {str(te)[:200]}")
+                    tool_outputs.append(f"工具 {tool_name} 调用失败: {type(te).__name__}")
 
             # Summarize tool results for the user
             try:
@@ -247,18 +243,16 @@ class MCPSkill(BaseSkill):
                 final_text = "\n".join(tool_outputs)
 
             return {
-                "intent": "mcp_hospital",
+                "intent": "mcp_services",
                 "messages": [AIMessage(content=final_text)],
                 "route_reason": "skill:mcp_tool_executed",
                 "decision_source": "skill",
             }
 
-        return {"mcp_hospital_handler": mcp_handler}
+        return {"mcp_services_handler": mcp_handler}
 
     def get_route_targets(self) -> Dict[str, str]:
-        return {"mcp_hospital": "mcp_hospital_handler"}
+        return {"mcp_services": "mcp_services_handler"}
 
 
-# Lazy import to avoid circular dependencies
-import config
-_NAMESPACE_SEP = config.MCP_TOOL_NAMESPACE_SEPARATOR
+_NAMESPACE_SEP = __import__("config").MCP_TOOL_NAMESPACE_SEPARATOR

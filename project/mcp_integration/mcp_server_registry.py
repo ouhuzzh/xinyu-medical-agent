@@ -1,6 +1,6 @@
-"""Platform-curated hospital registry.
+"""Platform-curated MCP server registry.
 
-Read-only catalog of hospitals exposing MCP servers. Maintained by platform
+Read-only catalog of MCP servers exposing MCP servers. Maintained by platform
 operators (rows are seeded via SQL or admin tooling, not user-facing CRUD).
 """
 
@@ -15,7 +15,7 @@ import psycopg
 logger = logging.getLogger(__name__)
 
 
-class HospitalRegistry:
+class MCPServerRegistry:
     """Read-only access to the hospitals table."""
 
     def __init__(self):

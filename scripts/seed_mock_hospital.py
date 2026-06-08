@@ -12,9 +12,9 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "project"))
 
-from mcp_integration.hospital_registry import HospitalRegistry
+from mcp_integration.mcp_server_registry import MCPServerRegistry
 
-registry = HospitalRegistry()
+registry = MCPServerRegistry()
 
 HOSPITALS = [
     {

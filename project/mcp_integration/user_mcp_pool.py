@@ -23,8 +23,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import config
 from llm_tiered_router import CircuitBreaker
 
-from .hospital_registry import HospitalRegistry
-from .user_hospital_store import UserHospitalStore
+from .mcp_server_registry import MCPServerRegistry
+from .user_mcp_credential_store import UserMCPCredentialStore
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +48,8 @@ class UserMCPPool:
 
     def __init__(
         self,
-        hospital_registry: HospitalRegistry,
-        user_hospital_store: UserHospitalStore,
+        hospital_registry: MCPServerRegistry,
+        user_hospital_store: UserMCPCredentialStore,
     ):
         self._registry = hospital_registry
         self._store = user_hospital_store

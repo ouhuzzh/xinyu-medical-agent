@@ -24,8 +24,8 @@ from memory.summary_store import SummaryStore
 from memory.user_memory_store import UserMemoryStore
 from memory.memory_extractor import MemoryExtractor
 from db.chat_session_store import ChatSessionStore
-from mcp_integration.hospital_registry import HospitalRegistry
-from mcp_integration.user_hospital_store import UserHospitalStore
+from mcp_integration.mcp_server_registry import MCPServerRegistry
+from mcp_integration.user_mcp_credential_store import UserMCPCredentialStore
 from mcp_integration.user_mcp_pool import UserMCPPool
 from model_factory import get_chat_model
 from rag_agent.tools import ToolFactory
@@ -49,9 +49,9 @@ class RAGSystem:
         self.user_memory_store = UserMemoryStore()
         self.chat_sessions = ChatSessionStore()
         self.memory_extractor = MemoryExtractor(self.user_memory_store, self.chat_sessions)
-        self.hospital_registry = HospitalRegistry()
-        self.user_hospital_store = UserHospitalStore()
-        self.user_mcp_pool = UserMCPPool(self.hospital_registry, self.user_hospital_store)
+        self.mcp_server_registry = MCPServerRegistry()
+        self.user_mcp_credential_store = UserMCPCredentialStore()
+        self.user_mcp_pool = UserMCPPool(self.mcp_server_registry, self.user_mcp_credential_store)
         self.appointment_service = AppointmentService()
         self.observability = Observability()
         self.document_manager = None
