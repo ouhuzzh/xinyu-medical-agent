@@ -37,8 +37,8 @@ from openai import OpenAI
 # ---------------------------------------------------------------------------
 API_BASE = os.environ.get("EVAL_API_BASE", "http://127.0.0.1:8000")
 JUDGE_MODEL = "deepseek-chat"
-JUDGE_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "sk-7e382f42370b4cd6809833ebc7167d36")
-JUDGE_BASE_URL = "https://api.deepseek.com/v1"
+JUDGE_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
+JUDGE_BASE_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
 
 # ---------------------------------------------------------------------------
 # LLM-Judge prompt
