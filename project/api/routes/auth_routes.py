@@ -4,6 +4,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Request
 
 from api.auth import (
     AuthenticatedUser,
+    _client_ip,
     assert_login_not_locked,
     enforce_auth_rate_limit,
     record_login_failure,
@@ -29,6 +30,8 @@ def register(request: Request, payload: RegisterRequest):
     request.state.route_type = "auth_register"
     enforce_auth_rate_limit(request)
     container = get_container()
+    req_id = getattr(request.state, "request_id", "") or ""
+    ip = _client_ip(request)
     try:
         user = container.user_store.create_user(
             username=payload.username.strip(),
@@ -36,6 +39,12 @@ def register(request: Request, payload: RegisterRequest):
             display_name=payload.display_name.strip(),
         )
     except ValueError as e:
+        container.audit_log.record(
+            action="user_register",
+            actor_username=payload.username.strip().lower(),
+            client_ip=ip, request_id=req_id, success=False,
+            detail={"error": str(e)},
+        )
         raise HTTPException(status_code=400, detail=str(e))
 
     tokens = create_token_pair(
@@ -44,6 +53,12 @@ def register(request: Request, payload: RegisterRequest):
         role=user["role"],
     )
     request.state.user_id = str(user["id"])
+    container.audit_log.record(
+        action="user_register",
+        actor_user_id=str(user["id"]),
+        actor_username=user["username"],
+        client_ip=ip, request_id=req_id, success=True,
+    )
     return TokenResponse(**tokens)
 
 
@@ -56,12 +71,19 @@ def login(request: Request, payload: LoginRequest):
     # round-trip and gives the attacker no signal about credentials.
     assert_login_not_locked(username)
     container = get_container()
+    req_id = getattr(request.state, "request_id", "") or ""
+    ip = _client_ip(request)
     user = container.user_store.verify_password(
         username=username,
         password=payload.password,
     )
     if user is None:
         record_login_failure(username)
+        container.audit_log.record(
+            action="user_login",
+            actor_username=username.lower(),
+            client_ip=ip, request_id=req_id, success=False,
+        )
         raise HTTPException(status_code=401, detail="用户名或密码不正确。")
 
     record_login_success(username)
@@ -71,6 +93,12 @@ def login(request: Request, payload: LoginRequest):
         role=user["role"],
     )
     request.state.user_id = str(user["id"])
+    container.audit_log.record(
+        action="user_login",
+        actor_user_id=str(user["id"]),
+        actor_username=user["username"],
+        client_ip=ip, request_id=req_id, success=True,
+    )
     return TokenResponse(**tokens)
 
 
@@ -124,6 +152,8 @@ def change_password(
 ):
     request.state.route_type = "auth_change_password"
     container = get_container()
+    req_id = getattr(request.state, "request_id", "") or ""
+    ip = _client_ip(request)
     try:
         container.user_store.change_password(
             user_id=int(current_user.user_id),
@@ -131,5 +161,18 @@ def change_password(
             new_password=payload.new_password,
         )
     except ValueError as e:
+        container.audit_log.record(
+            action="user_change_password",
+            actor_user_id=current_user.user_id,
+            actor_username=current_user.username,
+            client_ip=ip, request_id=req_id, success=False,
+            detail={"error": str(e)},
+        )
         raise HTTPException(status_code=400, detail=str(e))
+    container.audit_log.record(
+        action="user_change_password",
+        actor_user_id=current_user.user_id,
+        actor_username=current_user.username,
+        client_ip=ip, request_id=req_id, success=True,
+    )
     return {"message": "密码修改成功。"}

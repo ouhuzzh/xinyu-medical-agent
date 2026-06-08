@@ -2,11 +2,15 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from api.auth import AuthenticatedUser, require_current_user
+from api.auth import AuthenticatedUser, require_current_user, _client_ip
 from api.dependencies import get_container
 from pydantic import BaseModel, Field
 
 router = APIRouter()
+
+
+def _request_id(request: Request) -> str:
+    return getattr(request.state, "request_id", "") or ""
 
 
 class AddCredentialRequest(BaseModel):
@@ -78,10 +82,32 @@ def add_credential(
             label=payload.label,
         )
     except ValueError as e:
+        container.audit_log.record(
+            action="mcp_credential_save",
+            actor_user_id=current_user.user_id,
+            actor_username=current_user.username,
+            target_type="hospital",
+            target_id=payload.hospital_code,
+            client_ip=_client_ip(request),
+            request_id=_request_id(request),
+            success=False,
+            detail={"error": str(e)},
+        )
         raise HTTPException(status_code=400, detail=str(e))
 
     # Invalidate pool so next turn picks up new tools
     container.rag_system.user_mcp_pool.invalidate(current_user.user_id)
+    container.audit_log.record(
+        action="mcp_credential_save",
+        actor_user_id=current_user.user_id,
+        actor_username=current_user.username,
+        target_type="hospital",
+        target_id=payload.hospital_code,
+        client_ip=_client_ip(request),
+        request_id=_request_id(request),
+        success=True,
+        detail={"label": payload.label or ""},
+    )
 
     return {"message": f"已绑定 {hospital['name']}。"}
 
@@ -100,6 +126,16 @@ def delete_credential(
     if not deleted:
         raise HTTPException(status_code=404, detail="未找到该绑定记录。")
     container.rag_system.user_mcp_pool.invalidate(current_user.user_id)
+    container.audit_log.record(
+        action="mcp_credential_delete",
+        actor_user_id=current_user.user_id,
+        actor_username=current_user.username,
+        target_type="hospital",
+        target_id=payload.hospital_code,
+        client_ip=_client_ip(request),
+        request_id=_request_id(request),
+        success=True,
+    )
     return {"message": "已解除绑定。"}
 
 

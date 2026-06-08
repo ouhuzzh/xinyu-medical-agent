@@ -468,6 +468,36 @@ class SchemaManager:
                 """,
             ],
         ),
+        (
+            "015_audit_log",
+            "Append-only audit trail for security-relevant operations (registration, "
+            "password change, credential mutation, booking).",
+            [
+                """
+                CREATE TABLE IF NOT EXISTS audit_log (
+                    id              BIGSERIAL PRIMARY KEY,
+                    actor_user_id   VARCHAR(128) NOT NULL DEFAULT '',
+                    actor_username  VARCHAR(64)  NOT NULL DEFAULT '',
+                    action          VARCHAR(64)  NOT NULL,
+                    target_type     VARCHAR(64)  NOT NULL DEFAULT '',
+                    target_id       VARCHAR(128) NOT NULL DEFAULT '',
+                    client_ip       VARCHAR(64)  NOT NULL DEFAULT '',
+                    request_id      VARCHAR(64)  NOT NULL DEFAULT '',
+                    success         BOOLEAN      NOT NULL DEFAULT TRUE,
+                    detail          JSONB        NOT NULL DEFAULT '{}'::jsonb,
+                    created_at      TIMESTAMP    NOT NULL DEFAULT NOW()
+                )
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_audit_log_actor_time
+                ON audit_log(actor_user_id, created_at DESC)
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_audit_log_action_time
+                ON audit_log(action, created_at DESC)
+                """,
+            ],
+        ),
     ]
 
     def __init__(self, conninfo: str):
