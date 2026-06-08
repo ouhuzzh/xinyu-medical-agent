@@ -132,7 +132,24 @@ def get_chat_model_for_tier(*, provider: str, model: str, temperature: float,
     raise ValueError(f"Unsupported LLM provider: {provider_name}")
 
 
+_embedding_singleton = None
+_embedding_singleton_lock = __import__("threading").Lock()
+
+
 def get_embedding_model(provider=None):
+    """Return the global embedding model singleton. ~450 MB RAM savings
+    when shared across all stores (vs each store creating its own)."""
+    global _embedding_singleton
+    if _embedding_singleton is not None:
+        return _embedding_singleton
+    with _embedding_singleton_lock:
+        if _embedding_singleton is not None:
+            return _embedding_singleton
+        _embedding_singleton = _create_embedding_model(provider)
+        return _embedding_singleton
+
+
+def _create_embedding_model(provider=None):
     provider_name = (provider or config.ACTIVE_EMBEDDING_PROVIDER).lower()
 
     if provider_name in {"openai", "openai_compatible"}:

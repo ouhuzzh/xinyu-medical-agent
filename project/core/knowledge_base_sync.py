@@ -111,7 +111,7 @@ class KnowledgeBaseSyncService:
         self.markdown_dir.mkdir(parents=True, exist_ok=True)
 
     def _connect(self):
-        return psycopg.connect(self.rag_system.vector_db.conninfo)
+        from db.connection import connect; return connect()
 
     @staticmethod
     def _extract_front_matter_metadata(raw_text: str) -> dict:

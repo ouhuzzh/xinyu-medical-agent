@@ -28,7 +28,7 @@ class MCPServerRegistry:
         )
 
     def _connect(self):
-        return psycopg.connect(self._conninfo)
+        from db.connection import connect; return connect()
 
     def list_active(self) -> List[Dict[str, Any]]:
         """List all active hospitals (for the binding UI)."""

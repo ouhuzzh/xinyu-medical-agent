@@ -17,7 +17,7 @@ class ParentStoreManager:
         )
 
     def _connect(self):
-        return psycopg.connect(self._conninfo)
+        from db.connection import connect; return connect()
 
     @staticmethod
     def _document_info_from_metadata(metadata: Dict) -> Dict:

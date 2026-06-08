@@ -43,7 +43,7 @@ class UserMemoryStore:
         self._embeddings_lock = threading.Lock()
 
     def _connect(self):
-        return psycopg.connect(self._conninfo)
+        from db.connection import connect; return connect()
 
     def _get_embeddings(self):
         """Lazy-init the embedding model.  Returns None on failure (graceful degradation)."""
@@ -231,6 +231,29 @@ class UserMemoryStore:
             with conn.cursor() as cur:
                 cur.execute("DELETE FROM user_memories WHERE user_id = %s", (user_id,))
             conn.commit()
+
+    def _update_importance(self, memory_id: int, new_importance: int):
+        """Set a memory's importance to a new value."""
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE user_memories SET importance = %s, updated_at = NOW() WHERE id = %s",
+                    (new_importance, memory_id),
+                )
+            conn.commit()
+
+    def _get_memory_embedding(self, memory_id: int):
+        """Fetch the stored embedding vector for a memory. Returns list[float] or None."""
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT embedding FROM user_memories WHERE id = %s",
+                    (memory_id,),
+                )
+                row = cur.fetchone()
+        if row and row[0]:
+            return list(map(float, str(row[0]).strip("[]").split(",")))
+        return None
 
     # ------------------------------------------------------------------
     # Status

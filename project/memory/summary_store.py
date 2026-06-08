@@ -13,7 +13,7 @@ class SummaryStore:
         )
 
     def _connect(self):
-        return psycopg.connect(self._conninfo)
+        from db.connection import connect; return connect()
 
     def ensure_session(self, thread_id: str, conn=None):
         owns_connection = conn is None

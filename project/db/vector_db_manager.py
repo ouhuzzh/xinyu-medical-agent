@@ -72,7 +72,7 @@ class PgVectorCollection:
         self._rerank_client = None
 
     def _connect(self):
-        return psycopg.connect(self._conninfo)
+        from db.connection import connect; return connect()
 
     def _get_rerank_client(self):
         if self._rerank_client is None:
@@ -426,7 +426,7 @@ class VectorDbManager:
         self._schema_manager = SchemaManager(self._conninfo)
 
     def _connect(self):
-        return psycopg.connect(self._conninfo)
+        from db.connection import connect; return connect()
 
     @property
     def conninfo(self):

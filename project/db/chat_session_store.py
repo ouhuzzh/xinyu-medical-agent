@@ -15,7 +15,7 @@ class ChatSessionStore:
         )
 
     def _connect(self):
-        return psycopg.connect(self._conninfo)
+        from db.connection import connect; return connect()
 
     def create_session(self, owner_user_id: str) -> str:
         thread_id = uuid.uuid4().hex

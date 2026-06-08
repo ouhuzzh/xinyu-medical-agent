@@ -222,29 +222,46 @@ class MemoryExtractor:
     # ------------------------------------------------------------------
 
     def _deprecate_contradicting_memory(self, user_id: str, new_content: str):
-        """When LLM says a memory is deprecated, halve the importance of matching old memories."""
+        """When LLM says a memory is deprecated, halve the importance of matching old memories.
+
+        Uses embedding cosine similarity (reuses the store's singleton embedding)
+        instead of brittle keyword Jaccard overlap.  Only deprecates when the
+        semantics genuinely match (similarity > 0.5), avoiding false positives
+        from random keyword overlap.
+        """
         try:
             existing = self._store.get_memories_for_user(user_id)
             if not existing:
                 return
 
-            # Find memories that are likely contradicted by the new information
-            # Use simple keyword overlap for now (no extra embedding call)
-            keywords = set(re.findall(r"[一-鿿]{2,}", new_content))
+            # Get embeddings for the new content
+            embeddings_model = self._store._get_embeddings()
+            if embeddings_model is None:
+                return
+            new_embedding = embeddings_model.embed_query(new_content)
+
             for mem in existing:
-                mem_keywords = set(re.findall(r"[一-鿿]{2,}", mem["content"]))
-                overlap = len(keywords & mem_keywords) / max(len(keywords), 1)
-                if overlap > 0.3:
-                    # Halve importance to deprioritize
+                mem_embedding = self._store._get_memory_embedding(mem["id"])
+                if mem_embedding is None:
+                    continue
+                similarity = self._cosine_similarity(new_embedding, mem_embedding)
+                if similarity > 0.5:
                     new_imp = max(1, mem["importance"] // 2)
                     try:
                         self._store._update_importance(mem["id"], new_imp)
-                        logger.info("Deprecated memory %d (%s) importance %d→%d",
-                                    mem["id"], mem["content"][:40], mem["importance"], new_imp)
+                        logger.info("Deprecated memory %d (%s) importance %d→%d (sim=%.2f)",
+                                    mem["id"], mem["content"][:40], mem["importance"], new_imp, similarity)
                     except Exception:
                         pass
         except Exception:
             logger.warning("Contradiction deprecation failed", exc_info=True)
+
+    @staticmethod
+    def _cosine_similarity(a: list, b: list) -> float:
+        dot = sum(x*y for x,y in zip(a,b))
+        norm_a = sum(x*x for x in a)**0.5
+        norm_b = sum(x*x for x in b)**0.5
+        return dot/(norm_a*norm_b) if norm_a and norm_b else 0.0
 
     # ------------------------------------------------------------------
     # JSON parsing

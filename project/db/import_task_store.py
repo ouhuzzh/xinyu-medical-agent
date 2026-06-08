@@ -17,7 +17,7 @@ class ImportTaskStore:
         )
 
     def _connect(self):
-        return psycopg.connect(self._conninfo)
+        from db.connection import connect; return connect()
 
     def save_event(self, event: dict):
         payload = dict(event or {})

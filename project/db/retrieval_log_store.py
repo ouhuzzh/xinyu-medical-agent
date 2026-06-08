@@ -16,7 +16,7 @@ class RetrievalLogStore:
         )
 
     def _connect(self):
-        return psycopg.connect(self._conninfo)
+        from db.connection import connect; return connect()
 
     def list_recent(self, limit: int = 20) -> list[dict]:
         with self._connect() as conn:

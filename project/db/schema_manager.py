@@ -477,7 +477,7 @@ class SchemaManager:
         self._applied = False
 
     def _connect(self):
-        return psycopg.connect(self._conninfo)
+        from db.connection import connect; return connect()
 
     def apply_migrations(self):
         with self._lock:

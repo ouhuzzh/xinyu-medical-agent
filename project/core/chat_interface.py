@@ -691,21 +691,22 @@ class ChatInterface:
                 except Exception:
                     logger.warning("Post-chat summarization failed for thread_id=%s", active_thread_id, exc_info=True)
 
-            # Extract user memories (async, fire-and-forget)
+            # Extract user memories (truly async background thread)
             if user_id and config.USER_MEMORY_ENABLED and config.USER_MEMORY_EXTRACTION_ENABLED and combined_assistant_text:
-                try:
-                    saved = self.rag_system.memory_extractor.extract_and_save(
-                        thread_id=active_thread_id,
-                        user_message=user_message,
-                        assistant_message=combined_assistant_text,
-                        conversation_summary=latest_values.get("conversation_summary", ""),
-                    )
-                    # If new memories were saved, invalidate the per-thread cache
-                    # so the next turn retrieves the fresh set.
-                    if saved:
-                        self._invalidate_memory_cache(user_id, active_thread_id)
-                except Exception:
-                    logger.warning("Memory extraction failed for thread_id=%s", active_thread_id, exc_info=True)
+                import threading
+                def _bg_extract():
+                    try:
+                        saved = self.rag_system.memory_extractor.extract_and_save(
+                            thread_id=active_thread_id,
+                            user_message=user_message,
+                            assistant_message=combined_assistant_text,
+                            conversation_summary=latest_values.get("conversation_summary", ""),
+                        )
+                        if saved:
+                            self._invalidate_memory_cache(user_id, active_thread_id)
+                    except Exception:
+                        logger.warning("Memory extraction failed for thread_id=%s", active_thread_id, exc_info=True)
+                threading.Thread(target=_bg_extract, daemon=True).start()
 
             updated_state = self._resolved_session_state(latest_values, session_state, user_message, clarification_text)
             if updated_state != (session_state or {}):

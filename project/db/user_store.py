@@ -28,7 +28,7 @@ class UserStore:
         )
 
     def _connect(self):
-        return psycopg.connect(self._conninfo)
+        from db.connection import connect; return connect()
 
     def create_user(
         self,

@@ -17,7 +17,7 @@ class RouteLogStore:
         )
 
     def _connect(self):
-        return psycopg.connect(self._conninfo)
+        from db.connection import connect; return connect()
 
     def save_log(self, payload: dict):
         item = dict(payload or {})

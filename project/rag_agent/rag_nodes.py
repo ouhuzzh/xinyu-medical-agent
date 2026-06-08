@@ -568,24 +568,31 @@ def answer_grounding_check(state: State, llm):
     if not has_low and evidence_score is not None and evidence_score >= config.RAG_HIGH_CONFIDENCE_SCORE:
         return {}
     evidence_score = state.get("grounding_evidence_score")
-    pseudo_docs = []
-    if evidence_score is not None:
-        try:
-            pseudo_docs = [Document(page_content="", metadata={"score": float(evidence_score)})]
-        except (TypeError, ValueError):
-            pseudo_docs = []
-    if not pseudo_docs:
+    # Build evidence docs from agent_answers (each answer carries its retrieval
+    # evidence metadata — score, source citation).  If agent_answers is empty,
+    # fall back to the legacy numerical score.
+    evidence_docs = []
+    for item in (state.get("agent_answers") or []):
+        if isinstance(item, dict):
+            content = item.get("answer", "") or item.get("content", "") or ""
+            score = item.get("score", item.get("evidence_score", None))
+            source = item.get("source", "") or item.get("citation", "") or ""
+            if not source and score is not None:
+                source = f"evidence_score={score}"
+            if source:
+                evidence_docs.append(Document(page_content=str(content), metadata={"score": float(score) if score else 0.0, "source": str(source)}))
+    if not evidence_docs and evidence_score is not None:
+        evidence_docs = [Document(page_content="", metadata={"score": float(evidence_score)})]
+    if not evidence_docs:
         if "no_evidence" in confidence_levels:
-            pseudo_docs = []
-        elif "low" in confidence_levels:
-            pseudo_docs = [Document(page_content="", metadata={"score": 0.68})]
+            evidence_docs = []
         else:
-            pseudo_docs = [Document(page_content="", metadata={"score": 0.88})]
+            evidence_docs = [Document(page_content="", metadata={"score": 0.88 if "high" in confidence_levels else 0.68})]
     original_query = state.get("originalQuery", "")
     risk_level = _infer_risk_level(original_query, state.get("risk_level", "normal"))
     grounded = ground_answer(
         current_answer,
-        pseudo_docs,
+        evidence_docs,
         question=original_query,
         medical_mode=_looks_like_medical_request(
             original_query,
