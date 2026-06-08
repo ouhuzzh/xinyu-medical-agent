@@ -207,6 +207,14 @@ MCP_TOOL_NAMESPACE_SEPARATOR = os.environ.get("MCP_TOOL_NAMESPACE_SEPARATOR", "_
 #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 # If empty in development, falls back to a deterministic dev key (UNSAFE for production).
 MCP_TOKEN_ENCRYPTION_KEY = os.environ.get("MCP_TOKEN_ENCRYPTION_KEY", "")
+# Comma-separated list for key rotation: "new-key,old-key".  The first key encrypts
+# new ciphertexts; all keys are tried on decryption.  Overrides MCP_TOKEN_ENCRYPTION_KEY
+# when both are set.  Used for both MCP tokens AND user PII memory content.
+MCP_TOKEN_ENCRYPTION_KEYS = os.environ.get("MCP_TOKEN_ENCRYPTION_KEYS", "")
+# When true, encrypt user_memories.content at rest using the keys above.
+# Switching from false→true: new writes are encrypted; old plaintext rows
+# stay readable (decrypt_pii is a no-op-style fallback on parse failure).
+USER_MEMORY_ENCRYPT_PII = os.environ.get("USER_MEMORY_ENCRYPT_PII", "true").lower() == "true"
 
 HIGH_RISK_KEYWORDS = [
     "胸痛",

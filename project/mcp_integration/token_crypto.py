@@ -1,13 +1,22 @@
-"""Token encryption utilities for MCP hospital credentials.
+"""Symmetric encryption with key rotation support.
 
-Uses Fernet (symmetric, AES-128-CBC + HMAC-SHA256) from the cryptography library.
+Backed by Fernet (AES-128-CBC + HMAC-SHA256).  Supports key rotation via
+MultiFernet: the FIRST key in the list is used for new encryption; ALL keys
+are tried in order on decryption.  This lets you roll a compromised key
+without re-encrypting all existing ciphertexts in a single transaction:
 
-The encryption key is loaded from MCP_TOKEN_ENCRYPTION_KEY env var. In development,
-falls back to a deterministic dev key derived from the JWT secret — convenient for
-local testing but NOT safe for production. Production deployments MUST set
-MCP_TOKEN_ENCRYPTION_KEY to a freshly generated Fernet key.
+  1. Generate new key, prepend it to ``CRYPTO_KEYS``:  "new,old"
+  2. Deploy — new writes use the new key, old reads still work
+  3. Background job decrypts + re-encrypts existing rows (or wait for natural churn)
+  4. Drop the old key from ``CRYPTO_KEYS`` once nothing decrypts with it
 
-Generate a production key:
+Two purposes the same primitive serves:
+  - MCP credential tokens (``encrypt_token`` / ``decrypt_token``)
+  - User PII memories (``encrypt_pii`` / ``decrypt_pii``) — same key list,
+    separate function names for grep-ability and future split (e.g., a KMS-
+    backed envelope encryption for PII).
+
+Generate a key:
     python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 """
 
@@ -17,13 +26,14 @@ import base64
 import hashlib
 import logging
 import threading
+from typing import List
 
 import config
 
 logger = logging.getLogger(__name__)
 
-_fernet_cache = None
-_fernet_lock = threading.Lock()
+_crypto_cache = None
+_crypto_lock = threading.Lock()
 
 
 def _derive_dev_key() -> bytes:
@@ -33,36 +43,63 @@ def _derive_dev_key() -> bytes:
     return base64.urlsafe_b64encode(digest)
 
 
-def _get_fernet():
-    global _fernet_cache
-    if _fernet_cache is not None:
-        return _fernet_cache
-    with _fernet_lock:
-        if _fernet_cache is not None:
-            return _fernet_cache
-        from cryptography.fernet import Fernet
-        key_str = (config.MCP_TOKEN_ENCRYPTION_KEY or "").strip()
-        if key_str:
-            key = key_str.encode("utf-8")
-        else:
-            if config.APP_ENV == "production":
-                raise RuntimeError(
-                    "MCP_TOKEN_ENCRYPTION_KEY must be set in production."
-                )
-            logger.warning(
-                "MCP_TOKEN_ENCRYPTION_KEY not set; using derived dev key. UNSAFE for production."
-            )
-            key = _derive_dev_key()
-        _fernet_cache = Fernet(key)
-        return _fernet_cache
+def _collect_keys() -> List[bytes]:
+    """Return ordered list of Fernet keys (newest first).
+
+    Reads ``MCP_TOKEN_ENCRYPTION_KEYS`` (comma-separated, preferred) or the
+    legacy single ``MCP_TOKEN_ENCRYPTION_KEY``.  Falls back to a derived dev
+    key when neither is set (and we're not in production).
+    """
+    raw_list = (config.MCP_TOKEN_ENCRYPTION_KEYS or "").strip()
+    if raw_list:
+        keys = [k.strip().encode("utf-8") for k in raw_list.split(",") if k.strip()]
+        if keys:
+            return keys
+
+    single = (config.MCP_TOKEN_ENCRYPTION_KEY or "").strip()
+    if single:
+        return [single.encode("utf-8")]
+
+    if config.APP_ENV == "production":
+        raise RuntimeError(
+            "MCP_TOKEN_ENCRYPTION_KEY(S) must be set in production. "
+            "Generate one: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'"
+        )
+    logger.warning(
+        "No encryption keys configured; using derived dev key. UNSAFE for production."
+    )
+    return [_derive_dev_key()]
+
+
+def _get_crypto():
+    """Lazy-init the MultiFernet (or single Fernet) instance."""
+    global _crypto_cache
+    if _crypto_cache is not None:
+        return _crypto_cache
+    with _crypto_lock:
+        if _crypto_cache is not None:
+            return _crypto_cache
+        from cryptography.fernet import Fernet, MultiFernet
+        keys = _collect_keys()
+        fernets = [Fernet(k) for k in keys]
+        # MultiFernet works for any non-empty list — for a single key it's
+        # equivalent to plain Fernet but keeps the call sites uniform.
+        _crypto_cache = MultiFernet(fernets) if len(fernets) > 1 else fernets[0]
+        return _crypto_cache
+
+
+def _reset_cache_for_tests():
+    """Test helper — invalidate the cached MultiFernet so config patches take effect."""
+    global _crypto_cache
+    with _crypto_lock:
+        _crypto_cache = None
 
 
 def encrypt_token(plain_token: str) -> str:
     """Encrypt a plaintext token.  Returns a base64 ciphertext string."""
     if not plain_token:
         return ""
-    fernet = _get_fernet()
-    return fernet.encrypt(plain_token.encode("utf-8")).decode("utf-8")
+    return _get_crypto().encrypt(plain_token.encode("utf-8")).decode("utf-8")
 
 
 def decrypt_token(encrypted_token: str) -> str:
@@ -70,11 +107,22 @@ def decrypt_token(encrypted_token: str) -> str:
     if not encrypted_token:
         return ""
     try:
-        fernet = _get_fernet()
-        return fernet.decrypt(encrypted_token.encode("utf-8")).decode("utf-8")
+        return _get_crypto().decrypt(encrypted_token.encode("utf-8")).decode("utf-8")
     except Exception:
-        logger.warning("Failed to decrypt MCP token", exc_info=True)
+        logger.warning("Failed to decrypt token", exc_info=True)
         return ""
+
+
+# --- PII helpers (medical memories, user-private text) ---
+# Same crypto today; separate names so we can swap in envelope encryption /
+# KMS later without touching call sites.
+
+def encrypt_pii(plaintext: str) -> str:
+    return encrypt_token(plaintext)
+
+
+def decrypt_pii(ciphertext: str) -> str:
+    return decrypt_token(ciphertext)
 
 
 def mask_token(plain_or_encrypted: str, prefix_len: int = 4, suffix_len: int = 4) -> str:

@@ -27,6 +27,38 @@ def _vector_literal(values: List[float]) -> str:
     return "[" + ",".join(f"{float(v):.8f}" for v in values) + "]"
 
 
+# Prefix used to recognize encrypted content in the DB.  Fernet tokens always
+# start with "gAAAAA" (base64 of the version byte 0x80) — but we use an explicit
+# marker so a future swap to a different scheme stays forward-compatible.
+_PII_MARKER = "enc:v1:"
+
+
+def _encrypt_content(text: str) -> str:
+    """Encrypt user memory content if PII encryption is on; pass through otherwise."""
+    if not text or not config.USER_MEMORY_ENCRYPT_PII:
+        return text
+    try:
+        from mcp_integration.token_crypto import encrypt_pii
+        return _PII_MARKER + encrypt_pii(text)
+    except Exception:
+        logger.warning("PII encryption failed; storing plaintext as fallback.", exc_info=True)
+        return text
+
+
+def _decrypt_content(stored: str) -> str:
+    """Decrypt content; transparently returns plaintext for legacy rows."""
+    if not stored or not stored.startswith(_PII_MARKER):
+        return stored or ""
+    try:
+        from mcp_integration.token_crypto import decrypt_pii
+        decrypted = decrypt_pii(stored[len(_PII_MARKER):])
+        # decrypt_pii returns "" on failure — keep the marker visible for ops debugging
+        return decrypted if decrypted else "[decrypt-failed]"
+    except Exception:
+        logger.warning("PII decryption failed for stored memory.", exc_info=True)
+        return "[decrypt-failed]"
+
+
 class UserMemoryStore:
     """PostgreSQL-backed user-level memory store with pgvector similarity search."""
 
@@ -94,9 +126,12 @@ class UserMemoryStore:
                 self._merge_memory(existing_id, content, importance, embedding)
                 return existing_id
 
+        # Encrypt content AFTER embedding (embedding needs plaintext to be meaningful)
+        stored_content = _encrypt_content(content)
+
         # Insert new memory
         embedding_sql = "NULL"
-        params: list[Any] = [user_id, memory_type, content, importance]
+        params: list[Any] = [user_id, memory_type, stored_content, importance]
         if embedding is not None:
             embedding_sql = f"CAST(%s AS vector)"
             params.append(_vector_literal(embedding))
@@ -213,7 +248,10 @@ class UserMemoryStore:
             "id", "user_id", "memory_type", "content", "importance",
             "source_thread_id", "access_count", "last_accessed_at", "created_at", "updated_at",
         ]
-        return [dict(zip(columns, row)) for row in rows]
+        result = [dict(zip(columns, row)) for row in rows]
+        for m in result:
+            m["content"] = _decrypt_content(m["content"])
+        return result
 
     def _update_importance(self, memory_id: int, new_importance: int):
         """Update the importance of a memory (used for contradiction deprecation)."""
@@ -269,17 +307,20 @@ class UserMemoryStore:
                 "message": "User memory is disabled by configuration.",
             }
         embeddings = self._get_embeddings()
+        encryption_on = bool(config.USER_MEMORY_ENCRYPT_PII)
         if embeddings is not None:
             return {
                 "component": "user_memory",
                 "mode": "pgvector",
                 "degraded": False,
+                "encrypted_at_rest": encryption_on,
                 "message": "User memory store with pgvector similarity is available.",
             }
         return {
             "component": "user_memory",
             "mode": "importance_only",
             "degraded": True,
+            "encrypted_at_rest": encryption_on,
             "message": "Embedding model unavailable; falling back to importance-only retrieval.",
         }
 
@@ -321,7 +362,8 @@ class UserMemoryStore:
                 row = cur.fetchone()
                 if not row:
                     return
-                old_content, old_importance, old_merged = row
+                old_content_raw, old_importance, old_merged = row
+                old_content = _decrypt_content(old_content_raw)
 
                 # Keep the higher-importance content as primary
                 if new_importance >= old_importance:
@@ -343,7 +385,7 @@ class UserMemoryStore:
                         updated_at = NOW()
                     WHERE id = %s
                     """,
-                    (primary_content, primary_importance, _vector_literal(new_embedding),
+                    (_encrypt_content(primary_content), primary_importance, _vector_literal(new_embedding),
                      json.dumps(merged_list, ensure_ascii=False), existing_id),
                 )
             conn.commit()
@@ -373,7 +415,10 @@ class UserMemoryStore:
             "source_thread_id", "access_count", "last_accessed_at",
             "created_at", "distance",
         ]
-        return [dict(zip(columns, row)) for row in rows]
+        result = [dict(zip(columns, row)) for row in rows]
+        for m in result:
+            m["content"] = _decrypt_content(m["content"])
+        return result
 
     def _retrieve_importance_only(self, user_id: str, top_k: int) -> List[Dict[str, Any]]:
         """Fallback retrieval when embeddings are unavailable."""
@@ -399,6 +444,7 @@ class UserMemoryStore:
         result = [dict(zip(columns, row)) for row in rows]
         # Assign a simple score based on importance only
         for m in result:
+            m["content"] = _decrypt_content(m["content"])
             m["score"] = m["importance"] / 10.0
 
         self._update_access_stats([m["id"] for m in result])
