@@ -111,7 +111,16 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     # It now runs as post-chat cleanup in ChatInterface to avoid blocking the
     # user on the first token.
     graph_builder.add_edge(START, "analyze_turn")
-    graph_builder.add_edge("analyze_turn", "intent_router")
+    # Conditional: rules inconclusive → skip intent_router, go direct to rewrite_query.
+    # Rules explicit (greeting/cancel/appt/triage/mcp) → intent_router for final routing.
+    graph_builder.add_conditional_edges(
+        "analyze_turn",
+        route_after_analyze_turn,
+        {
+            "intent_router": "intent_router",
+            "rewrite_query": "rewrite_query",
+        },
+    )
 
     # Build the intent_router conditional edges mapping, merging static + skill routes
     _intent_route_map = {

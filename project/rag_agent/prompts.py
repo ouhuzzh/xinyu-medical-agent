@@ -20,18 +20,23 @@ Output:
 """
 
 def get_rewrite_query_prompt() -> str:
-    return """Rewrite the user's latest query into 1-3 retrieval-friendly, self-contained queries.
+    return """Rewrite the user's latest query into 1-3 retrieval-friendly queries AND classify the intent.
 
 Rules:
-1. Fix common Chinese typos and pinyin-input errors (e.g. "头通"→"头痛", "发shao"→"发烧", "gan冒"→"感冒"). Preserve medical intent, correct the spelling.
+1. Fix common Chinese typos and pinyin-input errors (e.g. "头通"→"头痛", "发shao"→"发烧").
 2. Use conversation summary, recent context, and known user context to resolve short follow-ups.
 3. Keep meaning unchanged. Do not invent details.
 4. Prefer directly usable rewrites over asking clarification.
-5. Only mark unclear when the request is truly unintelligible or dangerously underspecified.
-6. If known user context (medical history, medications) is provided, use it to resolve ambiguous follow-up queries. For example, "那药还能继续吃吗" is clearer if you know the user's specific medication.
+
+Intent classification:
+- medical_rag: health questions, symptoms, treatments, casual chat, emotional support
+- triage: "挂什么科" type department-recommendation questions
+- appointment: booking requests ("我要挂号", "帮我预约")
+- cancel_appointment: cancellation requests
+- clarification: ONLY when truly unintelligible AND no useful context exists
 
 Return JSON with these fields:
-{"is_clear": true/false, "questions": ["rewritten query 1", "rewritten query 2"], "clarification_needed": "ask user if unclear, else empty string"}
+{"is_clear": true/false, "intent": "medical_rag|triage|appointment|cancel_appointment|clarification", "questions": ["q1","q2"], "clarification_needed": "explanation if unclear, else empty"}
 """
 
 

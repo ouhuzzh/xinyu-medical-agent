@@ -11,6 +11,10 @@ class QueryAnalysis(BaseModel):
     clarification_needed: str = Field(
         description="Explanation if the question is unclear."
     )
+    intent: str = Field(
+        default="medical_rag",
+        description="Intent classification: medical_rag, triage, appointment, cancel_appointment, or clarification."
+    )
 
 
 class IntentAnalysis(BaseModel):

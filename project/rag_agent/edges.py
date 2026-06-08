@@ -4,6 +4,23 @@ from langgraph.types import Send
 from .graph_state import State, AgentState
 from config import MAX_ITERATIONS, MAX_TOOL_CALLS
 
+
+def route_after_analyze_turn(state: State) -> Literal["rewrite_query", "intent_router"]:
+    """Skip intent_router LLM call when rules were inconclusive.
+
+    When analyze_turn rules already determined a concrete intent
+    (greeting, cancel, appointment, triage, skill-registered), go to
+    intent_router which will short-circuit (no LLM call).
+
+    When rules are inconclusive (empty primary_intent), go directly to
+    rewrite_query — which now also classifies intent in the same LLM
+    call.  Saves one 14B LLM call (~4.5s) per medical query.
+    """
+    if state.get("primary_intent", ""):
+        return "intent_router"
+    return "rewrite_query"
+
+
 def route_after_intent(state: State) -> str:
     """Route based on intent.  Merges static routes with skill-registered routes."""
     # Static routing table (existing behavior)
