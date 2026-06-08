@@ -19,9 +19,11 @@ def create_access_token(data: Dict[str, Any]) -> str:
     """Create a JWT access token."""
     import jwt
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(minutes=config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({
         "exp": expire,
+        "iat": now,
         "type": "access",
     })
     return jwt.encode(to_encode, config.JWT_SECRET_KEY, algorithm=config.JWT_ALGORITHM)
@@ -31,9 +33,11 @@ def create_refresh_token(data: Dict[str, Any]) -> str:
     """Create a JWT refresh token."""
     import jwt
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=config.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(days=config.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
     to_encode.update({
         "exp": expire,
+        "iat": now,
         "type": "refresh",
     })
     return jwt.encode(to_encode, config.JWT_SECRET_KEY, algorithm=config.JWT_ALGORITHM)
@@ -51,6 +55,24 @@ def decode_token(token: str) -> Optional[Dict[str, Any]]:
     except jwt.InvalidTokenError:
         logger.debug("Invalid token")
         return None
+
+
+def token_issued_after(token_payload: dict, timestamp) -> bool:
+    """Return True if the token was issued AFTER the given datetime.
+
+    If iat is missing (legacy token), returns True — the check degrades
+    gracefully rather than locking out existing sessions.
+    """
+    iat = token_payload.get("iat")
+    if iat is None:
+        return True  # legacy tokens: allow
+    if isinstance(iat, (int, float)):
+        iat = datetime.fromtimestamp(iat, tz=timezone.utc)
+    if timestamp and isinstance(timestamp, str):
+        timestamp = datetime.fromisoformat(timestamp)
+    if timestamp and timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return iat > timestamp
 
 
 def create_token_pair(user_id: int, username: str, role: str) -> Dict[str, str]:

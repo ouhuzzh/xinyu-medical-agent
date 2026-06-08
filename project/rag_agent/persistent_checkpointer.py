@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import logging
 import os
 import pickle
@@ -9,6 +11,25 @@ from threading import RLock
 from langgraph.checkpoint.memory import InMemorySaver
 
 logger = logging.getLogger(__name__)
+
+# HMAC signing key derivation — uses a dedicated secret when available,
+# falls back to a fixed dev key (never the JWT secret) to avoid cross-domain reuse.
+_CHECKPOINT_SIGNING_SEED = "xinyu-checkpoint-signing-dev-only"
+
+
+def _get_checkpoint_signing_key() -> bytes:
+    """Derive the HMAC signing key for checkpoint files."""
+    import config as _config
+    raw = os.environ.get("CHECKPOINT_SIGNING_KEY", "").strip()
+    if not raw and getattr(_config, "APP_ENV", "development") != "production":
+        raw = _CHECKPOINT_SIGNING_SEED
+    if not raw:
+        raise RuntimeError("CHECKPOINT_SIGNING_KEY must be set in production")
+    return hashlib.sha256(raw.encode("utf-8")).digest()
+
+
+def _hmac_signature(data: bytes) -> str:
+    return hmac.new(_get_checkpoint_signing_key(), data, hashlib.sha256).hexdigest()
 
 
 class PersistentInMemorySaver(InMemorySaver):
@@ -73,9 +94,20 @@ class PersistentInMemorySaver(InMemorySaver):
         self.blobs = dict(payload.get("blobs") or {})
 
     def _load_pkl(self, path: str) -> dict:
-        """Read a pkl file and return the payload dict.  Raises on any failure."""
+        """Read and verify a pkl file.  Raises ValueError on tampering."""
+        sig_path = path + ".sig"
         with open(path, "rb") as handle:
-            payload = pickle.load(handle)
+            raw = handle.read()
+        if os.path.exists(sig_path):
+            with open(sig_path, "r") as sf:
+                expected_sig = sf.read().strip()
+            actual_sig = _hmac_signature(raw)
+            if not hmac.compare_digest(actual_sig, expected_sig):
+                raise ValueError(
+                    f"checkpoint file {path} HMAC mismatch — possible tampering or corruption"
+                )
+        # else: legacy file without signature — load but log a notice
+        payload = pickle.loads(raw)
         if not isinstance(payload, dict):
             raise ValueError(f"checkpoint file {path} does not contain a dict payload")
         return payload
@@ -135,18 +167,35 @@ class PersistentInMemorySaver(InMemorySaver):
         if os.path.exists(self.path):
             try:
                 shutil.copyfile(self.path, self.backup_path)
+                # Rotate the signature file too so backup recovery is tamper-safe
+                sig_src = self.path + ".sig"
+                sig_dst = self.backup_path + ".sig"
+                if os.path.exists(sig_src):
+                    shutil.copyfile(sig_src, sig_dst)
+                elif os.path.exists(sig_dst):
+                    os.remove(sig_dst)
             except OSError:
                 # Best-effort — don't fail the write if backup rotation hiccups
                 logger.warning("Failed to rotate checkpoint backup", exc_info=True)
         fd, tmp_path = tempfile.mkstemp(prefix="langgraph-checkpoint-", suffix=".tmp", dir=directory)
+        sig_path = self.path + ".sig"
         try:
             with os.fdopen(fd, "wb") as handle:
                 pickle.dump(self._snapshot(), handle, protocol=pickle.HIGHEST_PROTOCOL)
+            # Write HMAC signature alongside the checkpoint
+            with open(tmp_path, "rb") as rh:
+                sig = _hmac_signature(rh.read())
+            sig_tmp = tmp_path + ".sig"
+            with open(sig_tmp, "w") as sh:
+                sh.write(sig)
             os.replace(tmp_path, self.path)
+            os.replace(sig_tmp, sig_path)
             self._last_mtime = os.path.getmtime(self.path)
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+            if os.path.exists(tmp_path + ".sig"):
+                os.remove(tmp_path + ".sig")
 
     def get_tuple(self, config):
         with self._lock:

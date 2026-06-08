@@ -151,8 +151,13 @@ def _auth_error(detail: str, status_code: int = status.HTTP_401_UNAUTHORIZED):
 
 
 def _authenticate_jwt(token: str) -> AuthenticatedUser | None:
-    """Try to authenticate via JWT.  Returns AuthenticatedUser or None."""
-    from api.jwt_utils import decode_token
+    """Try to authenticate via JWT.  Returns AuthenticatedUser or None.
+
+    Also rejects tokens issued before the user's last password change
+    (password_changed_at), so changing your password invalidates all
+    existing sessions.
+    """
+    from api.jwt_utils import decode_token, token_issued_after
     payload = decode_token(token)
     if payload is None:
         return None
@@ -163,6 +168,19 @@ def _authenticate_jwt(token: str) -> AuthenticatedUser | None:
     role = str(payload.get("role", "user")).strip().lower()
     if not user_id or role not in ("user", "admin"):
         return None
+
+    # H1: reject tokens issued before the last password change
+    try:
+        container = get_container()
+        user = container.user_store.get_user_by_username(username)
+        if user:
+            pwd_changed = user.get("password_changed_at")
+            if pwd_changed and not token_issued_after(payload, pwd_changed):
+                return None
+    except Exception:
+        # Best-effort — if we can't reach the DB, still allow the token
+        pass
+
     return AuthenticatedUser(user_id=user_id, role=role, token=token, username=username)
 
 

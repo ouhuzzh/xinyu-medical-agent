@@ -42,6 +42,7 @@ class CircuitBreaker:
         self._failure_count: int = 0
         self._state: str = "closed"  # closed | open | half_open
         self._last_failure_time: float = 0.0
+        self._probe_in_flight: bool = False  # only 1 probe in half_open
         self._lock = threading.Lock()
 
     # -- public helpers -----------------------------------------------------
@@ -54,6 +55,7 @@ class CircuitBreaker:
             if self._state == "open":
                 if time.monotonic() - self._last_failure_time >= self._recovery_timeout:
                     self._state = "half_open"
+                    self._probe_in_flight = False
             return self._state
 
     def allow_request(self) -> bool:
@@ -71,13 +73,18 @@ class CircuitBreaker:
                     self._state = "half_open"
                     return True  # probe
                 return False
-            # half_open: let one probe through
-            return True
+            # half_open: allow only one probe through; reject the rest
+            if self._state == "half_open":
+                if not self._probe_in_flight:
+                    self._probe_in_flight = True
+                    return True
+                return False
 
     def record_success(self) -> None:
         """Record a successful call; resets failure count, closes if *half_open*."""
         with self._lock:
             self._failure_count = 0
+            self._probe_in_flight = False
             if self._state == "half_open":
                 self._state = "closed"
                 logger.info("Circuit breaker recovered → closed")
@@ -87,6 +94,7 @@ class CircuitBreaker:
         with self._lock:
             self._failure_count += 1
             self._last_failure_time = time.monotonic()
+            self._probe_in_flight = False
             if self._state == "half_open":
                 self._state = "open"
                 logger.warning("Circuit breaker probe failed → open")

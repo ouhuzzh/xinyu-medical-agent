@@ -498,6 +498,17 @@ class SchemaManager:
                 """,
             ],
         ),
+        (
+            "016_users_password_changed_at",
+            "Add password_changed_at column so JWT tokens issued before a "
+            "password change can be rejected.",
+            [
+                """
+                ALTER TABLE users
+                ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP NOT NULL DEFAULT NOW()
+                """,
+            ],
+        ),
     ]
 
     def __init__(self, conninfo: str):

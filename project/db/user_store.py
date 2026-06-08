@@ -74,7 +74,9 @@ class UserStore:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT id, username, display_name, password_hash, role, is_active, created_at, updated_at
+                    SELECT id, username, display_name, password_hash, role, is_active,
+                           COALESCE(password_changed_at, created_at) AS password_changed_at,
+                           created_at, updated_at
                     FROM users
                     WHERE username = %s
                     """,
@@ -83,7 +85,8 @@ class UserStore:
                 row = cur.fetchone()
         if not row:
             return None
-        columns = ["id", "username", "display_name", "password_hash", "role", "is_active", "created_at", "updated_at"]
+        columns = ["id", "username", "display_name", "password_hash", "role", "is_active",
+                   "password_changed_at", "created_at", "updated_at"]
         return dict(zip(columns, row))
 
     def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
@@ -152,7 +155,9 @@ class UserStore:
                 new_hash = self._hash_password(new_password)
                 cur.execute(
                     """
-                    UPDATE users SET password_hash = %s, updated_at = NOW()
+                    UPDATE users SET password_hash = %s,
+                           password_changed_at = NOW(),
+                           updated_at = NOW()
                     WHERE id = %s
                     """,
                     (new_hash, user_id),

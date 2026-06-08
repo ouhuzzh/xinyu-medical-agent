@@ -696,9 +696,19 @@ class ChatInterface:
                 except Exception:
                     logger.warning("Post-chat summarization failed for thread_id=%s", active_thread_id, exc_info=True)
 
-            # Extract user memories (truly async background thread)
+            # Extract user memories (async background — bounded thread pool, M7)
             if user_id and config.USER_MEMORY_ENABLED and config.USER_MEMORY_EXTRACTION_ENABLED and combined_assistant_text:
-                import threading
+                from concurrent.futures import ThreadPoolExecutor
+
+                # Module-level bounded executor — at most 2 concurrent extraction
+                # threads.  If the queue is full, drop the extraction (log warning).
+                _MEMORY_EXTRACTOR = None  # type: ignore
+                if not hasattr(self.__class__, "_memory_executor"):
+                    self.__class__._memory_executor = ThreadPoolExecutor(
+                        max_workers=2,
+                        thread_name_prefix="memory-extract",
+                    )
+
                 def _bg_extract():
                     try:
                         saved = self.rag_system.memory_extractor.extract_and_save(
@@ -711,7 +721,15 @@ class ChatInterface:
                             self._invalidate_memory_cache(user_id, active_thread_id)
                     except Exception:
                         logger.warning("Memory extraction failed for thread_id=%s", active_thread_id, exc_info=True)
-                threading.Thread(target=_bg_extract, daemon=True).start()
+
+                try:
+                    self.__class__._memory_executor.submit(_bg_extract)
+                except RuntimeError:
+                    # Queue full — drop extraction gracefully
+                    logger.warning(
+                        "Memory extraction queue full; dropping extraction for thread_id=%s",
+                        active_thread_id,
+                    )
 
             updated_state = self._resolved_session_state(latest_values, session_state, user_message, clarification_text)
             if updated_state != (session_state or {}):
