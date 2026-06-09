@@ -338,6 +338,7 @@ assets/                      # README demo media
 ## Documentation
 
 - [Frontend/backend split architecture](docs/architecture/frontend_backend_split.md)
+- [Current project structure, Chinese](docs/PROJECT_STRUCTURE_CN.md)
 - [FastAPI API layer notes](project/api/README.md)
 - [Project guide, Chinese](docs/PROJECT_GUIDE_CN.md)
 - [Sequence diagrams and source walk-through, Chinese](docs/PROJECT_SEQUENCE_CN.md)
@@ -354,8 +355,7 @@ The repository intentionally does **not** commit runtime data:
 - `markdown_docs/`
 - `runtime/`
 - `output/`
-- `parent_store/`
-- `qdrant_db/`
+- `parent_store/` and `qdrant_db/` legacy/local runtime stores
 - `frontend/dist/`
 - `frontend/node_modules/`
 - `.env` / `project/.env`
