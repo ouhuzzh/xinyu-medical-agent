@@ -29,6 +29,8 @@ class State(MessagesState):
     thread_id: str = ""
     intent: str = ""
     primary_intent: str = ""
+    intent_confidence: float = 0.0  # 0.0-1.0, source layer determines fast-path vs LLM
+    intent_source: str = ""  # "l1_rule" | "l2_embedding" | "l3_llm" | "skill:*"
     secondary_intent: str = ""
     primary_user_query: str = ""
     secondary_user_query: str = ""
@@ -54,11 +56,15 @@ class State(MessagesState):
     pending_action_payload: Dict[str, str] = {}
     pending_confirmation_id: str = ""
     pending_candidates: List[dict] = []
+    pending_stale_count: int = 0  # consecutive irrelevant turns while pending — auto-clear at 2
     rewrittenQuestions: List[str] = []
     grounding_evidence_score: float | None = None
     agent_answers: Annotated[List[dict], accumulate_or_reset] = []
     skill_data: Dict[str, Any] = {}
     user_memories: str = ""
+    # Injected at graph invocation time for MCP backend construction
+    _mcp_pool: Any = None
+    user_id: str = ""
 
 class AgentState(MessagesState):
     """State for individual agent subgraph"""

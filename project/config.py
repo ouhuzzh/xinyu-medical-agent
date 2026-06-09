@@ -190,6 +190,12 @@ USER_MEMORY_EXTRACTION_ENABLED = os.environ.get("USER_MEMORY_EXTRACTION_ENABLED"
 USER_MEMORY_INJECTION_ENABLED = os.environ.get("USER_MEMORY_INJECTION_ENABLED", "true").lower() == "true"
 USER_MEMORY_MAX_RETRIEVED = int(os.environ.get("USER_MEMORY_MAX_RETRIEVED", "5"))
 USER_MEMORY_IMPORTANCE_THRESHOLD = int(os.environ.get("USER_MEMORY_IMPORTANCE_THRESHOLD", "4"))
+
+# --- Intent Routing Configuration ---
+# L2 embedding intent-matching threshold (0.0-1.0).  Queries whose cosine
+# similarity to the best intent centroid is below this value are handed off
+# to the L3 LLM for classification.  Higher = stricter (fewer L2 matches).
+INTENT_EMBEDDING_THRESHOLD = float(os.environ.get("INTENT_EMBEDDING_THRESHOLD", "0.50"))
 USER_MEMORY_DEDUP_SIMILARITY = float(os.environ.get("USER_MEMORY_DEDUP_SIMILARITY", "0.9"))
 USER_MEMORY_RECENCY_WEIGHT = float(os.environ.get("USER_MEMORY_RECENCY_WEIGHT", "0.3"))
 USER_MEMORY_IMPORTANCE_WEIGHT = float(os.environ.get("USER_MEMORY_IMPORTANCE_WEIGHT", "0.4"))

@@ -22,6 +22,7 @@ from .schemas import (
 from .prompts import get_appointment_request_prompt, get_cancel_appointment_prompt, get_appointment_skill_prompt
 from db.appointment_skill_log_store import AppointmentSkillLogStore
 from services.appointment_skill import AppointmentSkill
+from services.mcp_appointment_backend import MCPAppointmentBackend
 
 from .node_helpers import (
     _APPOINTMENT_NO_RE,
@@ -661,6 +662,46 @@ def _base_skill_state_update(
     }
 
 
+def _mcp_discover_doctors(mcp, department, date=None, slot="", doctor_name=""):
+    """Call MCP search_doctors → format results for display."""
+    doctors, err = mcp.discover_doctors(department, date, slot)
+    if err:
+        return None, [], err
+    items = MCPAppointmentBackend._normalise_schedule_list(doctors)
+    if not items:
+        return None, [], None
+    # Build message
+    dept_name = department or items[0].get("department_name", "")
+    options = "\n".join(
+        f"{i}. **{d.get('doctor_name', '')}**（剩余 {d.get('quota_available', 0)}）"
+        for i, d in enumerate(items[:8], 1)
+    )
+    msg = f"**{dept_name}** 可预约的医生：\n\n{options}\n\n请直接回复医生姓名；如果你不挑医生，也可以回复 **任一可用医生**。"
+    return msg, items, None
+
+
+def _mcp_discover_schedules(mcp, department="", date=None, slot="", doctor_name=""):
+    """Call MCP search_schedules → format results for display."""
+    schedules, err = mcp.discover_schedules(department, date, slot, doctor_name)
+    if err:
+        return None, [], err
+    items = MCPAppointmentBackend._normalise_schedule_list(schedules)
+    if not items:
+        return None, [], None
+    # Sort by date and time_slot
+    items = sorted(
+        items,
+        key=lambda s: (str(s.get("schedule_date", "")), str(s.get("time_slot", "")))
+    )
+    dept = department or items[0].get("department_name", "")
+    lines = [f"**{dept}** 可预约时段："] if doctor_name else [f"{dept} 可选时段："]
+    for i, s in enumerate(items[:8], 1):
+        d = s.get("doctor_name", doctor_name)
+        lines.append(f"{i}. {s.get('schedule_date','')} {s.get('time_slot','')}（{d}，余{s.get('quota_available',0)}）")
+    msg = "\n".join(lines) + "\n\n你可以回复日期时段，例如 \"明天下午\"。"
+    return msg, items, None
+
+
 # ---------------------------------------------------------------------------
 # Public appointment nodes
 # ---------------------------------------------------------------------------
@@ -672,7 +713,7 @@ def handle_appointment_skill(state: State, llm, appointment_service):
     pending_payload = _get_pending_payload(state)
     pending_candidates = state.get("pending_candidates", []) or []
     active_intent = state.get("intent") or state.get("primary_intent") or "appointment"
-    skill = AppointmentSkill(appointment_service)
+    mcp = MCPAppointmentBackend.try_create(state)
 
     if pending_action_type == "appointment":
         if _is_abort_request(user_query):
@@ -694,7 +735,28 @@ def handle_appointment_skill(state: State, llm, appointment_service):
                     **_base_skill_state_update(state, intent="appointment"),
                     "messages": [AIMessage(content="预约已确认完成，无需重复确认。如需改约或取消，可以直接告诉我。")],
                 }
-            booking = skill.confirm_appointment(state["thread_id"], pending_payload)
+            if not mcp:
+                return {
+                    **_base_skill_state_update(state, intent="appointment", skill_mode="planning"),
+                    "pending_clarification": "", "clarification_target": "", "clarification_attempts": 0,
+                    **_clear_pending_action_state(),
+                    "messages": [AIMessage(content="请先在设置中绑定医院服务，才能执行预约。")],
+                }
+            booking_result, mcp_err = mcp.book_appointment(pending_payload)
+            if mcp_err or not booking_result:
+                return {
+                    **_base_skill_state_update(state, intent="appointment", skill_mode="planning", topic_focus=pending_payload.get("department", state.get("topic_focus", "")), appointment_context=appointment_context),
+                    "pending_clarification": "", "clarification_target": "", "clarification_attempts": 0,
+                    **_clear_pending_action_state(),
+                    "messages": [AIMessage(content=mcp_err or "预约执行失败，请稍后重试。")],
+                }
+            booking = {
+                "department": booking_result.get("department", pending_payload.get("department", "")),
+                "date": booking_result.get("date", pending_payload.get("date", "")),
+                "time_slot": booking_result.get("time_slot", pending_payload.get("time_slot", "")),
+                "doctor_name": booking_result.get("doctor_name", pending_payload.get("doctor_name", "")),
+                "appointment_no": booking_result.get("appointment_no", booking_result.get("booking_id", "")),
+            }
             merged_context = _build_appointment_context(appointment_context, pending_payload)
             _log_appointment_skill_event(state, skill_mode="action", request_type="confirm_appointment", required_confirmation=True, final_action="confirm_appointment")
             if not booking:
@@ -755,7 +817,26 @@ def handle_appointment_skill(state: State, llm, appointment_service):
                 "messages": [AIMessage(content="好的，这次取消我先不提交了。如果你想取消其他预约，直接告诉我预约号或条件即可。")],
             }
         if _is_explicit_confirmation(user_query, "cancel_appointment"):
-            cancelled = skill.confirm_cancellation(state["thread_id"], pending_payload)
+            if not mcp:
+                return {
+                    **_base_skill_state_update(state, intent="cancel_appointment", skill_mode="planning"),
+                    "pending_clarification": "", "clarification_target": "", "clarification_attempts": 0,
+                    **_clear_pending_action_state(),
+                    "messages": [AIMessage(content="请先在设置中绑定医院服务，才能取消预约。")],
+                }
+            cancel_result, mcp_err = mcp.cancel_appointment(pending_payload)
+            if mcp_err or not cancel_result:
+                return {
+                    **_base_skill_state_update(state, intent="cancel_appointment", skill_mode="planning"),
+                    "pending_clarification": "", "clarification_target": "", "clarification_attempts": 0,
+                    **_clear_pending_action_state(),
+                    "messages": [AIMessage(content=mcp_err or "取消执行失败，请稍后重试。")],
+                }
+            cancelled = {
+                "appointment_no": cancel_result.get("appointment_no", pending_payload.get("appointment_no", "")),
+                "date": cancel_result.get("date", pending_payload.get("date", "")),
+                "time_slot": cancel_result.get("time_slot", pending_payload.get("time_slot", "")),
+            }
             _log_appointment_skill_event(state, skill_mode="action", request_type="confirm_cancellation", required_confirmation=True, final_action="confirm_cancellation")
             if not cancelled:
                 return {
@@ -1135,7 +1216,25 @@ def handle_appointment_skill(state: State, llm, appointment_service):
         }
 
     if skill_action == "list_my_appointments" or (active_intent == "cancel_appointment" and not appointment_no and not department and not normalized_date):
-        message, appointments = skill.list_my_appointments(state["thread_id"])
+        if not mcp:
+            return {
+                **_base_skill_state_update(state, intent=active_intent, skill_mode="list_my_appointments", skill_last_prompt=""),
+                "messages": [AIMessage(content="请先在设置中绑定医院服务，才能查看预约。")],
+            }
+        raw, mcp_err = mcp.list_appointments()
+        if mcp_err:
+            message = mcp_err
+            appointments = []
+        else:
+            appointments = MCPAppointmentBackend._normalise_schedule_list(raw)
+            if appointments:
+                lines = ["你当前有以下预约："] + [
+                    f"{i}. {a.get('appointment_no','')} — {a.get('department','')} {a.get('date','')} {a.get('time_slot','')}"
+                    for i, a in enumerate(appointments[:8], 1)
+                ]
+                message = "\n".join(lines)
+            else:
+                message = "你当前没有预约记录。"
         _log_appointment_skill_event(state, skill_mode="discovery", request_type="list_my_appointments", selected_candidate_count=len(appointments), final_action="list_my_appointments")
         return {
             **_base_skill_state_update(state, intent=active_intent, skill_mode="list_my_appointments", candidates=appointments, skill_last_prompt=message),
@@ -1157,7 +1256,21 @@ def handle_appointment_skill(state: State, llm, appointment_service):
                 "messages": [AIMessage(content=clarification)],
             }
         schedule_date_value = date.fromisoformat(normalized_date) if normalized_date and time_slot else None
-        message, doctor_options = skill.discover_doctors(department, schedule_date=schedule_date_value, time_slot=time_slot)
+        if not mcp:
+            return {
+                **_base_skill_state_update(state, intent="appointment", skill_mode="discover_doctor", topic_focus=department, appointment_context=merged_context,
+                skill_last_prompt=""), "pending_clarification": "", "clarification_target": "", "clarification_attempts": 0,
+                **_clear_pending_action_state(),
+                "messages": [AIMessage(content="请先在设置中绑定医院服务，才能查询医生。")],
+            }
+        message, doctor_options, mcp_err = _mcp_discover_doctors(mcp, department, schedule_date_value, time_slot)
+        if mcp_err:
+            return {
+                **_base_skill_state_update(state, intent="appointment", skill_mode="discover_doctor", topic_focus=department, appointment_context=merged_context, skill_last_prompt=mcp_err),
+                "pending_clarification": "", "clarification_target": "", "clarification_attempts": 0,
+                **_clear_pending_action_state(),
+                "messages": [AIMessage(content=mcp_err)],
+            }
         _log_appointment_skill_event(state, skill_mode="discovery", request_type="discover_doctor", selected_candidate_count=len(doctor_options), final_action="discover_doctor")
         return {
             **_base_skill_state_update(state, intent="appointment", skill_mode="discover_doctor", topic_focus=department, appointment_context=_build_appointment_context(merged_context, {"available_doctors": doctor_options}), candidates=doctor_options, skill_last_prompt=message),
@@ -1169,34 +1282,29 @@ def handle_appointment_skill(state: State, llm, appointment_service):
         }
 
     if skill_action == "discover_availability":
-        if doctor_name:
-            schedule_date_value = date.fromisoformat(normalized_date) if normalized_date else None
-            message, availability = skill.discover_doctor_availability(
-                doctor_name,
-                department=department,
-                schedule_date=schedule_date_value,
-                time_slot=time_slot,
-            )
-            _log_appointment_skill_event(state, skill_mode="discovery", request_type="discover_availability", selected_candidate_count=len(availability), final_action="discover_doctor_availability")
+        if not mcp:
             return {
-                **_base_skill_state_update(state, intent="appointment", skill_mode="discover_availability", topic_focus=department or doctor_name, appointment_context=_build_appointment_context(merged_context, {"available_doctors": availability}), candidates=availability, skill_last_prompt=message),
-                "pending_clarification": "",
-                "clarification_target": "",
-                "clarification_attempts": 0,
+                **_base_skill_state_update(state, intent="appointment", skill_mode="discover_availability", topic_focus=department or doctor_name, appointment_context=merged_context,
+                skill_last_prompt=""), "pending_clarification": "", "clarification_target": "", "clarification_attempts": 0,
                 **_clear_pending_action_state(),
-                "messages": [AIMessage(content=message)],
+                "messages": [AIMessage(content="请先在设置中绑定医院服务，才能查询号源。")],
             }
-        if department:
-            message, upcoming = skill.discover_department_availability(department)
-            _log_appointment_skill_event(state, skill_mode="discovery", request_type="discover_availability", selected_candidate_count=len(upcoming), final_action="discover_department_availability")
+        schedule_date_value = date.fromisoformat(normalized_date) if normalized_date else None
+        m_msg, availability, mcp_err = _mcp_discover_schedules(mcp, department, schedule_date_value, time_slot, doctor_name)
+        if mcp_err:
             return {
-                **_base_skill_state_update(state, intent="appointment", skill_mode="discover_availability", topic_focus=department, appointment_context=_build_appointment_context(merged_context, {"available_doctors": upcoming}), candidates=upcoming, skill_last_prompt=message),
-                "pending_clarification": "",
-                "clarification_target": "",
-                "clarification_attempts": 0,
+                **_base_skill_state_update(state, intent="appointment", skill_mode="discover_availability", topic_focus=department or doctor_name, appointment_context=merged_context, skill_last_prompt=mcp_err),
+                "pending_clarification": "", "clarification_target": "", "clarification_attempts": 0,
                 **_clear_pending_action_state(),
-                "messages": [AIMessage(content=message)],
+                "messages": [AIMessage(content=mcp_err)],
             }
+        _log_appointment_skill_event(state, skill_mode="discovery", request_type="discover_availability", selected_candidate_count=len(availability), final_action="discover_availability")
+        return {
+            **_base_skill_state_update(state, intent="appointment", skill_mode="discover_availability", topic_focus=department or doctor_name, appointment_context=_build_appointment_context(merged_context, {"available_doctors": availability}), candidates=availability, skill_last_prompt=m_msg),
+            "pending_clarification": "", "clarification_target": "", "clarification_attempts": 0,
+            **_clear_pending_action_state(),
+            "messages": [AIMessage(content=m_msg)],
+        }
 
     if skill_action == "prepare_reschedule" or any(token in (user_query or "").lower() for token in _RESCHEDULE_HINTS):
         current_items = appointment_service.find_candidate_appointments(
@@ -1286,12 +1394,24 @@ def handle_appointment_skill(state: State, llm, appointment_service):
     if active_intent == "cancel_appointment" or skill_action in {"prepare_cancellation", "confirm_cancellation"}:
         if not appointment_no and _should_use_last_appointment(user_query):
             appointment_no = state.get("last_appointment_no", "")
-        preview, candidates = skill.prepare_cancellation(
-            state["thread_id"],
-            appointment_no=appointment_no,
-            department=department,
-            schedule_date=date.fromisoformat(normalized_date) if normalized_date else None,
-        )
+        if not mcp:
+            return {
+                **_base_skill_state_update(state, intent="cancel_appointment", skill_mode="prepare_cancellation", skill_last_prompt=""),
+                "pending_clarification": "", "clarification_target": "", "clarification_attempts": 0,
+                "messages": [AIMessage(content="请先在设置中绑定医院服务，才能取消预约。")],
+            }
+        raw, mcp_err = mcp.list_appointments()
+        if mcp_err:
+            preview = None
+            candidates = []
+        else:
+            all_appts = MCPAppointmentBackend._normalise_schedule_list(raw)
+            candidates = [
+                a for a in all_appts
+                if (not appointment_no or a.get("appointment_no") == appointment_no)
+                and (not department or department in str(a.get("department", "")))
+            ]
+            preview = candidates[0] if len(candidates) == 1 else None
         if preview:
             payload = preview.__dict__
             _log_appointment_skill_event(state, skill_mode="planning", request_type="prepare_cancellation", required_confirmation=True, final_action="prepare_cancellation")
@@ -1332,24 +1452,51 @@ def handle_appointment_skill(state: State, llm, appointment_service):
         }
 
     if not normalized_date or not time_slot:
-        message, upcoming = skill.discover_department_availability(department)
-        _log_appointment_skill_event(state, skill_mode="discovery", request_type="discover_department_availability", selected_candidate_count=len(upcoming), final_action="discover_department_availability")
+        if not mcp:
+            return {
+                **_base_skill_state_update(state, intent="appointment", skill_mode="discover_availability", topic_focus=department, appointment_context=merged_context,
+                skill_last_prompt=""), "pending_clarification": "", "clarification_target": "", "clarification_attempts": 0,
+                **_clear_pending_action_state(),
+                "messages": [AIMessage(content="请先在设置中绑定医院服务，才能查询号源。")],
+            }
+        sched_msg, upcoming, sched_err = _mcp_discover_schedules(mcp, department, date.fromisoformat(normalized_date), time_slot, doctor_name)
+        if sched_err:
+            return {
+                **_base_skill_state_update(state, intent="appointment", skill_mode="discover_availability", topic_focus=department, appointment_context=merged_context, skill_last_prompt=sched_err),
+                "pending_clarification": "", "clarification_target": "", "clarification_attempts": 0,
+                **_clear_pending_action_state(),
+                "messages": [AIMessage(content=sched_err)],
+            }
+        _log_appointment_skill_event(state, skill_mode="discovery", request_type="discover_availability", selected_candidate_count=len(upcoming), final_action="discover_availability")
         return {
-            **_base_skill_state_update(state, intent="appointment", skill_mode="discover_availability", topic_focus=department, appointment_context=_build_appointment_context(merged_context, {"available_doctors": upcoming}), candidates=upcoming, skill_last_prompt=message),
-            "pending_clarification": "",
-            "clarification_target": "",
-            "clarification_attempts": 0,
+            **_base_skill_state_update(state, intent="appointment", skill_mode="discover_availability", topic_focus=department, appointment_context=_build_appointment_context(merged_context, {"available_doctors": upcoming}), candidates=upcoming, skill_last_prompt=sched_msg),
+            "pending_clarification": "", "clarification_target": "", "clarification_attempts": 0,
             **_clear_pending_action_state(),
-            "messages": [AIMessage(content=message)],
+            "messages": [AIMessage(content=sched_msg)],
         }
 
-    preview, doctor_options, alternatives = skill.prepare_appointment(
-        department=department,
-        schedule_date=date.fromisoformat(normalized_date),
-        time_slot=time_slot,
-        doctor_name=doctor_name,
-        allow_any_doctor=wants_any_doctor,
-    )
+    if not mcp:
+        return {
+            **_base_skill_state_update(state, intent="appointment", skill_mode="planning"), "pending_clarification": "",
+            "clarification_target": "", "clarification_attempts": 0,
+            "messages": [AIMessage(content="请先在设置中绑定医院服务，才能预约。")],
+        }
+    sched_msg, schedules, sched_err = _mcp_discover_schedules(mcp, department, date.fromisoformat(normalized_date), time_slot, doctor_name)
+    if sched_err:
+        preview = None; doctor_options = []; alternatives = []
+    elif schedules:
+        first = schedules[0]
+        preview = type("_Preview", (), {"__dict__": {
+            "department": first.get("department_name", department),
+            "date": str(first.get("schedule_date", normalized_date)),
+            "time_slot": first.get("time_slot", time_slot),
+            "doctor_name": first.get("doctor_name", doctor_name),
+            "action": "book",
+        }})()
+        doctor_options = schedules
+        alternatives = []
+    else:
+        preview = None; doctor_options = []; alternatives = []
     if preview:
         payload = preview.__dict__
         _log_appointment_skill_event(state, skill_mode="planning", request_type="prepare_appointment", selected_candidate_count=len(doctor_options), required_confirmation=True, final_action="prepare_appointment")

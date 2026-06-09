@@ -123,7 +123,7 @@ class AppointmentService:
                 connection.close()
         return [{"id": row[0], "code": row[1], "name": row[2]} for row in rows]
 
-    def find_available_schedule(self, department: str, schedule_date: date, time_slot: str, doctor_name: str | None = None, conn=None):
+    def find_available_schedule(self, department: str, schedule_date: date, time_slot: str, doctor_name: str | None = None, conn=None, for_update: bool = False):
         owns_connection = conn is None
         connection = conn or self._connect()
         department_row = self.find_department_by_name(department, conn=connection)
@@ -148,7 +148,8 @@ class AppointmentService:
                           AND lower(d.name) LIKE lower(%s)
                         ORDER BY ds.id
                         LIMIT 1
-                        """,
+                        {lock}
+                        """.format(lock="FOR UPDATE" if for_update else ""),
                         (department_row["id"], schedule_date, time_slot, f"%{doctor_name}%"),
                     )
                 else:
@@ -164,7 +165,8 @@ class AppointmentService:
                           AND ds.quota_available > 0
                         ORDER BY ds.id
                         LIMIT 1
-                        """,
+                        {lock}
+                        """.format(lock="FOR UPDATE" if for_update else ""),
                         (department_row["id"], schedule_date, time_slot),
                     )
                 row = cur.fetchone()
@@ -622,6 +624,7 @@ class AppointmentService:
                 time_slot,
                 doctor_name=doctor_name,
                 conn=conn,
+                for_update=True,
             )
             if not schedule:
                 conn.rollback()

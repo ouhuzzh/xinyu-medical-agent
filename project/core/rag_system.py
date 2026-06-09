@@ -15,6 +15,7 @@ import threading
 import time
 from datetime import datetime
 import config
+from core.container import ServiceContainer
 from db.vector_db_manager import VectorDbManager
 from db.parent_store_manager import ParentStoreManager
 from db.import_task_store import ImportTaskStore
@@ -56,6 +57,25 @@ class RAGSystem:
         self.observability = Observability()
         self.document_manager = None
         self.agent_graph = None
+        # ServiceContainer — new code should access services via container
+        self._container = ServiceContainer()
+        for _name, _svc in [
+            ("vector_db", self.vector_db),
+            ("parent_store", self.parent_store),
+            ("import_task_store", self.import_task_store),
+            ("chunker", self.chunker),
+            ("session_memory", self.session_memory),
+            ("summary_store", self.summary_store),
+            ("user_memory_store", self.user_memory_store),
+            ("chat_sessions", self.chat_sessions),
+            ("memory_extractor", self.memory_extractor),
+            ("mcp_server_registry", self.mcp_server_registry),
+            ("user_mcp_credential_store", self.user_mcp_credential_store),
+            ("user_mcp_pool", self.user_mcp_pool),
+            ("appointment_service", self.appointment_service),
+            ("observability", self.observability),
+        ]:
+            self._container.register(_name, _svc)
         self.thread_id = str(uuid.uuid4())
         self.recursion_limit = config.GRAPH_RECURSION_LIMIT
         self._initialize_lock = threading.Lock()
@@ -149,6 +169,11 @@ class RAGSystem:
 
     def is_ready(self):
         return self.agent_graph is not None and self._startup_status["state"] == "ready"
+
+    @property
+    def container(self) -> ServiceContainer:
+        """Access the ServiceContainer for dependency injection."""
+        return self._container
 
     def get_readiness_message(self):
         status = self.get_system_status()
@@ -353,9 +378,15 @@ class RAGSystem:
                     from skills.registry import get_skill_registry
                     from skills.greeting_skill import GreetingSkill
                     from skills.medical_rag_skill import MedicalRagSkill
+                    from skills.booking_skill import AppointmentSkill as BookingIntentSkill
+                    from skills.cancel_skill import CancelSkill
+                    from skills.triage_skill import TriageSkill
                     from mcp_integration.mcp_skill import MCPSkill
                     registry = get_skill_registry()
                     registry.register(GreetingSkill())
+                    registry.register(TriageSkill())
+                    registry.register(BookingIntentSkill())
+                    registry.register(CancelSkill())
                     registry.register(MedicalRagSkill())
                     registry.register(MCPSkill())
                     logger.info("Skill plugin framework enabled: %d skills registered", len(registry.skills))

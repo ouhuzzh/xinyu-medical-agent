@@ -19,8 +19,38 @@ Output:
 - If no meaningful topics exist, return an empty string.
 """
 
-def get_rewrite_query_prompt() -> str:
-    return """Rewrite the user's latest query into 1-3 retrieval-friendly queries AND classify the intent.
+def get_rewrite_query_prompt(skill_hints: list[tuple[str, str]] | None = None) -> str:
+    """Build the rewrite-query prompt, optionally injecting skill L3 hints.
+
+    Args:
+        skill_hints: List of (intent_label, llm_hint) from SkillRegistry.
+            When provided, extra intent descriptions are appended so the LLM
+            can classify into skill-registered intents.
+    """
+    # Core intent list
+    core_intents = [
+        ("medical_rag", "health questions, symptoms, treatments, casual chat, emotional support"),
+        ("triage", '"挂什么科" type department-recommendation questions'),
+        ("appointment", 'booking requests ("我要挂号", "帮我预约")'),
+        ("cancel_appointment", 'cancellation requests ("取消预约 APT123", "取消刚才的挂号")'),
+        ("clarification", "ONLY when truly unintelligible AND no useful context exists"),
+    ]
+
+    # Merge skill hints (skip greeting — rewrite_query path doesn't use it)
+    intent_lines = []
+    seen = set()
+    for label, desc in core_intents:
+        intent_lines.append(f"- {label}: {desc}")
+        seen.add(label)
+    for label, hint in (skill_hints or []):
+        if label not in seen and label != "greeting":
+            intent_lines.append(f"- {label}: {hint}")
+            seen.add(label)
+
+    intent_block = "\n".join(intent_lines)
+    valid_intents = ", ".join(seen - {"greeting"}) if "greeting" not in seen else ", ".join(seen)
+
+    return f"""Rewrite the user's latest query into 1-3 retrieval-friendly queries AND classify the intent.
 
 Rules:
 1. Fix common Chinese typos and pinyin-input errors (e.g. "头通"→"头痛", "发shao"→"发烧").
@@ -29,24 +59,70 @@ Rules:
 4. Prefer directly usable rewrites over asking clarification.
 
 Intent classification:
-- medical_rag: health questions, symptoms, treatments, casual chat, emotional support
-- triage: "挂什么科" type department-recommendation questions
-- appointment: booking requests ("我要挂号", "帮我预约")
-- cancel_appointment: cancellation requests
-- clarification: ONLY when truly unintelligible AND no useful context exists
+{intent_block}
+
+=== BOUNDARY CASES (easy to misclassify, read carefully!) ===
+
+NOT appointment — these are medical knowledge questions → intent="medical_rag":
+- "预约前要注意什么"        (asking about pre-appointment precautions)
+- "挂号前需要准备什么"      (asking about preparation steps)
+- "预约需要带什么证件"      (asking about required documents)
+- "预约流程是什么"          (asking about the process)
+
+NOT cancel_appointment — these are medical questions → intent="medical_rag":
+- "取消对药物的依赖会怎样"   (discussing drug dependence)
+- "取消抗生素治疗的影响"     (discussing treatment effects)
+- "停药后会有什么反应"       (discussing stopping medication)
+- "取消某种治疗"             (discussing stopping a treatment)
+
+Compound requests (greeting is just politeness, real intent is the rest):
+- "你好我要挂号" → intent="appointment"
+- "谢谢我不用了" → intent="medical_rag" (or "greeting" if truly just polite decline)
+
+High-risk symptoms + department question → intent="triage":
+- "胸痛挂什么科" → triage
+- "呼吸困难看哪个科" → triage
 
 Return JSON with these fields:
-{"is_clear": true/false, "intent": "medical_rag|triage|appointment|cancel_appointment|clarification", "questions": ["q1","q2"], "clarification_needed": "explanation if unclear, else empty"}
+{{"is_clear": true/false, "intent": "{valid_intents}", "questions": ["q1","q2"], "clarification_needed": "explanation if unclear, else empty"}}
 """
 
 
-def get_intent_router_prompt() -> str:
-    return """Classify the user's latest request into one intent:
-- medical_rag
-- triage
-- appointment
-- cancel_appointment
-- clarification
+def get_intent_router_prompt(skill_hints: list[tuple[str, str]] | None = None) -> str:
+    """Build the intent-router prompt, optionally injecting skill L3 hints.
+
+    Args:
+        skill_hints: List of (intent_label, llm_hint) from SkillRegistry.
+            When provided, extra intent descriptions are appended so the LLM
+            can classify into skill-registered intents.
+    """
+    # Core intent list
+    core_intents = [
+        ("medical_rag", "health questions, symptoms, treatments, casual chat, emotional support"),
+        ("triage", '"挂什么科" type department-recommendation questions'),
+        ("appointment", 'booking requests ("我要挂号", "帮我预约")'),
+        ("cancel_appointment", 'cancellation requests ("取消预约 APT123", "取消刚才的挂号")'),
+        ("greeting", 'polite greetings/declines ("你好", "谢谢", "再见", "谢谢我不用了")'),
+        ("clarification", "ONLY when truly unintelligible AND no useful context exists"),
+    ]
+
+    # Merge skill hints
+    intent_lines = []
+    skill_hint_map = dict(skill_hints) if skill_hints else {}
+    seen = set()
+    for label, desc in core_intents:
+        intent_lines.append(f"- {label}: {desc}")
+        seen.add(label)
+    for label, hint in (skill_hints or []):
+        if label not in seen:
+            intent_lines.append(f"- {label}: {hint}")
+            seen.add(label)
+
+    intent_block = "\n".join(intent_lines)
+    valid_intents = ", ".join(seen)
+
+    return f"""Classify the user's latest request into one intent:
+{intent_block}
 
 Rules:
 1. Short follow-ups ("怎么办", "会好吗", "严重吗", "那呢") are almost always medical_rag
@@ -55,14 +131,36 @@ Rules:
 2. "挂什么科/看什么科/去哪个科室" → triage.
 3. General health questions, symptoms, treatments, precautions → medical_rag.
 4. Booking requests → appointment. Cancellation → cancel_appointment.
-5. Casual chat, small talk, emotional support → medical_rag (can still answer helpfully).
-6. PREFER MEDICAL_RAG OVER CLARIFICATION in all borderline cases. Only clarify when
+5. Pure polite greetings/declines ("你好", "谢谢", "再见", "谢谢我不用了") → greeting.
+6. Casual chat, small talk, emotional support → medical_rag (can still answer helpfully).
+7. PREFER MEDICAL_RAG OVER CLARIFICATION in all borderline cases. Only clarify when
    the request is genuinely too vague AND no useful medical context exists.
-7. If known user context (medical history, allergies, preferences) is provided,
+8. If known user context (medical history, allergies, preferences) is provided,
    use it to better classify intent.
 
+=== BOUNDARY CASES (easy to misclassify!) ===
+
+NOT appointment — these are medical knowledge questions → intent="medical_rag":
+- "预约前要注意什么"        (asking about pre-appointment precautions, NOT booking)
+- "挂号前需要准备什么"      (asking about preparation, NOT booking)
+- "预约需要带什么证件"      (asking about process/documentation)
+- "预约是什么流程"          (asking about workflow)
+- "预约后多久能看到医生"    (asking about wait time)
+
+NOT cancel_appointment — these are medical questions → intent="medical_rag":
+- "取消对药物的依赖会怎样"   (discussing drug dependence / withdrawal)
+- "取消抗生素治疗的影响"     (discussing stopping a treatment)
+- "停药后会有什么反应"       (discussing stopping medication)
+- "取消化疗会怎样"           (discussing stopping a treatment)
+- "不用这个药了有什么后果"   (discussing stopping medication)
+
+Compound requests with greetings — the greeting is just politeness:
+- "你好我要挂号" → intent="appointment" (core intent is booking)
+- "谢谢" → intent="greeting"
+- "谢谢我不用了" → intent="greeting" (polite decline, NOT cancel)
+
 Return raw JSON with these fields:
-{"intent": "medical_rag|triage|appointment|cancel_appointment|clarification", "is_clear": true/false, "clarification_needed": "explain why unclear, or empty string"}
+{{"intent": "{valid_intents}", "is_clear": true/false, "clarification_needed": "explain why unclear, or empty string"}}
 """
 
 

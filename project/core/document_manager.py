@@ -25,11 +25,25 @@ logger = logging.getLogger(__name__)
 
 class DocumentManager:
 
-    def __init__(self, rag_system):
-        self.rag_system = rag_system
+    def __init__(self, rag_system=None, *, vector_db=None, parent_store=None,
+                 chunker=None, collection_name=None):
+        # New explicit dependency injection — preferred
+        if rag_system is not None:
+            # Backward compatibility: unwrap from rag_system
+            self.vector_db = rag_system.vector_db
+            self.parent_store = rag_system.parent_store
+            self.chunker = rag_system.chunker
+            self.collection_name = rag_system.collection_name
+        else:
+            self.vector_db = vector_db
+            self.parent_store = parent_store
+            self.chunker = chunker
+            self.collection_name = collection_name or config.CHILD_COLLECTION
+        self.rag_system = rag_system  # kept for legacy callers, but new code should not use it
         self.markdown_dir = Path(config.MARKDOWN_DIR)
         self.markdown_dir.mkdir(parents=True, exist_ok=True)
-        self.rag_system.document_manager = self
+        # NOTE: no longer sets rag_system.document_manager = self
+        # The caller (ApiContainer or RAGSystem) is responsible for that assignment.
 
     def get_markdown_paths(self):
         if not self.markdown_dir.exists():
@@ -83,9 +97,9 @@ class DocumentManager:
         if not markdown_paths:
             return {"processed": 0, "added": 0, "skipped": 0}
 
-        self.rag_system.vector_db.create_collection(self.rag_system.collection_name)
-        collection = self.rag_system.vector_db.get_collection(self.rag_system.collection_name)
-        indexed_document_nos = self.rag_system.vector_db.get_indexed_document_nos() if skip_existing else set()
+        self.vector_db.create_collection(self.collection_name)
+        collection = self.vector_db.get_collection(self.collection_name)
+        indexed_document_nos = self.vector_db.get_indexed_document_nos() if skip_existing else set()
 
         added = 0
         skipped = 0
@@ -102,12 +116,12 @@ class DocumentManager:
                 continue
 
             try:
-                parent_chunks, child_chunks = self.rag_system.chunker.create_chunks_single(md_path)
+                parent_chunks, child_chunks = self.chunker.create_chunks_single(md_path)
                 if not child_chunks:
                     skipped += 1
                     continue
 
-                self.rag_system.parent_store.save_many(parent_chunks)
+                self.parent_store.save_many(parent_chunks)
                 collection.add_documents(child_chunks)
                 indexed_document_nos.add(document_no)
                 added += 1
@@ -258,9 +272,9 @@ class DocumentManager:
         self.markdown_dir.mkdir(parents=True, exist_ok=True)
         clear_directory_contents(self.markdown_dir)
 
-        self.rag_system.vector_db.delete_collection(self.rag_system.collection_name)
-        self.rag_system.parent_store.clear_store()
-        self.rag_system.vector_db.create_collection(self.rag_system.collection_name)
+        self.vector_db.delete_collection(self.collection_name)
+        self.parent_store.clear_store()
+        self.vector_db.create_collection(self.collection_name)
 
     def sync_local_documents(self, markdown_paths=None, progress_callback=None, trigger_type: str = "manual", soft_delete_missing: bool = False):
         sync_service = KnowledgeBaseSyncService(self.rag_system, self.markdown_dir)

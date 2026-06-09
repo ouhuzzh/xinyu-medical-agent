@@ -1,5 +1,5 @@
-from typing import List, Literal
-from pydantic import BaseModel, Field
+from typing import List, Literal, Optional, Sequence
+from pydantic import BaseModel, Field, create_model
 
 class QueryAnalysis(BaseModel):
     is_clear: bool = Field(
@@ -18,14 +18,60 @@ class QueryAnalysis(BaseModel):
 
 
 class IntentAnalysis(BaseModel):
-    intent: Literal["medical_rag", "triage", "appointment", "cancel_appointment", "clarification"] = Field(
-        description="Intent classification. Must be one of: medical_rag, triage, appointment, cancel_appointment, clarification."
+    """Base intent analysis schema with flexible str intent.
+
+    For structured output with Literal constraints, use
+    ``build_intent_analysis_schema()`` which dynamically builds a
+    Pydantic model with a Literal[intent_labels] field.
+    """
+    intent: str = Field(
+        description="Intent classification. Must be one of the valid intent labels."
     )
     is_clear: bool = Field(
         description="Whether the user's request is clear enough to continue."
     )
     clarification_needed: str = Field(
         description="Clarification question if the request is not clear enough."
+    )
+
+
+def build_intent_analysis_schema(
+    intent_labels: Optional[Sequence[str]] = None,
+) -> type[BaseModel]:
+    """Build a Pydantic model for intent analysis with a Literal[intent] field.
+
+    Dynamically creates a model whose ``intent`` field uses Literal to
+    constrain output to the *current* set of intent labels (core + skills),
+    rather than a hardcoded set that would need manual updates when skills
+    are added.
+
+    Args:
+        intent_labels: Ordered sequence of valid intent strings.
+            Defaults to the core 6 intents if not provided.
+
+    Returns:
+        A dynamically-created Pydantic model class with:
+          - intent: Literal[...]  (validated against intent_labels)
+          - is_clear: bool
+          - clarification_needed: str
+    """
+    if not intent_labels:
+        intent_labels = ("medical_rag", "triage", "appointment",
+                         "cancel_appointment", "greeting", "clarification")
+
+    literal_type = Literal[tuple(intent_labels)]  # type: ignore[valid-type]
+
+    return create_model(
+        "DynamicIntentAnalysis",
+        intent=(literal_type, Field(
+            description=f"Intent classification. Must be one of: {', '.join(intent_labels)}"
+        )),
+        is_clear=(bool, Field(
+            description="Whether the user's request is clear enough to continue."
+        )),
+        clarification_needed=(str, Field(
+            description="Clarification question if the request is not clear enough."
+        )),
     )
 
 

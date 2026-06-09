@@ -176,26 +176,46 @@ class UserMCPPool:
         connections: Dict[str, Dict[str, Any]],
         pool: _UserPool,
     ) -> Tuple[List[Any], List[str], Dict[str, str]]:
-        """Bridge async MCP loading to sync code."""
+        """Bridge async MCP loading to sync code.
+
+        Uses asyncio.run() when no event loop is running. When called from
+        inside a running event loop (FastAPI), spawns a dedicated thread to
+        avoid the deadlock risk of nested event loops.
+        """
         try:
-            return asyncio.run(self._async_load_tools(connections, pool))
-        except RuntimeError as e:
-            # We're already inside an event loop (e.g., when called from FastAPI)
-            if "asyncio.run() cannot be called" in str(e):
-                loop = asyncio.new_event_loop()
-                try:
-                    return loop.run_until_complete(self._async_load_tools(connections, pool))
-                finally:
-                    loop.close()
-            raise
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except BaseException as e:
-            # Catch ExceptionGroup and any other BaseException leaking out of asyncio.run
-            err_msg = type(e).__name__ + ": " + str(e)[:200]
-            logger.error("Unhandled exception in _sync_load_tools: %s", err_msg)
-            failed = {code: err_msg for code in connections}
-            return [], [], failed
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is None or not loop.is_running():
+            # No running loop — safe to use asyncio.run()
+            try:
+                return asyncio.run(self._async_load_tools(connections, pool))
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except BaseException as e:
+                err_msg = type(e).__name__ + ": " + str(e)[:200]
+                logger.error("Unhandled exception in _sync_load_tools: %s", err_msg)
+                failed = {code: err_msg for code in connections}
+                return [], [], failed
+
+        # We're inside a running event loop (FastAPI) — use a thread to
+        # avoid the deadlock risk of asyncio.new_event_loop() inside a running loop.
+        import concurrent.futures
+        timeout = config.MCP_DEFAULT_TIMEOUT_SECONDS * max(len(connections), 1) + 10
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(asyncio.run, self._async_load_tools(connections, pool))
+            try:
+                return future.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                logger.error("MCP tool loading timed out after %ds", timeout)
+                failed = {code: "timeout" for code in connections}
+                return [], [], failed
+            except Exception as e:
+                err_msg = type(e).__name__ + ": " + str(e)[:200]
+                logger.error("MCP tool loading failed in thread: %s", err_msg)
+                failed = {code: err_msg for code in connections}
+                return [], [], failed
 
     async def _async_load_tools(
         self,

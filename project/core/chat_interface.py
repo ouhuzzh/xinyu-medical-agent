@@ -30,26 +30,14 @@ SILENT_NODES = {
     "answer_grounding_check",
 }
 SYSTEM_NODES = {"summarize_history", "rewrite_query"}
-APPOINTMENT_UPDATE_HINTS = ("改", "换", "预约", "挂号", "医生", "科", "时间", "时段")
-CANCEL_UPDATE_HINTS = ("取消", "退号", "预约号", "第", "appointment", "cancel")
+# Classification hints — canonical definitions live in skill modules.
+# These aliases import from skills so there is a single source of truth.
+from skills.booking_skill import UPDATE_HINTS as APPOINTMENT_UPDATE_HINTS
+from skills.cancel_skill import CANCEL_HINTS as CANCEL_UPDATE_HINTS
+from skills.medical_rag_skill import KB_HINTS as MEDICAL_KB_HINTS
+from skills.medical_rag_skill import KB_QUESTION_HINTS as MEDICAL_KB_QUESTION_HINTS
+from skills.medical_rag_skill import FALLBACK_DANGER_HINTS as MEDICAL_FALLBACK_DANGER_HINTS
 PENDING_ACK_HINTS = ("可以", "好的", "行", "好", "ok", "okay")
-MEDICAL_KB_HINTS = (
-    "高血压", "糖尿病", "感冒", "发烧", "发热", "低烧", "高烧", "头疼", "头痛", "偏头痛",
-    "头晕", "眩晕", "咳嗽", "咳痰", "咽痛", "嗓子疼", "喉咙痛", "流鼻涕", "鼻塞",
-    "腹痛", "肚子疼", "胃痛", "腹泻", "拉肚子", "便秘", "恶心", "呕吐", "胸闷", "胸痛",
-    "心悸", "心慌", "乏力", "呼吸困难", "气短", "肺炎", "哮喘", "鼻炎", "胃炎", "肠胃炎",
-    "血压", "血糖", "症状", "治疗", "检查", "药", "用药", "疼", "痛", "不舒服",
-    "hypertension", "diabetes", "fever", "cough", "dizziness", "symptom", "treatment",
-)
-MEDICAL_KB_QUESTION_HINTS = (
-    "是什么", "怎么回事", "为什么", "原因", "症状", "表现", "怎么办", "如何", "怎么处理",
-    "怎么缓解", "严重吗", "会不会", "会引起", "会导致", "能不能", "可以吗", "要不要",
-    "治疗", "预防", "what is", "why", "how to", "symptoms", "treatment",
-)
-MEDICAL_FALLBACK_DANGER_HINTS = (
-    "胸痛", "胸闷", "呼吸困难", "气短", "意识模糊", "抽搐", "晕厥", "剧烈", "突然",
-    "持续加重", "大出血", "高热", "肢体无力", "视物模糊",
-)
 
 SYSTEM_NODE_CONFIG = {
     "rewrite_query":     {"title": "🔍 Query Analysis & Rewriting"},
@@ -230,20 +218,18 @@ class ChatInterface:
 
     @staticmethod
     def _looks_like_department_question(query: str) -> bool:
+        """Delegate to TriageSkill's keywords for single source of truth."""
+        from skills.triage_skill import TriageSkill
         normalized = (query or "").strip().lower()
-        patterns = [
-            "挂什么科",
-            "挂哪个科",
-            "看什么科",
-            "看哪个科",
-            "挂哪科",
-            "看哪科",
-            "咨询什么科",
-            "which department",
-            "what department should i visit",
-            "what department should i register for",
-        ]
-        return any(pattern in normalized for pattern in patterns)
+        # Check skill keywords
+        if any(kw in normalized for kw in TriageSkill().keywords):
+            return True
+        # Extra English patterns not in skill keywords
+        for pattern in ("which department", "what department should i visit",
+                        "what department should i register for"):
+            if pattern in normalized:
+                return True
+        return False
 
     @staticmethod
     def _looks_like_schedule_update(query: str) -> bool:
@@ -283,9 +269,25 @@ class ChatInterface:
 
     @staticmethod
     def _infer_intent(user_message: str, existing_state: dict):
+        """Optimistic pre-classification for SSE streaming state hints.
+
+        Tries the skill registry first (single source of truth), then
+        falls back to local rule-based classification.
+        """
         normalized = (user_message or "").strip().lower()
         if ChatInterface._should_continue_pending_intent(user_message, existing_state or {}):
             return "pending"
+        # Try skill registry L1 keyword classification
+        try:
+            from skills.registry import get_skill_registry
+            registry = get_skill_registry()
+            if registry.skills:
+                kw_match = registry.classify_by_keywords(user_message)
+                if kw_match:
+                    return kw_match[0]  # (intent_label, skill_name)
+        except Exception:
+            pass
+        # Fallback to local rules
         if ChatInterface._looks_like_department_question(user_message):
             return "triage"
         if ChatInterface._looks_like_explicit_medical_query(user_message):
@@ -334,10 +336,9 @@ class ChatInterface:
 
     @staticmethod
     def _infer_risk_level(user_message: str, existing_state: dict):
-        normalized = (user_message or "").strip().lower()
-        if any(keyword.lower() in normalized for keyword in config.HIGH_RISK_KEYWORDS):
-            return "high"
-        return existing_state.get("risk_level", "normal")
+        """Delegate to the shared risk-level classifier in node_helpers."""
+        from rag_agent.node_helpers import _infer_risk_level
+        return _infer_risk_level(user_message, existing_state.get("risk_level", "normal"))
 
     @staticmethod
     def _build_state_messages(session_state: dict):
@@ -623,6 +624,8 @@ class ChatInterface:
                     "messages": [*state_messages, *stored_messages, HumanMessage(content=user_message)],
                     "request_id": request_id,
                     "user_memories": user_memories_text,
+                    "_mcp_pool": self.rag_system.user_mcp_pool,
+                    "user_id": user_id,
                 }
 
             response_messages  = []

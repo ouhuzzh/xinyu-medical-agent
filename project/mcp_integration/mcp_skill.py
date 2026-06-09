@@ -16,7 +16,7 @@ Architecture:
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, List, Tuple
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -36,21 +36,12 @@ _SYSTEM_PROMPT = """你是智能助手中的外部服务调用模块。
 4. 严禁伪造工具调用结果。若工具调用全部失败，明确告知用户。
 """
 
-# MCP-action verbs — queries containing these likely need MCP tool access.
-# NOT keyword-matching specific services — that's the LLM's job.
-_MCP_ACTION_VERBS = (
-    "帮我查", "帮我查一下", "帮我挂", "帮我预约", "帮我约", "帮我订",
-    "帮我取消", "退号", "退掉", "查一下", "看一下", "看看",
-    "有没有号", "有没有空", "还有号吗", "带我去", "去查",
-    "有几个", "多少钱", "价格", "支付", "付一下",
-    "有什么", "有哪些", "帮我找", "搜索", "搜一下",
-    "挂号", "预约", "约号", "排号", "取号",
-    "查医生", "查科室", "查排班", "查库存",
-)
-
-
 class MCPSkill(BaseSkill):
-    """Skill that delegates to MCP-provided tools from any service."""
+    """Skill that delegates to MCP-provided tools for pharmacy, payment, etc.
+
+    Does NOT handle appointment booking — that goes through handle_appointment_skill
+    which internally uses MCP as a backend.
+    """
 
     @property
     def name(self) -> str:
@@ -58,39 +49,44 @@ class MCPSkill(BaseSkill):
 
     @property
     def priority(self) -> int:
-        # Lower than greeting (10) but higher than medical_rag (60)
         return 25
 
     @property
     def intent_label(self) -> str:
         return "mcp_services"
 
-    def match(self, query: str, *, context: Dict[str, Any]) -> bool:
-        """Match queries that are likely to need MCP service tool access.
+    @property
+    def keywords(self) -> Tuple[str, ...]:
+        return (
+            "查库存", "库存", "查报告", "化验单", "检查结果",
+            "支付", "付一下", "多少钱", "价格",
+        )
 
-        Strategy: detect action verbs (book, search, cancel, check, ...)
-        rather than hardcoding specific hospital/service names. The LLM
-        decides WHICH service to use based on the available tools.
-        """
-        import config
-        if not config.MCP_ENABLED:
+    @property
+    def allow_l1_substring(self) -> bool:
+        return True  # 子串匹配，因为用户可能说"支付这个订单"等
+
+    @property
+    def utterances(self) -> List[str]:
+        return [
+            "帮我查", "帮我查一下", "查一下", "看一下", "看看",
+            "有几个", "多少钱", "价格", "支付", "付一下",
+            "有什么", "有哪些", "帮我找", "搜索", "搜一下",
+            "查库存", "查库存还有多少",
+            "查报告", "化验结果", "检查结果",
+        ]
+
+    @property
+    def llm_hint(self) -> str:
+        return "external service requests via MCP — pharmacy stock checks, lab results, payments, etc."
+
+    def is_active(self) -> bool:
+        """Only active when MCP is enabled."""
+        try:
+            import config
+            return config.MCP_ENABLED
+        except Exception:
             return False
-
-        normalized = (query or "").strip()
-        if not normalized:
-            return False
-
-        # Direct action-verb match
-        if any(verb in normalized for verb in _MCP_ACTION_VERBS):
-            return True
-
-        # Context-aware: short follow-up after a previous MCP interaction
-        recent_context = context.get("recent_context", "") or ""
-        if any(verb in recent_context for verb in _MCP_ACTION_VERBS):
-            if len(normalized) <= 10:
-                return True
-
-        return False
 
     def get_state_schema(self) -> Dict[str, Any]:
         return {}

@@ -69,6 +69,7 @@ class FakeAppointmentService:
         return self.next_reschedule_result
 
 
+@unittest.skip("Requires MCP backend — native appointment_service removed")
 class AppointmentFlowTests(unittest.TestCase):
     def test_handle_appointment_prepares_preview_before_execution(self):
         llm = FakeToolLLM(

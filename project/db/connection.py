@@ -32,11 +32,19 @@ class PooledConnectionHandle:
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        if exc_type is None:
-            self._conn.commit()
-        else:
-            self._conn.rollback()
-        self.close()
+        try:
+            if exc_type is None:
+                self._conn.commit()
+            else:
+                self._conn.rollback()
+        except Exception:
+            # Commit or rollback failed — try rollback as best effort
+            try:
+                self._conn.rollback()
+            except Exception:
+                pass
+        finally:
+            self.close()
         return False
 
     def close(self):

@@ -14,6 +14,7 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from .graph_state import State
 from .schemas import (
     IntentAnalysis,
+    build_intent_analysis_schema,
     DepartmentRecommendation,
 )
 from .prompts import get_conversation_summary_prompt, get_intent_router_prompt, get_department_recommendation_prompt
@@ -45,6 +46,7 @@ from .node_helpers import (
     _normalize_time_slot,
     _pick_candidate_from_text,
     _reset_pending_action_if_needed,
+    _starts_with_polite_decline,
     _structured_output_llm,
 )
 
@@ -61,6 +63,20 @@ _COMPOUND_SPLIT_RE = re.compile(r"(?:，|,)?\s*(另外|然后|然后再|顺便|�
 # ---------------------------------------------------------------------------
 # Private helpers (only used by routing nodes)
 # ---------------------------------------------------------------------------
+
+def _user_has_mcp_tools() -> bool:
+    """Check if MCP is enabled and at least one server is configured."""
+    try:
+        import config
+        if not config.MCP_ENABLED:
+            return False
+        from mcp_integration.mcp_server_registry import MCPServerRegistry
+        registry = MCPServerRegistry()
+        servers = registry.list_all()
+        return len(servers) > 0
+    except Exception:
+        return False
+
 
 def _needs_medication_detail_clarification(query: str) -> bool:
     normalized = (query or "").strip().lower()
@@ -110,44 +126,48 @@ def _intent_for_clarification_target(target: str, current_intent: str) -> str:
     return current_intent or "medical_rag"
 
 
-def _classify_query_by_rules(user_query: str, *, conversation_summary: str = "", recent_context: str = "", topic_focus: str = "") -> tuple[str, str]:
-    """Rules-based intent pre-classification.
+def _classify_query_pipeline(
+    user_query: str,
+    *,
+    conversation_summary: str = "",
+    recent_context: str = "",
+    topic_focus: str = "",
+) -> tuple[str, float, str]:
+    """Three-tier intent classification pipeline via skill registry.
 
-    ONLY catches highly unambiguous intents where rule matching is near-certain.
-    Everything else — medical questions, short follow-ups, vague queries, casual chat —
-    is left to the LLM intent_router which has conversation context and semantic
-    understanding.  This keeps rules lean and avoids an ever-growing keyword list.
+    L1: registry.classify_by_keywords() — exact keyword match on skill.keywords
+    L2: registry-provided embedding centroids — semantic similarity match
+    L3: (caller's responsibility) LLM classification
+
+    Returns (intent, confidence, source) where source is one of:
+        "l1_keyword" | "l2_embedding" | "need_llm"
     """
-    # Try skill registry first
     try:
         from skills.registry import get_skill_registry
         registry = get_skill_registry()
-        if registry.skills:
-            context = {
-                "conversation_summary": conversation_summary,
-                "recent_context": recent_context,
-                "topic_focus": topic_focus,
-            }
-            skill_match = registry.classify_intent(user_query, context=context)
-            if skill_match:
-                intent, skill_name = skill_match
-                return intent, f"skill:{skill_name}"
+        if not registry.skills:
+            return ("", 0.0, "need_llm")
+
+        # L1: keyword-based classification (aggregated from all skills)
+        kw_match = registry.classify_by_keywords(user_query)
+        if kw_match:
+            intent, source = kw_match
+            return (intent, 1.0, source)
+
+        # L2: embedding semantic matching (utterances from all skills)
+        try:
+            from .intent_embedder import get_intent_embedder
+            embedder = get_intent_embedder()
+            result = embedder.classify(user_query)
+            if result is not None:
+                intent, confidence = result
+                return (intent, confidence, "l2_embedding")
+        except Exception:
+            pass
     except Exception:
         pass
 
-    # --- Unambiguous cases only ---
-    if _looks_like_greeting(user_query):
-        return "greeting", "greeting_rule"
-    if _looks_like_explicit_cancel_intent(user_query):
-        return "cancel_appointment", "explicit_cancel_rule"
-    if _looks_like_explicit_appointment_intent(user_query):
-        return "appointment", "explicit_appointment_rule"
-    if _looks_like_department_question(user_query):
-        return "triage", "department_question_rule"
-
-    # Everything else — medical questions, follow-ups, symptoms, casual —
-    # is handed to the LLM intent_router for contextual classification.
-    return "", "rule_inconclusive"
+    return ("", 0.0, "need_llm")
 
 
 def _split_compound_request(user_query: str) -> list[str]:
@@ -165,6 +185,29 @@ def _split_compound_request(user_query: str) -> list[str]:
     if len(cleaned) == 1:
         return cleaned
     return cleaned[:2]
+
+
+def _classify_query_by_rules(
+    user_query: str,
+    *,
+    conversation_summary: str = "",
+    recent_context: str = "",
+    topic_focus: str = "",
+) -> tuple[str, str]:
+    """Backward-compatible wrapper — delegates to L1 keyword matching.
+
+    Prefer _classify_query_pipeline() for new code (returns 3-tuple with confidence).
+    This wrapper is kept for existing callers (e.g. tests).
+    """
+    try:
+        from skills.registry import get_skill_registry
+        registry = get_skill_registry()
+        kw_match = registry.classify_by_keywords(user_query)
+        if kw_match:
+            return kw_match
+    except Exception:
+        pass
+    return ("", "rule_inconclusive")
 
 
 def _choose_compound_intents(first_intent: str, second_intent: str) -> tuple[str, str]:
@@ -195,6 +238,10 @@ def _looks_like_cancel_update(user_query: str) -> bool:
 
 
 def _should_continue_pending_action(state: State, user_query: str) -> bool:
+    # Bug 2 fix: "谢谢我不用了" is a polite decline, NOT an abort/cancel
+    if _starts_with_polite_decline(user_query):
+        return False
+
     pending_action_type = state.get("pending_action_type", "")
     pending_candidates = state.get("pending_candidates", []) or []
     if not pending_action_type and not pending_candidates:
@@ -224,6 +271,31 @@ def analyze_turn(state: State):
         state.get("appointment_context", {}),
         state.get("recommended_department", ""),
     )
+
+    # Pending stale exit: if user has a pending action but keeps talking about
+    # unrelated topics, auto-clear after 2 consecutive irrelevant turns.
+    if state.get("pending_action_type") and not _should_continue_pending_action(state, user_query):
+        stale = int(state.get("pending_stale_count", 0)) + 1
+        if stale >= 2:
+            clear = _clear_pending_action_state()
+            clear["pending_stale_count"] = 0
+            return {
+                "recent_context": recent_context,
+                "topic_focus": topic_focus or state.get("topic_focus", ""),
+                "primary_intent": "",
+                "secondary_intent": "",
+                "primary_user_query": user_query,
+                "secondary_user_query": "",
+                "deferred_user_question": "",
+                "decision_source": "llm",
+                "route_reason": "pending_stale_exit",
+                "last_route_reason": "pending_stale_exit",
+                **_clear_pending_action_state(),
+                "pending_stale_count": 0,
+                "messages": [AIMessage(content="好的，先不管之前的预约。你需要什么帮助？")],
+            }
+        # Still building up — continue with normal classification
+        # (stale count is included in the return dicts below)
 
     if state.get("pending_action_type") and _should_continue_pending_action(state, user_query):
         primary_intent = state.get("pending_action_type", "")
@@ -291,22 +363,28 @@ def analyze_turn(state: State):
     segments = _split_compound_request(user_query)
     first_segment = segments[0] if segments else user_query
     second_segment = segments[1] if len(segments) > 1 else ""
-    first_intent, first_reason = _classify_query_by_rules(
+    first_intent, first_conf, first_reason = _classify_query_pipeline(
         first_segment,
         conversation_summary=state.get("conversation_summary", ""),
         recent_context=recent_context,
         topic_focus=state.get("topic_focus", ""),
     )
     second_intent = ""
+    second_conf = 0.0
     second_reason = ""
     if second_segment:
-        second_intent, second_reason = _classify_query_by_rules(
+        second_intent, second_conf, second_reason = _classify_query_pipeline(
             second_segment,
             conversation_summary=state.get("conversation_summary", ""),
             recent_context=recent_context,
             topic_focus=state.get("topic_focus", ""),
         )
     primary_intent, secondary_intent = _choose_compound_intents(first_intent, second_intent)
+    # Compute stale count for return if we're tracking a pending action
+    stale_update = {}
+    if state.get("pending_action_type") and not _should_continue_pending_action(state, user_query):
+        stale_update["pending_stale_count"] = stale
+
     if primary_intent:
         route_reason = first_reason if not secondary_intent else f"{first_reason}+{second_reason or 'secondary'}"
         return {
@@ -320,6 +398,9 @@ def analyze_turn(state: State):
             "decision_source": "rule",
             "route_reason": route_reason,
             "last_route_reason": route_reason,
+            "intent_confidence": float(first_conf),
+            "intent_source": first_reason,
+            **stale_update,
         }
 
     return {
@@ -333,6 +414,9 @@ def analyze_turn(state: State):
         "decision_source": "llm",
         "route_reason": "rule_inconclusive",
         "last_route_reason": "rule_inconclusive",
+        "intent_confidence": 0.0,
+        "intent_source": "need_llm",
+        **stale_update,
     }
 
 
@@ -514,13 +598,26 @@ def intent_router(state: State, llm):
         }
 
     try:
-        llm_with_structure = _structured_output_llm(llm, IntentAnalysis, temperature=0.1)
+        # Collect skill L3 hints and intent labels for dynamic schema + prompt
+        skill_hints = []
+        intent_labels = None
+        try:
+            from skills.registry import get_skill_registry
+            _reg = get_skill_registry()
+            skill_hints = _reg.collect_llm_hints()
+            intent_labels = _reg.build_intent_labels()
+        except Exception:
+            pass
+
+        # Build dynamic schema with Literal[intent_labels] if available
+        schema_cls = build_intent_analysis_schema(intent_labels) if intent_labels else IntentAnalysis
+        llm_with_structure = _structured_output_llm(llm, schema_cls, temperature=0.1)
         user_memories_section = ""
         if state.get("user_memories"):
             user_memories_section = f"\nKnown user context:\n{state['user_memories']}\n"
         response = llm_with_structure.invoke(
             [
-                SystemMessage(content=get_intent_router_prompt()),
+                SystemMessage(content=get_intent_router_prompt(skill_hints)),
                 HumanMessage(
                     content=(
                         f"Conversation summary:\n{state.get('conversation_summary', '')}\n\n"
@@ -555,38 +652,71 @@ def intent_router(state: State, llm):
             **_reset_pending_action_if_needed(state),
         }
 
-    if response.is_clear and response.intent in {"medical_rag", "triage", "appointment", "cancel_appointment"}:
-        pending_updates = (
-            _clear_pending_action_state()
-            if response.intent in {"medical_rag", "triage"}
-            else {
-                "pending_action_type": state.get("pending_action_type", ""),
-                "pending_action_payload": state.get("pending_action_payload", {}),
-                "pending_confirmation_id": state.get("pending_confirmation_id", ""),
-                "pending_candidates": state.get("pending_candidates", []),
+    if response.is_clear:
+        # Check if the intent is routable — via skill registry or legacy core set
+        _valid_intents = {"medical_rag", "triage", "appointment",
+                          "cancel_appointment", "greeting", "clarification"}
+        try:
+            from skills.registry import get_skill_registry
+            _valid_intents.update(get_skill_registry().get_route_mapping().keys())
+        except Exception:
+            pass
+        if response.intent in _valid_intents:
+            if response.intent == "greeting":
+                greeting_msg = "你好！我是你的医疗助手，可以帮你：\n- 🏥 推荐就诊科室\n- 📅 预约挂号\n- ❌ 取消预约\n- 💊 解答医疗健康问题\n\n请问有什么可以帮你的？"
+                return {
+                    "intent": "greeting",
+                    "primary_intent": "greeting",
+                    "secondary_intent": "",
+                    "primary_user_query": user_query,
+                    "secondary_user_query": "",
+                    "decision_source": "llm",
+                    "route_reason": "llm:greeting",
+                    "last_route_reason": "llm:greeting",
+                    "risk_level": risk_level,
+                    "pending_clarification": "",
+                    "clarification_target": "",
+                    "recent_context": recent_context,
+                    "topic_focus": topic_focus,
+                    "deferred_user_question": "",
+                    "clarification_attempts": 0,
+                    "recommended_department": state.get("recommended_department", ""),
+                    "appointment_context": state.get("appointment_context", {}),
+                    "last_appointment_no": state.get("last_appointment_no", ""),
+                    **_reset_pending_action_if_needed(state),
+                    "messages": [AIMessage(content=greeting_msg)],
+                }
+            pending_updates = (
+                _clear_pending_action_state()
+                if response.intent in {"medical_rag", "triage"}
+                else {
+                    "pending_action_type": state.get("pending_action_type", ""),
+                    "pending_action_payload": state.get("pending_action_payload", {}),
+                    "pending_confirmation_id": state.get("pending_confirmation_id", ""),
+                    "pending_candidates": state.get("pending_candidates", []),
+                }
+            )
+            return {
+                "intent": response.intent,
+                "primary_intent": response.intent,
+                "secondary_intent": "",
+                "primary_user_query": user_query,
+                "secondary_user_query": "",
+                "decision_source": "llm",
+                "route_reason": f"llm:{response.intent}",
+                "last_route_reason": f"llm:{response.intent}",
+                "risk_level": risk_level,
+                "pending_clarification": "",
+                "clarification_target": "",
+                "recent_context": recent_context,
+                "topic_focus": topic_focus,
+                "deferred_user_question": "",
+                "clarification_attempts": 0,
+                "recommended_department": state.get("recommended_department", ""),
+                "appointment_context": state.get("appointment_context", {}),
+                "last_appointment_no": state.get("last_appointment_no", ""),
+                **pending_updates,
             }
-        )
-        return {
-            "intent": response.intent,
-            "primary_intent": response.intent,
-            "secondary_intent": "",
-            "primary_user_query": user_query,
-            "secondary_user_query": "",
-            "decision_source": "llm",
-            "route_reason": f"llm:{response.intent}",
-            "last_route_reason": f"llm:{response.intent}",
-            "risk_level": risk_level,
-            "pending_clarification": "",
-            "clarification_target": "",
-            "recent_context": recent_context,
-            "topic_focus": topic_focus,
-            "deferred_user_question": "",
-            "clarification_attempts": 0,
-            "recommended_department": state.get("recommended_department", ""),
-            "appointment_context": state.get("appointment_context", {}),
-            "last_appointment_no": state.get("last_appointment_no", ""),
-            **pending_updates,
-        }
 
     clarification_attempts = _next_clarification_attempt(state)
     if clarification_attempts > 1:
@@ -647,6 +777,52 @@ def recommend_department(state: State, llm):
     conversation_summary = state.get("conversation_summary", "")
     risk_level = state.get("risk_level", "normal")
     topic_focus = state.get("topic_focus", "")
+
+    # Bug 5 fix: high-risk symptoms → emergency department FIRST, skip LLM
+    if risk_level == "high":
+        import json as _json
+        answer = (
+            "⚠️ **高风险提醒**\n\n"
+            f"你描述的症状包含需要紧急评估的高风险信号。\n\n"
+            "**建议立即前往急诊科就诊**，不要因等待科室匹配而延误。\n\n"
+            "如果症状持续加重，请拨打 120 或前往最近的医院急诊。\n\n"
+            "---\n"
+            "以下是根据你的描述给出的科室参考（不替代急诊判断）："
+        )
+        # Still give a department recommendation via LLM for reference,
+        # but the emergency warning is the PRIMARY message
+        try:
+            user_memories_section = ""
+            if state.get("user_memories"):
+                user_memories_section = f"\nKnown user context:\n{state['user_memories']}\n"
+            raw_response = llm.with_config(temperature=0.1).invoke(
+                [
+                    SystemMessage(content=get_department_recommendation_prompt()),
+                    HumanMessage(content=f"Conversation summary:\n{conversation_summary}\n{user_memories_section}\nUser query:\n{user_query}"),
+                ]
+            )
+            raw_text = str(raw_response.content or "").strip()
+            import re as _re
+            json_match = _re.search(r"\{.*\}", raw_text, _re.DOTALL)
+            if json_match:
+                parsed = _json.loads(json_match.group())
+                dept = str(parsed.get("department", "")).strip()
+                reason = str(parsed.get("reason", "")).strip()
+                if dept:
+                    answer += f"\n\n建议科室：**{dept}**\n原因：{reason}"
+        except Exception:
+            pass
+
+        return {
+            "recommended_department": "急诊科",
+            "pending_clarification": "",
+            "clarification_target": "",
+            "clarification_attempts": 0,
+            "topic_focus": topic_focus or "急诊科",
+            "appointment_context": _build_appointment_context(state.get("appointment_context"), {"department": "急诊科"}),
+            **_clear_pending_action_state(),
+            "messages": [AIMessage(content=answer)],
+        }
 
     try:
         user_memories_section = ""

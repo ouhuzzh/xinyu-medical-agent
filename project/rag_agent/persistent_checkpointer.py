@@ -179,23 +179,28 @@ class PersistentInMemorySaver(InMemorySaver):
                 logger.warning("Failed to rotate checkpoint backup", exc_info=True)
         fd, tmp_path = tempfile.mkstemp(prefix="langgraph-checkpoint-", suffix=".tmp", dir=directory)
         sig_path = self.path + ".sig"
+        sig_tmp = tmp_path + ".sig"
         try:
             with os.fdopen(fd, "wb") as handle:
                 pickle.dump(self._snapshot(), handle, protocol=pickle.HIGHEST_PROTOCOL)
             # Write HMAC signature alongside the checkpoint
             with open(tmp_path, "rb") as rh:
                 sig = _hmac_signature(rh.read())
-            sig_tmp = tmp_path + ".sig"
             with open(sig_tmp, "w") as sh:
                 sh.write(sig)
-            os.replace(tmp_path, self.path)
+            # Both temp files written — atomically replace sig first, then data.
+            # If sig replace succeeds but data replace fails, the next load detects
+            # a stale sig (HMAC mismatch) and falls back to the backup file.
             os.replace(sig_tmp, sig_path)
+            os.replace(tmp_path, self.path)
             self._last_mtime = os.path.getmtime(self.path)
         finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-            if os.path.exists(tmp_path + ".sig"):
-                os.remove(tmp_path + ".sig")
+            for p in (tmp_path, sig_tmp):
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
 
     def get_tuple(self, config):
         with self._lock:
@@ -219,8 +224,9 @@ class PersistentInMemorySaver(InMemorySaver):
     def put_writes(self, config, writes, task_id, task_path=""):
         with self._lock:
             self._reload_from_disk()
-            super().put_writes(config, writes, task_id, task_path)
+            result = super().put_writes(config, writes, task_id, task_path)
             self._persist_to_disk()
+            return result
 
     def delete_thread(self, thread_id: str) -> None:
         with self._lock:

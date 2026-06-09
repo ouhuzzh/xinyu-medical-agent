@@ -130,8 +130,10 @@ def _structured_output_llm(llm, schema, *, temperature: float = 0.1, max_tokens:
             try:
                 raw = str(base.invoke(messages).content or "").strip()
             except Exception:
+                logger.warning("_StructureParser: LLM invoke failed for schema %s, returning default", schema.__name__)
                 return _default()
             if not raw:
+                logger.debug("_StructureParser: empty LLM response for schema %s", schema.__name__)
                 return _default()
             # Try JSON patterns
             for pattern in [r"```(?:json)?\s*\n?(.*?)```", r"(\{.*\})"]:
@@ -140,11 +142,12 @@ def _structured_output_llm(llm, schema, *, temperature: float = 0.1, max_tokens:
                     try:
                         return schema(**_json.loads(m.group(1)))
                     except Exception:
-                        pass
+                        logger.debug("_StructureParser: JSON pattern %s matched but schema parse failed for %s", pattern[:20], schema.__name__)
             try:
                 return schema(**_json.loads(raw))
             except Exception:
-                pass
+                logger.debug("_StructureParser: raw JSON parse failed for schema %s", schema.__name__)
+            logger.warning("_StructureParser: all parse attempts failed for schema %s, returning default", schema.__name__)
             return _default()
 
         def invoke(self, messages: list):
@@ -212,18 +215,45 @@ def _sanitize_pending_payload(payload: dict | None) -> dict:
     return cleaned
 
 
+# L1 strict-greeting word list — only very short, unambiguous greetings
+_PURE_GREETINGS = {
+    "你好", "您好", "hello", "hi", "hey", "嗨", "哈喽",
+    "早上好", "下午好", "晚上好", "good morning", "good afternoon", "good evening",
+    "谢谢", "感谢", "thanks", "thank you", "thx", "多谢",
+    "再见", "拜拜", "bye", "goodbye", "晚安", "早安",
+}
+
+
 def _looks_like_greeting(query: str) -> bool:
-    normalized = (query or "").strip().lower()
-    greetings = [
-        "你好", "您好", "hello", "hi", "hey", "嗨", "哈喽",
-        "早上好", "下午好", "晚上好", "good morning", "good afternoon", "good evening",
-        "谢谢", "感谢", "thanks", "thank you", "thx",
-        "再见", "拜拜", "bye", "goodbye",
-    ]
-    # 短消息且完全匹配问候语
-    if len(normalized) <= 15 and any(g in normalized for g in greetings):
-        return True
-    return False
+    """L1-strict: only match short, pure greetings (<= 15 chars, exact match).
+
+    Exact set match prevents substring issues — '你好我要挂号' is NOT a
+    pure greeting even though it contains '你好'.  The 15-char ceiling
+    accommodates common multi-word English greetings ('good morning').
+    """
+    normalized = (query or "").strip()
+    if not normalized or len(normalized) > 15:
+        return False
+    normalized_lower = normalized.lower()
+    return normalized_lower in _PURE_GREETINGS
+
+
+def _starts_with_polite_decline(query: str) -> bool:
+    """Check if query starts with polite refusal pattern like '谢谢我不用了'.
+
+    These should NOT be treated as cancel/abort requests when a pending
+    action exists — they are polite conversation-enders.
+    """
+    normalized = (query or "").strip()
+    if not normalized:
+        return False
+    # Polite opening + refusal
+    polite_opens = ("谢谢", "感谢", "thanks", "thank you", "多谢", "你好")
+    refusal_words = ("不用", "不需要", "算了", "不了", "不用了", "先不", "暂时不")
+    normalized_lower = normalized.lower()
+    has_polite = any(normalized_lower.startswith(p) for p in polite_opens)
+    has_refusal = any(r in normalized for r in refusal_words)
+    return has_polite and has_refusal
 
 
 def _looks_like_department_question(query: str) -> bool:
@@ -314,22 +344,35 @@ def _needs_strict_medical_safety(query: str, risk_level: str = "normal") -> bool
 
 
 def _looks_like_explicit_appointment_intent(user_query: str) -> bool:
-    normalized = (user_query or "").strip().lower()
-    has_booking_keyword = any(keyword in normalized for keyword in _APPOINTMENT_KEYWORDS) or (
-        "挂" in normalized and not _looks_like_department_question(user_query)
-    )
-    if not normalized or not has_booking_keyword:
+    """L1-strict: only match when the user CLEARLY wants to book an appointment.
+
+    Requires BOTH an action cue AND a concrete entity (department / date / time).
+    Pure '我要挂号' without entity does NOT match — goes to L2/L3 for safer handling.
+    """
+    normalized = (user_query or "").strip()
+    if not normalized:
         return False
+
+    # Must have an explicit booking action cue
+    _STRICT_APPOINTMENT_CUES = (
+        "帮我预约", "我要挂号", "我要预约", "帮我挂号",
+        "帮我挂一个", "帮我挂个", "预约一下", "挂一下",
+        "帮我安排", "给我挂", "给我预约",
+    )
+    has_action = any(cue in normalized for cue in _STRICT_APPOINTMENT_CUES)
+    if not has_action:
+        return False
+
+    # Reject pre-appointment knowledge questions
     if re.search(r"(预约|挂号|挂)前", normalized):
         return False
 
-    explicit_cue = any(token in normalized for token in _EXPLICIT_APPOINTMENT_CUES)
-    scheduling_cue = bool(_normalize_date(user_query) or _normalize_time_slot(user_query))
-    entity_cue = any(token in normalized for token in ("医生", "门诊", "内科", "外科", "呼吸科", "呼吸内科", "儿科", "妇科", "科室"))
+    # Must also have a concrete entity: department, date, or time
+    has_department = any(dep in normalized for dep in _DEPARTMENT_HINTS)
+    has_date = bool(_normalize_date(user_query))
+    has_time = bool(_normalize_time_slot(user_query))
 
-    if _looks_like_medical_knowledge_question(user_query) and not (explicit_cue or scheduling_cue or entity_cue):
-        return False
-    return explicit_cue or scheduling_cue or entity_cue
+    return has_department or has_date or has_time
 
 
 def _looks_like_appointment_discovery_query(user_query: str) -> bool:
@@ -350,16 +393,33 @@ def _looks_like_appointment_discovery_query(user_query: str) -> bool:
 
 
 def _looks_like_explicit_cancel_intent(user_query: str) -> bool:
-    normalized = (user_query or "").strip().lower()
-    if not normalized or not any(keyword in normalized for keyword in _CANCEL_KEYWORDS):
+    """L1-strict: only match when user explicitly wants to cancel an appointment.
+
+    Strategy: requires a cancel keyword ('取消'/'退号') PLUS a concrete
+    appointment reference (number, '最近/刚才/那个').  This catches
+    '取消我刚才的预约' while rejecting '取消对药物的依赖'.
+    """
+    normalized = (user_query or "").strip()
+    if not normalized:
         return False
-    if _looks_like_medical_knowledge_question(user_query) and not (_should_use_last_appointment(user_query) or _APPOINTMENT_NO_RE.search(user_query or "")):
+
+    # Must have a cancel keyword
+    if not any(keyword in normalized for keyword in _CANCEL_KEYWORDS):
         return False
-    return (
-        any(token in normalized for token in _EXPLICIT_CANCEL_CUES)
+
+    # Must have a concrete appointment reference
+    has_explicit_cue = any(cue in normalized for cue in ("取消预约", "取消挂号", "退号", "帮我取消"))
+    has_reference = (
+        has_explicit_cue
         or _should_use_last_appointment(user_query)
         or bool(_APPOINTMENT_NO_RE.search(user_query or ""))
     )
+    if not has_reference:
+        return False
+
+    # Reject medical knowledge questions about stopping treatments
+    # e.g. '取消对药物的依赖' has cancel keyword + 药物, but not appointment reference
+    return True
 
 
 def _normalize_time_slot(raw_value: str) -> str:
@@ -507,13 +567,20 @@ def _infer_risk_level(user_query: str, existing_risk: str = "normal") -> str:
 
 
 def _is_explicit_confirmation(user_query: str, pending_action_type: str) -> bool:
-    normalized = (user_query or "").strip().lower()
+    """Only match EXPLICIT confirmation phrases — NOT vague words like '好的'/'行'.
+
+    The user must type the full intent-specific phrase (e.g. '确认预约', '确认取消').
+    Generic acknowledgements ('好的', 'OK', '行', '可以') do NOT trigger execution.
+    """
+    normalized = (user_query or "").strip()
     if not normalized:
         return False
     if pending_action_type in {"appointment", "reschedule_appointment"}:
-        return any(word in normalized for word in _APPOINTMENT_CONFIRM_WORDS)
+        return any(phrase in normalized for phrase in ("确认预约", "确认挂号"))
     if pending_action_type == "cancel_appointment":
-        return any(word in normalized for word in _CANCEL_CONFIRM_WORDS)
+        return any(phrase in normalized for phrase in ("确认取消", "确认退号", "确定取消"))
+    if pending_action_type == "mcp_confirm":
+        return any(phrase in normalized for phrase in ("确认预约", "确认", "确认提交", "好的"))
     return False
 
 
@@ -766,6 +833,8 @@ __all__ = [
     "_looks_like_medical_knowledge_question",
     "_looks_like_medical_request",
     "_looks_like_medication_risk_query",
+    "_starts_with_polite_decline",
+    "_PURE_GREETINGS",
     "_needs_strict_medical_safety",
     "_normalize_date",
     "_normalize_time_slot",

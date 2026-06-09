@@ -1,26 +1,29 @@
-"""Greeting skill — proof of concept for the skill plugin framework.
+"""Greeting skill — handles polite greetings and farewells.
 
-Migrates the "greeting" intent from the hardcoded if-elif chain in
-``_classify_query_by_rules()`` into a pluggable skill.
+Uses L1 exact keyword matching for short, unambiguous greetings,
+and L2 semantic matching for polite variants.
 """
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, List, Tuple
 
 from langchain_core.messages import AIMessage
 
 from .base_skill import BaseSkill
 
-# Reuse the existing rule function from node_helpers
 _GREETING_RESPONSE = (
-    "你好！我是你的医疗助手，可以帮你解答医学问题、推荐科室或预约挂号。"
-    "请问有什么我可以帮你的？"
+    "你好！我是你的医疗助手，可以帮你：\n"
+    "- 🏥 推荐就诊科室\n"
+    "- 📅 预约挂号\n"
+    "- ❌ 取消预约\n"
+    "- 💊 解答医疗健康问题\n\n"
+    "请问有什么可以帮你的？"
 )
 
 
 class GreetingSkill(BaseSkill):
-    """Handles greeting intents (你好、hello、早上好, etc.)."""
+    """Handles greeting intents."""
 
     @property
     def name(self) -> str:
@@ -28,15 +31,36 @@ class GreetingSkill(BaseSkill):
 
     @property
     def priority(self) -> int:
-        return 10  # Check first — greetings are unambiguous
+        return 10
 
     @property
     def intent_label(self) -> str:
         return "greeting"
 
-    def match(self, query: str, *, context: Dict[str, Any]) -> bool:
-        from rag_agent.node_helpers import _looks_like_greeting
-        return _looks_like_greeting(query)
+    # L1: extremely short, exact-match greetings only
+    @property
+    def keywords(self) -> Tuple[str, ...]:
+        return (
+            "你好", "您好", "hi", "hello", "hey", "嗨",
+            "谢谢", "感谢", "thanks", "thank you", "多谢",
+            "再见", "拜拜", "bye", "goodbye",
+            "早上好", "下午好", "晚上好",
+            "good morning", "good afternoon", "good evening",
+        )
+
+    # L2: longer / polite variants for semantic matching
+    @property
+    def utterances(self) -> List[str]:
+        return [
+            "你好", "您好", "早上好", "下午好", "晚上好",
+            "谢谢", "感谢你", "再见", "拜拜",
+            "hello", "hi", "hey", "good morning", "thank you", "bye",
+        ]
+
+    # L3: hint for LLM intent classifier
+    @property
+    def llm_hint(self) -> str:
+        return 'polite greetings/declines ("你好", "谢谢", "再见", "谢谢我不用了")'
 
     def get_state_schema(self) -> Dict[str, Any]:
         return {}
@@ -55,5 +79,4 @@ class GreetingSkill(BaseSkill):
         return {"greeting_handler": greeting_handler}
 
     def get_route_targets(self) -> Dict[str, str]:
-        # Greeting goes to its own handler, which then goes to END
         return {"greeting": "greeting_handler"}

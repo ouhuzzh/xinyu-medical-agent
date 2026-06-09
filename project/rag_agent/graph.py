@@ -103,8 +103,8 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
                 services=services_dict,
             )
             _skill_route_targets = registry.get_route_mapping()
-    except Exception:
-        pass  # Skills not available
+    except Exception as e:
+        logger.warning("Skill framework not available: %s", e)
 
     # summarize_history was moved off the critical path — the summary from the
     # previous turn is pre-loaded via update_state before graph invocation.
@@ -145,6 +145,13 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     graph_builder.add_conditional_edges("rewrite_query", route_after_rewrite, {
         "request_clarification": "request_clarification",
         "plan_retrieval_queries": "plan_retrieval_queries",
+        "handle_appointment_skill": "handle_appointment_skill",
+        "recommend_department": "recommend_department",
+        "__end__": END,
+        **{node_name: node_name for node_name in _skill_route_targets.values()
+           if node_name not in ("request_clarification", "plan_retrieval_queries",
+                                "handle_appointment_skill", "recommend_department",
+                                "rewrite_query")},
     })
     graph_builder.add_conditional_edges("plan_retrieval_queries", route_after_query_plan)
     graph_builder.add_conditional_edges("request_clarification", route_after_clarification, {

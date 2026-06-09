@@ -22,23 +22,11 @@ def route_after_analyze_turn(state: State) -> Literal["rewrite_query", "intent_r
 
 
 def route_after_intent(state: State) -> str:
-    """Route based on intent.  Merges static routes with skill-registered routes."""
-    # Static routing table (existing behavior)
-    _STATIC_ROUTES = {
-        "greeting": "__end__",
-        "triage": "recommend_department",
-        "appointment": "handle_appointment_skill",
-        "cancel_appointment": "handle_appointment_skill",
-        "clarification": "request_clarification",
-    }
-
+    """Route based on intent.  Prefers skill-registered routes, falls back
+    to legacy static routes when the skill registry is not available."""
     intent = state.get("intent", "")
 
-    # Check static routes first
-    if intent in _STATIC_ROUTES:
-        return _STATIC_ROUTES[intent]
-
-    # Check skill-registered routes
+    # Check skill-registered routes first (single source of truth)
     try:
         from skills.registry import get_skill_registry
         registry = get_skill_registry()
@@ -49,13 +37,55 @@ def route_after_intent(state: State) -> str:
     except Exception:
         pass
 
+    # Legacy fallback — used when skill registry is not available or disabled
+    _LEGACY_ROUTES = {
+        "greeting": "__end__",
+        "triage": "recommend_department",
+        "appointment": "handle_appointment_skill",
+        "cancel_appointment": "handle_appointment_skill",
+        "clarification": "request_clarification",
+    }
+    if intent in _LEGACY_ROUTES:
+        return _LEGACY_ROUTES[intent]
+
     # Default: medical RAG pipeline
     return "rewrite_query"
 
 
-def route_after_rewrite(state: State) -> Literal["request_clarification", "plan_retrieval_queries"]:
+def route_after_rewrite(state: State) -> str:
+    """Route after rewrite_query classifies intent + rewrites query.
+
+    When the LLM (L3) classifies a non-medical_rag intent, route directly
+    to the appropriate handler instead of always going to the RAG pipeline.
+    This keeps classification cost at 1 LLM call (merged with rewrite).
+    """
     if not state.get("questionIsClear", False):
         return "request_clarification"
+
+    intent = state.get("intent", "medical_rag")
+
+    # Check skill-registered routes first (single source of truth)
+    try:
+        from skills.registry import get_skill_registry
+        registry = get_skill_registry()
+        if registry.skills:
+            skill_routes = registry.get_route_mapping()
+            if intent in skill_routes:
+                return skill_routes[intent]
+    except Exception:
+        pass
+
+    # Legacy fallback for when skill registry is unavailable
+    _LEGACY_ROUTES = {
+        "appointment": "handle_appointment_skill",
+        "cancel_appointment": "handle_appointment_skill",
+        "triage": "recommend_department",
+        "greeting": "__end__",
+    }
+    if intent in _LEGACY_ROUTES:
+        return _LEGACY_ROUTES[intent]
+
+    # Default: medical RAG pipeline
     return "plan_retrieval_queries"
 
 
@@ -145,12 +175,30 @@ def route_after_action(state: State) -> Literal["request_clarification", "prepar
 
 def route_after_prepare_secondary_turn(state: State) -> Literal["rewrite_query", "handle_appointment", "handle_cancel_appointment", "recommend_department"]:
     intent = state.get("primary_intent") or state.get("intent") or ""
-    if intent == "appointment":
-        return "handle_appointment"
-    if intent == "cancel_appointment":
-        return "handle_cancel_appointment"
-    if intent == "triage":
-        return "recommend_department"
+
+    # Check skill-registered routes first
+    try:
+        from skills.registry import get_skill_registry
+        registry = get_skill_registry()
+        if registry.skills:
+            skill_routes = registry.get_route_mapping()
+            if intent in skill_routes:
+                target = skill_routes[intent]
+                # Only return targets that are valid for this edge's mapping
+                if target in ("handle_appointment", "handle_cancel_appointment",
+                              "recommend_department", "rewrite_query"):
+                    return target
+    except Exception:
+        pass
+
+    # Legacy fallback
+    _LEGACY_ROUTES = {
+        "appointment": "handle_appointment",
+        "cancel_appointment": "handle_cancel_appointment",
+        "triage": "recommend_department",
+    }
+    if intent in _LEGACY_ROUTES:
+        return _LEGACY_ROUTES[intent]
     return "rewrite_query"
 
 

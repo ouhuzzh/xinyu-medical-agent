@@ -53,6 +53,60 @@ class SkillRegistry:
                 logger.exception("Skill %r.match() raised an exception", skill.name)
         return None
 
+    # ------------------------------------------------------------------
+    # L1: keyword-based classification
+    # ------------------------------------------------------------------
+
+    def classify_by_keywords(self, query: str) -> Optional[Tuple[str, str]]:
+        """Run L1 keyword matching across all skills in priority order.
+
+        Skips inactive skills (e.g. MCPSkill when MCP is disabled).
+
+        Returns ``(intent_label, "l1_keyword")`` or None.
+        """
+        normalized = (query or "").strip()
+        if not normalized:
+            return None
+        for skill in self._skills:
+            if not skill.is_active():
+                continue
+            kw = skill.keywords
+            if not kw:
+                continue
+            try:
+                if skill.allow_l1_substring:
+                    hit = any(k in normalized for k in kw)
+                else:
+                    hit = normalized in kw
+                if hit:
+                    return (skill.intent_label, "l1_keyword")
+            except Exception:
+                logger.exception("Skill %r keywords raised", skill.name)
+        return None
+
+    # ------------------------------------------------------------------
+    # L2: utterance collection
+    # ------------------------------------------------------------------
+
+    def collect_utterances(self) -> Dict[str, List[str]]:
+        """Collect utterances from all ACTIVE skills for L2 embedding centroids.
+
+        Returns ``{intent_label: [utterances]}``.
+        """
+        result: Dict[str, List[str]] = {}
+        for skill in self._skills:
+            if not skill.is_active():
+                continue
+            utterances = skill.utterances
+            if utterances:
+                existing = result.setdefault(skill.intent_label, [])
+                existing.extend(utterances)
+        return result
+
+    # ------------------------------------------------------------------
+    # Routing
+    # ------------------------------------------------------------------
+
     def get_route_mapping(self) -> Dict[str, str]:
         """Merge all skill route targets into a single intent → node_name dict."""
         mapping: Dict[str, str] = {}
@@ -83,6 +137,39 @@ class SkillRegistry:
     def get_all_state_schemas(self) -> Dict[str, Dict[str, Any]]:
         """Return ``{skill_name: state_schema}`` for all skills."""
         return {skill.name: skill.get_state_schema() for skill in self._skills}
+
+    # ------------------------------------------------------------------
+    # L3: LLM intent classification support
+    # ------------------------------------------------------------------
+
+    def collect_llm_hints(self) -> List[Tuple[str, str]]:
+        """Collect (intent_label, llm_hint) from all ACTIVE skills.
+
+        Only skills with a non-empty ``llm_hint`` are included.
+        Used to dynamically inject skill-specific intent descriptions
+        into the L3 LLM classification prompts.
+        """
+        hints: List[Tuple[str, str]] = []
+        for skill in self._skills:
+            if not skill.is_active():
+                continue
+            hint = skill.llm_hint
+            if hint:
+                hints.append((skill.intent_label, hint))
+        return hints
+
+    def build_intent_labels(self) -> List[str]:
+        """Build the full list of intent labels for L3 LLM classification.
+
+        Returns the union of core intents and all active skill intent_labels.
+        """
+        # Core intents that always exist
+        labels = {"medical_rag", "triage", "appointment",
+                  "cancel_appointment", "greeting", "clarification"}
+        for skill in self._skills:
+            if skill.is_active():
+                labels.add(skill.intent_label)
+        return sorted(labels)
 
 
 # ---------------------------------------------------------------------------

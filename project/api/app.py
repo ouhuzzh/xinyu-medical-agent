@@ -82,6 +82,12 @@ def create_app() -> FastAPI:
     app.include_router(documents.router)
     app.include_router(mcp_servers.router)
     app.include_router(memory.router)
+
+    @app.on_event("shutdown")
+    async def _shutdown_db_pool():
+        from db.connection import close_connection_pool
+        close_connection_pool()
+
     if config.APP_ENV != "development":
         get_container()
     return app

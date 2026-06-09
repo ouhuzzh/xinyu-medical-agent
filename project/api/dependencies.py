@@ -30,8 +30,10 @@ class ApiContainer:
             self.rag_system.start_background_initialize()
         else:
             self.rag_system.initialize()
+        self.container = self.rag_system.container
         self.chat_interface = ChatInterface(self.rag_system)
         self.document_manager = DocumentManager(self.rag_system)
+        self.rag_system.document_manager = self.document_manager
         self.chat_sessions = ChatSessionStore()
         self.user_store = UserStore()
         self.audit_log = AuditLogStore()

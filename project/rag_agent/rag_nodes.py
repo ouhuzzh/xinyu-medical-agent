@@ -155,8 +155,17 @@ def rewrite_query(state: State, llm):
     context_section = "".join(context_parts)
 
     try:
+        # Collect skill L3 hints for dynamic prompt injection
+        skill_hints = []
+        try:
+            from skills.registry import get_skill_registry
+            _reg = get_skill_registry()
+            skill_hints = _reg.collect_llm_hints()
+        except Exception:
+            pass
+
         llm_with_structure = _structured_output_llm(llm, QueryAnalysis, temperature=0.1)
-        response = llm_with_structure.invoke([SystemMessage(content=get_rewrite_query_prompt()), HumanMessage(content=context_section)])
+        response = llm_with_structure.invoke([SystemMessage(content=get_rewrite_query_prompt(skill_hints)), HumanMessage(content=context_section)])
     except Exception:
         logger.exception("Rewrite query structured output failed; using original query.")
         return {
@@ -172,15 +181,21 @@ def rewrite_query(state: State, llm):
         }
 
     if response.questions and response.is_clear:
+        llm_intent = getattr(response, "intent", "medical_rag") or "medical_rag"
         delete_all = _build_history_reset_messages(state["messages"])
+        extra_msgs: list = list(delete_all)
+        if llm_intent == "greeting":
+            greeting_msg = AIMessage(content="你好！我是你的医疗助手，可以帮你：\n- 🏥 推荐就诊科室\n- 📅 预约挂号\n- ❌ 取消预约\n- 💊 解答医疗健康问题\n\n请问有什么可以帮你的？")
+            extra_msgs.insert(0, greeting_msg)
         return {
+            "intent": llm_intent,
             "questionIsClear": True,
-            "messages": delete_all,
+            "messages": extra_msgs,
             "originalQuery": user_query,
             "rewrittenQuestions": response.questions,
             "recent_context": recent_context,
             "topic_focus": topic_focus,
-            "primary_intent": getattr(response, "intent", "medical_rag") or "medical_rag",
+            "primary_intent": llm_intent,
             "pending_clarification": "",
             "clarification_target": "",
             "clarification_attempts": 0,

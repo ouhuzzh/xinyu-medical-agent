@@ -54,7 +54,12 @@ class ReschedulePreview:
 
 
 @dataclass
-class AppointmentSkillRequest:
+class AppointmentSkillAction:
+    """Internal service-layer action descriptor for appointment skill operations.
+
+    Distinct from the Pydantic AppointmentSkillRequest in rag_agent/schemas.py
+    which is used for LLM structured output (tool calling).
+    """
     action: str = ""
     department: str = ""
     date: str = ""
