@@ -9,15 +9,21 @@ Auth flow:
 
 from __future__ import annotations
 
-import threading
-import time
-from collections import defaultdict, deque
 from dataclasses import dataclass
 
 from fastapi import Depends, Header, HTTPException, Request, status
 
 import config
 from api.dependencies import get_container
+from api.runtime_guards import (
+    InMemoryRateLimiter,
+    LoginLockoutTracker,
+    RedisLoginLockoutTracker,
+    RedisRateLimiter,
+    build_login_lockout_tracker,
+    build_rate_limiter,
+    get_runtime_guard_backends,
+)
 
 
 @dataclass(frozen=True)
@@ -28,91 +34,8 @@ class AuthenticatedUser:
     username: str = ""
 
 
-class InMemoryRateLimiter:
-    def __init__(self):
-        self._events: dict[tuple[str, str], deque[float]] = defaultdict(deque)
-        self._lock = threading.Lock()
-
-    def check(self, *, bucket: str, key: str, limit: int, window_seconds: int = 60):
-        now = time.time()
-        boundary = now - window_seconds
-        with self._lock:
-            events = self._events[(bucket, key)]
-            while events and events[0] < boundary:
-                events.popleft()
-            if len(events) >= limit:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="请求过于频繁，请稍后再试。",
-                )
-            events.append(now)
-
-
-_rate_limiter = InMemoryRateLimiter()
-
-
-class LoginLockoutTracker:
-    """Tracks consecutive failed-login attempts per username and locks them out.
-
-    Sliding-window counter: only failures inside ``window_seconds`` count toward
-    the threshold.  On the Nth failure, the account is locked for ``lockout_seconds``.
-    A successful login clears the counter.
-
-    In-memory only — fine for single-process deployment.  For horizontal scaling
-    swap to Redis (the API mirrors that of :class:`InMemoryRateLimiter`).
-    """
-
-    def __init__(self):
-        self._failures: dict[str, deque[float]] = defaultdict(deque)
-        self._locked_until: dict[str, float] = {}
-        self._lock = threading.Lock()
-
-    def _normalize(self, username: str) -> str:
-        return (username or "").strip().lower()
-
-    def assert_not_locked(self, username: str):
-        key = self._normalize(username)
-        if not key:
-            return
-        now = time.time()
-        with self._lock:
-            locked_until = self._locked_until.get(key, 0.0)
-            if locked_until > now:
-                remaining = int(locked_until - now)
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"账号已被临时锁定，请在 {remaining} 秒后重试。",
-                )
-            elif locked_until:
-                # lockout expired — clear it and the stale failure window
-                self._locked_until.pop(key, None)
-                self._failures.pop(key, None)
-
-    def record_failure(self, username: str):
-        key = self._normalize(username)
-        if not key:
-            return
-        now = time.time()
-        boundary = now - config.LOGIN_LOCKOUT_WINDOW_SECONDS
-        with self._lock:
-            events = self._failures[key]
-            events.append(now)
-            while events and events[0] < boundary:
-                events.popleft()
-            if len(events) >= config.LOGIN_LOCKOUT_MAX_ATTEMPTS:
-                self._locked_until[key] = now + config.LOGIN_LOCKOUT_SECONDS
-                events.clear()
-
-    def record_success(self, username: str):
-        key = self._normalize(username)
-        if not key:
-            return
-        with self._lock:
-            self._failures.pop(key, None)
-            self._locked_until.pop(key, None)
-
-
-_login_lockout = LoginLockoutTracker()
+_rate_limiter = build_rate_limiter()
+_login_lockout = build_login_lockout_tracker()
 
 
 def _client_ip(request: Request) -> str:
@@ -143,6 +66,10 @@ def record_login_failure(username: str):
 
 def record_login_success(username: str):
     _login_lockout.record_success(username)
+
+
+def get_auth_runtime_status() -> dict[str, str]:
+    return get_runtime_guard_backends()
 
 
 def _auth_error(detail: str, status_code: int = status.HTTP_401_UNAUTHORIZED):

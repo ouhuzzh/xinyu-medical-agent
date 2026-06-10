@@ -60,6 +60,13 @@ class UserMCPPool:
     # Public API
     # ------------------------------------------------------------------
 
+    def backend_name(self) -> str:
+        if not config.MCP_ENABLED:
+            return "disabled"
+        # Current implementation stores tool pools and breaker state in-process.
+        # Expose that explicitly so system status can report the real runtime mode.
+        return "in_process"
+
     def get_tools_for_user(self, user_id: str) -> List[Any]:
         """Return the cached LangChain tools for this user, building if needed."""
         if not config.MCP_ENABLED:

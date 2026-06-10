@@ -1,26 +1,14 @@
 import threading
 
 import config
+from api.session_locks import SessionLockRegistry
 from core.chat_interface import ChatInterface
 from core.document_manager import DocumentManager
 from core.rag_system import RAGSystem
 from db.audit_log_store import AuditLogStore
 from db.chat_session_store import ChatSessionStore
+from db.schema_guard import EmbeddingSchemaGuard
 from db.user_store import UserStore
-
-
-class ThreadLockRegistry:
-    def __init__(self):
-        self._locks = {}
-        self._guard = threading.Lock()
-
-    def get_lock(self, thread_id: str):
-        with self._guard:
-            lock = self._locks.get(thread_id)
-            if lock is None:
-                lock = threading.Lock()
-                self._locks[thread_id] = lock
-            return lock
 
 
 class ApiContainer:
@@ -37,7 +25,9 @@ class ApiContainer:
         self.chat_sessions = ChatSessionStore()
         self.user_store = UserStore()
         self.audit_log = AuditLogStore()
-        self.thread_locks = ThreadLockRegistry()
+        self.thread_locks = SessionLockRegistry(self.rag_system.session_memory)
+        self.schema_guard = EmbeddingSchemaGuard()
+        self.schema_guard.assert_compatible()
 
     def get_thread_lock(self, thread_id: str):
         return self.thread_locks.get_lock(thread_id)
@@ -59,4 +49,3 @@ def get_container() -> ApiContainer:
 def set_container_for_tests(container):
     global _container
     _container = container
-

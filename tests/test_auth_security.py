@@ -31,6 +31,74 @@ class FakeRequest:
         return _C()
 
 
+class FakeRedis:
+    def __init__(self):
+        self._strings = {}
+        self._zsets = {}
+        self._expires = {}
+
+    def _prune_expired(self):
+        now = time.time()
+        expired = [key for key, deadline in self._expires.items() if deadline <= now]
+        for key in expired:
+            self._expires.pop(key, None)
+            self._strings.pop(key, None)
+            self._zsets.pop(key, None)
+
+    def eval(self, script, numkeys, *args):
+        self._prune_expired()
+        if numkeys == 1:
+            key, now_ms, boundary_ms, limit, ttl_seconds, member = args
+            entries = self._zsets.setdefault(key, {})
+            for existing, score in list(entries.items()):
+                if score <= int(boundary_ms):
+                    entries.pop(existing, None)
+            count = len(entries)
+            if count >= int(limit):
+                self._expires[key] = time.time() + int(ttl_seconds)
+                return [0, count]
+            entries[str(member)] = int(now_ms)
+            self._expires[key] = time.time() + int(ttl_seconds)
+            return [1, count + 1]
+
+        if numkeys == 2:
+            failure_key, lock_key, now_ms, boundary_ms, threshold, lockout_seconds, member, ttl_seconds = args
+            entries = self._zsets.setdefault(failure_key, {})
+            for existing, score in list(entries.items()):
+                if score <= int(boundary_ms):
+                    entries.pop(existing, None)
+            entries[str(member)] = int(now_ms)
+            self._expires[failure_key] = time.time() + int(ttl_seconds)
+            count = len(entries)
+            if count >= int(threshold):
+                self._strings[lock_key] = "1"
+                self._expires[lock_key] = time.time() + int(lockout_seconds)
+                self._zsets.pop(failure_key, None)
+                self._expires.pop(failure_key, None)
+                return [1, count]
+            return [0, count]
+
+        raise NotImplementedError(f"Unsupported numkeys={numkeys}")
+
+    def ttl(self, key):
+        self._prune_expired()
+        deadline = self._expires.get(key)
+        if deadline is None:
+            return -2
+        return max(int(deadline - time.time()), 0)
+
+    def delete(self, *keys):
+        self._prune_expired()
+        deleted = 0
+        for key in keys:
+            existed = key in self._strings or key in self._zsets or key in self._expires
+            self._strings.pop(key, None)
+            self._zsets.pop(key, None)
+            self._expires.pop(key, None)
+            deleted += int(existed)
+        return deleted
+
+
 class LoginLockoutTests(unittest.TestCase):
     def setUp(self):
         # Import here so any config patches take effect, and reset module state.
@@ -138,6 +206,48 @@ class AuthRateLimitTests(unittest.TestCase):
             req2 = FakeRequest("internal-proxy")
             req2.headers = {"x-forwarded-for": "203.0.113.99, internal-proxy"}
             self.auth.enforce_auth_rate_limit(req2)
+
+
+class RedisGuardTests(unittest.TestCase):
+    def setUp(self):
+        from api import auth as auth_module
+        self.auth = auth_module
+        self.redis = FakeRedis()
+
+    def test_redis_rate_limiter_enforces_limit(self):
+        limiter = self.auth.RedisRateLimiter(self.redis)
+        limiter.check(bucket="auth", key="1.1.1.1", limit=2, window_seconds=60)
+        limiter.check(bucket="auth", key="1.1.1.1", limit=2, window_seconds=60)
+        with self.assertRaises(HTTPException) as ctx:
+            limiter.check(bucket="auth", key="1.1.1.1", limit=2, window_seconds=60)
+        self.assertEqual(ctx.exception.status_code, 429)
+
+    def test_redis_login_lockout_enforces_and_expires(self):
+        tracker = self.auth.RedisLoginLockoutTracker(self.redis)
+        with patch("config.LOGIN_LOCKOUT_MAX_ATTEMPTS", 2), \
+             patch("config.LOGIN_LOCKOUT_SECONDS", 1), \
+             patch("config.LOGIN_LOCKOUT_WINDOW_SECONDS", 600):
+            tracker.record_failure("alice")
+            tracker.record_failure("alice")
+            with self.assertRaises(HTTPException) as ctx:
+                tracker.assert_not_locked("alice")
+            self.assertEqual(ctx.exception.status_code, 429)
+            time.sleep(1.1)
+            tracker.assert_not_locked("alice")
+
+    def test_redis_login_success_clears_lock_and_failures(self):
+        tracker = self.auth.RedisLoginLockoutTracker(self.redis)
+        with patch("config.LOGIN_LOCKOUT_MAX_ATTEMPTS", 2), \
+             patch("config.LOGIN_LOCKOUT_SECONDS", 60), \
+             patch("config.LOGIN_LOCKOUT_WINDOW_SECONDS", 600):
+            tracker.record_failure("Bob")
+            tracker.record_failure("BOB")
+            with self.assertRaises(HTTPException):
+                tracker.assert_not_locked("bob")
+            tracker.record_success("bob")
+            tracker.assert_not_locked("bob")
+            tracker.record_failure("bob")
+            tracker.assert_not_locked("bob")
 
 
 if __name__ == "__main__":

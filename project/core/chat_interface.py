@@ -11,13 +11,13 @@ Handles:
 import json
 import logging
 import re
-import uuid
 
 import config
-from db.route_log_store import RouteLogStore
-from langchain_core.messages import HumanMessage, AIMessage, AIMessageChunk, ToolMessage, SystemMessage
+from core.chat_turn_input_service import ChatTurnInputService
+from core.chat_turn_service import ChatTurnService
+from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage, SystemMessage
 from rag_agent.node_helpers import _sanitize_final_answer_text
-from rag_agent.tools import reset_retrieval_context, set_retrieval_context
+from rag_agent.tools import reset_retrieval_context
 
 
 logger = logging.getLogger(__name__)
@@ -118,7 +118,23 @@ class ChatInterface:
 
     def __init__(self, rag_system):
         self.rag_system = rag_system
-        self.route_log_store = RouteLogStore()
+        self.input_service = ChatTurnInputService(
+            rag_system,
+            get_graph_config=self._get_graph_config,
+            fetch_user_memories=self._fetch_user_memories,
+            build_state_messages=self._build_state_messages,
+            graph_state_from_session=self._graph_state_from_session,
+        )
+        self.turn_service = ChatTurnService(
+            rag_system,
+            extract_final_assistant_text=self._extract_final_assistant_text,
+            extract_all_visible_assistant_texts=self._extract_all_visible_assistant_texts,
+            extract_clarification_text=self._extract_clarification_text,
+            extract_latest_state_assistant=self._extract_latest_state_assistant,
+            build_chat_failure_fallback=self._build_chat_failure_fallback,
+            resolved_session_state=self._resolved_session_state,
+            invalidate_memory_cache=self._invalidate_memory_cache,
+        )
 
     def _handle_system_node(self, chunk, node, response_messages, system_node_buffer):
         """Update (or create) the collapsible system-node message and surface any clarification."""
@@ -564,69 +580,9 @@ class ChatInterface:
                 yield "系统正在准备中，请稍后再试。"
             return
 
-        active_thread_id = thread_id or self.rag_system.thread_id
-        graph_config  = self._get_graph_config(active_thread_id)
-        current_state = self.rag_system.agent_graph.get_state(graph_config)
-        user_message  = message.strip()
-        request_id    = uuid.uuid4().hex
-        session_state = self.rag_system.session_memory.get_state(active_thread_id)
-        checkpoint_resumed = bool(current_state.next)
-
-        # Resolve user_id for memory injection/extraction
-        user_id = ""
-        if config.USER_MEMORY_ENABLED:
-            try:
-                session_info = self.rag_system.chat_sessions.get_session(active_thread_id)
-                user_id = (session_info or {}).get("owner_user_id", "") or ""
-            except Exception:
-                logger.warning("Failed to resolve user_id for memory injection", exc_info=True)
-
-        # Retrieve user-level memories (L3 semantic)
-        # Optimization A: skip retrieval for trivial intents (rules-based, 0 latency)
-        # Optimization B: cache results within thread to avoid repeated embedding+pgvector calls
-        user_memories_text = ""
-        if user_id and config.USER_MEMORY_ENABLED and config.USER_MEMORY_INJECTION_ENABLED:
-            user_memories_text = self._fetch_user_memories(
-                user_id=user_id,
-                user_message=user_message,
-                thread_id=active_thread_id,
-            )
-
+        turn_input = None
         try:
-            if current_state.next:
-                update_payload = {
-                    "messages": [HumanMessage(content=user_message)],
-                    "thread_id": active_thread_id,
-                    "request_id": request_id,
-                }
-                if user_memories_text:
-                    update_payload["user_memories"] = user_memories_text
-                self.rag_system.agent_graph.update_state(
-                    graph_config,
-                    update_payload,
-                )
-                stream_input = None
-            else:
-                stored_messages = []
-                stored_messages = self.rag_system.session_memory.get_recent_messages(active_thread_id)
-                long_term_summary = self.rag_system.summary_store.get_summary(active_thread_id)
-                state_messages = self._build_state_messages(session_state)
-                if long_term_summary:
-                    self.rag_system.agent_graph.update_state(
-                        graph_config,
-                        {"conversation_summary": long_term_summary},
-                    )
-                if session_state:
-                    self.rag_system.agent_graph.update_state(graph_config, self._graph_state_from_session(active_thread_id, session_state))
-                if not session_state:
-                    self.rag_system.agent_graph.update_state(graph_config, {"thread_id": active_thread_id, "agent_answers": [{"__reset__": True}]})
-                stream_input = {
-                    "messages": [*state_messages, *stored_messages, HumanMessage(content=user_message)],
-                    "request_id": request_id,
-                    "user_memories": user_memories_text,
-                    "_mcp_pool": self.rag_system.user_mcp_pool,
-                    "user_id": user_id,
-                }
+            turn_input = self.input_service.prepare(message=message, thread_id=thread_id)
 
             response_messages  = []
             import time as _time
@@ -635,7 +591,11 @@ class ChatInterface:
             _last_node = None
             _graph_start = _time.time()
 
-            for chunk, metadata in self.rag_system.agent_graph.stream(stream_input, config=graph_config, stream_mode="messages"):
+            for chunk, metadata in self.rag_system.agent_graph.stream(
+                turn_input.stream_input,
+                config=turn_input.graph_config,
+                stream_mode="messages",
+            ):
                 # H7: guard against runaway graph execution (e.g. LLM call hangs)
                 if _time.time() - _graph_start > config.GRAPH_STREAM_MAX_SECONDS:
                     logger.error("Graph stream timed out after %.1fs, aborting", _time.time() - _graph_start)
@@ -662,114 +622,31 @@ class ChatInterface:
             timing_summary = ", ".join(f"{n}={t:.1f}s" for n, t in sorted(_node_timings.items(), key=lambda x: -x[1]))
             logger.warning("Graph timing: total=%.1fs nodes={%s}", total, timing_summary)
 
-            final_assistant = self._extract_final_assistant_text(response_messages)
-            all_visible_assistant_texts = self._extract_all_visible_assistant_texts(response_messages)
-            clarification_text = self._extract_clarification_text(response_messages)
-            latest_state = self.rag_system.agent_graph.get_state(graph_config)
-            latest_values = getattr(latest_state, "values", {}) or {}
-            if not final_assistant:
-                final_from_state = self._extract_latest_state_assistant(latest_values)
-                if final_from_state:
-                    response_messages.append(make_message(final_from_state))
-                    final_assistant = final_from_state
-                    yield self._prepare_visible_messages(response_messages, reveal_diagnostics=reveal_diagnostics)
-            if not final_assistant:
-                final_assistant = self._build_chat_failure_fallback(user_message)
-                response_messages.append(make_message(final_assistant))
-                yield self._prepare_visible_messages(response_messages, reveal_diagnostics=reveal_diagnostics)
-            combined_assistant_text = "\n\n".join(all_visible_assistant_texts) if all_visible_assistant_texts else final_assistant
-            if combined_assistant_text:
-                recent_count = self.rag_system.session_memory.append_exchange(active_thread_id, user_message, combined_assistant_text)
-                if recent_count >= config.SUMMARY_REFRESH_THRESHOLD:
-                    conversation_summary = latest_values.get("conversation_summary", "")
-                    if conversation_summary:
-                        self.rag_system.summary_store.save_summary(active_thread_id, conversation_summary, recent_count)
-
-            # Run summarize_history as post-chat cleanup (was in graph, now off critical path)
-            if combined_assistant_text:
-                try:
-                    from rag_agent.routing_nodes import summarize_history
-                    from model_factory import get_chat_model
-                    summary_llm = get_chat_model().with_config(temperature=0.2)
-                    summary_result = summarize_history(latest_values, summary_llm)
-                    new_summary = (summary_result or {}).get("conversation_summary", "")
-                    if new_summary and new_summary != latest_values.get("conversation_summary", ""):
-                        recent_count = self.rag_system.session_memory.recent_message_count(active_thread_id)
-                        self.rag_system.summary_store.save_summary(active_thread_id, new_summary, recent_count)
-                except Exception:
-                    logger.warning("Post-chat summarization failed for thread_id=%s", active_thread_id, exc_info=True)
-
-            # Extract user memories (async background — bounded thread pool, M7)
-            if user_id and config.USER_MEMORY_ENABLED and config.USER_MEMORY_EXTRACTION_ENABLED and combined_assistant_text:
-                from concurrent.futures import ThreadPoolExecutor
-
-                # Module-level bounded executor — at most 2 concurrent extraction
-                # threads.  If the queue is full, drop the extraction (log warning).
-                _MEMORY_EXTRACTOR = None  # type: ignore
-                if not hasattr(self.__class__, "_memory_executor"):
-                    self.__class__._memory_executor = ThreadPoolExecutor(
-                        max_workers=2,
-                        thread_name_prefix="memory-extract",
-                    )
-
-                def _bg_extract():
-                    try:
-                        saved = self.rag_system.memory_extractor.extract_and_save(
-                            thread_id=active_thread_id,
-                            user_message=user_message,
-                            assistant_message=combined_assistant_text,
-                            conversation_summary=latest_values.get("conversation_summary", ""),
-                        )
-                        if saved:
-                            self._invalidate_memory_cache(user_id, active_thread_id)
-                    except Exception:
-                        logger.warning("Memory extraction failed for thread_id=%s", active_thread_id, exc_info=True)
-
-                try:
-                    self.__class__._memory_executor.submit(_bg_extract)
-                except RuntimeError:
-                    # Queue full — drop extraction gracefully
-                    logger.warning(
-                        "Memory extraction queue full; dropping extraction for thread_id=%s",
-                        active_thread_id,
-                    )
-
-            updated_state = self._resolved_session_state(latest_values, session_state, user_message, clarification_text)
-            if updated_state != (session_state or {}):
-                self.rag_system.session_memory.set_state(active_thread_id, updated_state)
-
-            had_pending_state = bool(
-                (session_state or {}).get("pending_action_type")
-                or (session_state or {}).get("pending_clarification")
-                or (session_state or {}).get("deferred_user_question")
+            artifacts = self.turn_service.prepare_turn_artifacts(
+                active_thread_id=turn_input.active_thread_id,
+                graph_config=turn_input.graph_config,
+                response_messages=response_messages,
+                user_message=turn_input.user_message,
+                session_state=turn_input.session_state,
             )
-            try:
-                route_reason = latest_values.get("route_reason", updated_state.get("last_route_reason") or "") or ""
-                secondary_turn_executed = str(route_reason).startswith("resume_secondary:")
-                self.route_log_store.save_log(
-                    {
-                        "thread_id": active_thread_id,
-                        "request_id": request_id,
-                        "user_query": user_message,
-                        "primary_intent": latest_values.get("primary_intent", updated_state.get("intent")) or "",
-                        "secondary_intent": updated_state.get("secondary_intent") or "",
-                        "decision_source": latest_values.get("decision_source", "") or "",
-                        "route_reason": route_reason,
-                        "had_pending_state": had_pending_state,
-                        "extra_metadata": {
-                            "topic_focus": updated_state.get("topic_focus") or "",
-                            "deferred_user_question": updated_state.get("deferred_user_question") or "",
-                            "checkpoint_resumed": checkpoint_resumed,
-                            "secondary_turn_executed": secondary_turn_executed,
-                            "pending_action_type": (session_state or {}).get("pending_action_type") or "",
-                            "pending_clarification": bool((session_state or {}).get("pending_clarification")),
-                        },
-                    }
+            if artifacts.response_messages_changed:
+                yield self._prepare_visible_messages(
+                    artifacts.response_messages,
+                    reveal_diagnostics=reveal_diagnostics,
                 )
-            except Exception:
-                logger.exception("Failed to persist route log for request_id=%s", request_id)
+            self.turn_service.finalize_turn(
+                active_thread_id=turn_input.active_thread_id,
+                request_id=turn_input.request_id,
+                user_message=turn_input.user_message,
+                session_state=turn_input.session_state,
+                checkpoint_resumed=turn_input.checkpoint_resumed,
+                user_id=turn_input.user_id,
+                artifacts=artifacts,
+            )
 
         except Exception as e:
+            request_id = getattr(turn_input, "request_id", "")
+            user_message = getattr(turn_input, "user_message", message.strip())
             logger.exception("Chat turn failed for request_id=%s", request_id)
             yield self._build_chat_failure_fallback(user_message)
         finally:

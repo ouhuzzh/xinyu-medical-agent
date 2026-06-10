@@ -36,6 +36,7 @@ class FakeRagSystem:
     def __init__(self):
         self.session_memory = FakeSessionMemory()
         self.cleared = []
+        self.user_mcp_pool = self
 
     def get_system_status(self):
         return {
@@ -84,6 +85,9 @@ class FakeRagSystem:
     def refresh_knowledge_base_status(self):
         return self.get_knowledge_base_status()
 
+    def backend_name(self):
+        return "in_process"
+
 
 class FakeChatInterface:
     def __init__(self, rag_system):
@@ -104,6 +108,25 @@ class FakeChatInterface:
 
     def clear_session(self, thread_id=None):
         self.rag_system.reset_thread(thread_id)
+
+
+class FakeSchemaGuard:
+    def backend_name(self):
+        return "postgres"
+
+    def get_health(self):
+        return {
+            "status": "ok",
+            "message": "Embedding vector dimensions match configuration.",
+            "expected_dimension": 1024,
+            "actual_dimensions": {
+                "child_chunks.embedding": 1024,
+                "user_memories.embedding": 1024,
+                "episodic_memories.embedding": 1024,
+                "reflection_memories.embedding": 1024,
+            },
+            "errors": [],
+        }
 
 
 class FakeSyncResult:
@@ -229,6 +252,11 @@ class FakeContainer:
         self.chat_sessions = FakeChatSessionStore()
         self._thread_locks = {}
         self._thread_lock_guard = threading.Lock()
+        self.thread_locks = self
+        self.schema_guard = FakeSchemaGuard()
+
+    def backend_name(self):
+        return "in_process"
 
     def get_thread_lock(self, thread_id):
         with self._thread_lock_guard:
@@ -311,6 +339,13 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(data["knowledge_base"]["status"], "ready")
         self.assertEqual(data["knowledge_base"]["stats"]["documents"], 2)
         self.assertEqual(data["current_user"]["role"], "admin")
+        self.assertEqual(data["runtime_backends"]["session_lock_backend"], "in_process")
+        self.assertIn(data["runtime_backends"]["rate_limit_backend"], {"in_process", "redis"})
+        self.assertIn(data["runtime_backends"]["login_lockout_backend"], {"in_process", "redis"})
+        self.assertEqual(data["runtime_backends"]["mcp_pool_backend"], "in_process")
+        self.assertEqual(data["runtime_backends"]["schema_guard_backend"], "postgres")
+        self.assertEqual(data["schema_health"]["status"], "ok")
+        self.assertEqual(data["schema_health"]["expected_dimension"], 1024)
 
     def test_chat_history_returns_visible_messages_for_owner(self):
         response = self.client.get(

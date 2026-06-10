@@ -33,20 +33,22 @@ def stream_chat_events(thread_id: str, message: str) -> Iterable[str]:
     final_content = ""
     yield event_payload(ChatSseEvent(type="session", thread_id=thread_id, content=thread_id))
     yield event_payload(ChatSseEvent(type="status", thread_id=thread_id, content="thinking"))
-    lock = container.get_thread_lock(thread_id)
-    acquired = lock.acquire(timeout=120)
-    if not acquired:
-        yield event_payload(
-            ChatSseEvent(
-                type="app-error",
-                thread_id=thread_id,
-                content="会话繁忙，请稍后再试。",
-                error="thread_lock_timeout",
-                done=True,
-            )
-        )
-        return
+    lock = None
+    acquired = False
     try:
+        lock = container.get_thread_lock(thread_id)
+        acquired = lock.acquire(timeout=120)
+        if not acquired:
+            yield event_payload(
+                ChatSseEvent(
+                    type="app-error",
+                    thread_id=thread_id,
+                    content="会话繁忙，请稍后再试。",
+                    error="thread_lock_timeout",
+                    done=True,
+                )
+            )
+            return
         for chunk in container.chat_interface.chat(
             message,
             [],
@@ -72,4 +74,5 @@ def stream_chat_events(thread_id: str, message: str) -> Iterable[str]:
     else:
         yield event_payload(ChatSseEvent(type="final", thread_id=thread_id, content=final_content, done=True))
     finally:
-        lock.release()
+        if acquired and lock is not None:
+            lock.release()

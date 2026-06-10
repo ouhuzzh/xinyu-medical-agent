@@ -339,6 +339,7 @@ assets/                      # README demo media
 
 - [Frontend/backend split architecture](docs/architecture/frontend_backend_split.md)
 - [Current project structure, Chinese](docs/PROJECT_STRUCTURE_CN.md)
+- [Architecture refactor plan, Chinese](docs/ARCHITECTURE_REFACTOR_PLAN_CN.md)
 - [FastAPI API layer notes](project/api/README.md)
 - [Project guide, Chinese](docs/PROJECT_GUIDE_CN.md)
 - [Sequence diagrams and source walk-through, Chinese](docs/PROJECT_SEQUENCE_CN.md)

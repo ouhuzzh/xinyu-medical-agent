@@ -56,6 +56,8 @@ class SystemStatusResponse(BaseModel):
     last_error: str = ""
     steps: dict[str, Any] = Field(default_factory=dict)
     degraded_components: list[str] = Field(default_factory=list)
+    runtime_backends: dict[str, str] = Field(default_factory=dict)
+    schema_health: dict[str, Any] = Field(default_factory=dict)
     current_user: CurrentUserResponse
     knowledge_base: KnowledgeBaseStatusResponse
 

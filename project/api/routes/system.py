@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Request
 
-from api.auth import AuthenticatedUser, require_current_user
+from api.auth import AuthenticatedUser, get_auth_runtime_status, require_current_user
 from api.dependencies import get_container
 from api.schemas import CurrentUserResponse, KnowledgeBaseStatusResponse, SystemStatusResponse
 
@@ -26,12 +26,48 @@ def system_status(
     container = get_container()
     system = container.rag_system.get_system_status()
     knowledge = container.rag_system.get_knowledge_base_status()
+    session_lock_backend = "unknown"
+    thread_locks = getattr(container, "thread_locks", None)
+    if thread_locks is not None:
+        backend_name = getattr(thread_locks, "backend_name", None)
+        if callable(backend_name):
+            session_lock_backend = str(backend_name())
+    mcp_pool_backend = "unknown"
+    user_mcp_pool = getattr(container.rag_system, "user_mcp_pool", None)
+    if user_mcp_pool is not None:
+        backend_name = getattr(user_mcp_pool, "backend_name", None)
+        if callable(backend_name):
+            mcp_pool_backend = str(backend_name())
+    schema_guard_backend = "unknown"
+    schema_health = {
+        "status": "unknown",
+        "message": "Schema guard is not configured.",
+        "expected_dimension": 0,
+        "actual_dimensions": {},
+        "errors": [],
+    }
+    schema_guard = getattr(container, "schema_guard", None)
+    if schema_guard is not None:
+        backend_name = getattr(schema_guard, "backend_name", None)
+        if callable(backend_name):
+            schema_guard_backend = str(backend_name())
+        get_health = getattr(schema_guard, "get_health", None)
+        if callable(get_health):
+            schema_health = dict(get_health())
+    runtime_backends = {
+        "session_lock_backend": session_lock_backend,
+        "mcp_pool_backend": mcp_pool_backend,
+        "schema_guard_backend": schema_guard_backend,
+        **get_auth_runtime_status(),
+    }
     return SystemStatusResponse(
         state=system["state"],
         message=system["message"],
         last_error=system.get("last_error") or "",
         steps=system.get("steps") or {},
         degraded_components=system.get("degraded_components") or [],
+        runtime_backends=runtime_backends,
+        schema_health=schema_health,
         current_user=CurrentUserResponse(
             user_id=current_user.user_id, role=current_user.role, username=current_user.username or ""
         ),
