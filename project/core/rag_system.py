@@ -14,24 +14,8 @@ import logging
 import threading
 import time
 import config
-from core.agent_graph_factory import AgentGraphFactory
-from core.container import ServiceContainer
 from core.knowledge_base_supervisor import KnowledgeBaseSupervisor
-from core.skill_bootstrapper import SkillBootstrapper
-from db.vector_db_manager import VectorDbManager
-from db.parent_store_manager import ParentStoreManager
-from db.import_task_store import ImportTaskStore
-from core.document_chunker import DocumentChuncker
-from memory.redis_memory import RedisSessionMemory
-from memory.summary_store import SummaryStore
-from memory.user_memory_store import UserMemoryStore
-from memory.memory_extractor import MemoryExtractor
-from db.chat_session_store import ChatSessionStore
-from mcp_integration.mcp_server_registry import MCPServerRegistry
-from mcp_integration.user_mcp_credential_store import UserMCPCredentialStore
-from mcp_integration.user_mcp_pool import UserMCPPool
-from core.observability import Observability
-from services.appointment_service import AppointmentService
+from core.service_bootstrapper import ServiceBootstrapper
 
 
 logger = logging.getLogger(__name__)
@@ -40,54 +24,9 @@ class RAGSystem:
 
     def __init__(self, collection_name=config.CHILD_COLLECTION):
         self.collection_name = collection_name
-        self.vector_db = VectorDbManager()
-        self.parent_store = ParentStoreManager()
-        self.import_task_store = ImportTaskStore()
-        self.chunker = DocumentChuncker()
-        self.session_memory = RedisSessionMemory()
-        self.summary_store = SummaryStore()
-        self.user_memory_store = UserMemoryStore()
-        self.chat_sessions = ChatSessionStore()
-        self.memory_extractor = MemoryExtractor(self.user_memory_store, self.chat_sessions)
-        self.mcp_server_registry = MCPServerRegistry()
-        self.user_mcp_credential_store = UserMCPCredentialStore()
-        self.user_mcp_pool = UserMCPPool(self.mcp_server_registry, self.user_mcp_credential_store)
-        self.appointment_service = AppointmentService()
-        self.observability = Observability()
-        self.skill_bootstrapper = SkillBootstrapper()
-        self.agent_graph_factory = AgentGraphFactory(
-            vector_db=self.vector_db,
-            appointment_service=self.appointment_service,
-            user_mcp_pool=self.user_mcp_pool,
-            chat_sessions=self.chat_sessions,
-            skill_bootstrapper=self.skill_bootstrapper,
-        )
-        self.knowledge_base_supervisor = KnowledgeBaseSupervisor(self)
-        self._knowledge_base_status = self.knowledge_base_supervisor.status
+        self._container = ServiceBootstrapper().bootstrap(self)
         self.document_manager = None
         self.agent_graph = None
-        # ServiceContainer — new code should access services via container
-        self._container = ServiceContainer()
-        for _name, _svc in [
-            ("vector_db", self.vector_db),
-            ("parent_store", self.parent_store),
-            ("import_task_store", self.import_task_store),
-            ("chunker", self.chunker),
-            ("session_memory", self.session_memory),
-            ("summary_store", self.summary_store),
-            ("user_memory_store", self.user_memory_store),
-            ("chat_sessions", self.chat_sessions),
-            ("memory_extractor", self.memory_extractor),
-            ("mcp_server_registry", self.mcp_server_registry),
-            ("user_mcp_credential_store", self.user_mcp_credential_store),
-            ("user_mcp_pool", self.user_mcp_pool),
-            ("appointment_service", self.appointment_service),
-            ("observability", self.observability),
-            ("skill_bootstrapper", self.skill_bootstrapper),
-            ("agent_graph_factory", self.agent_graph_factory),
-            ("knowledge_base_supervisor", self.knowledge_base_supervisor),
-        ]:
-            self._container.register(_name, _svc)
         self.thread_id = str(uuid.uuid4())
         self.recursion_limit = config.GRAPH_RECURSION_LIMIT
         self._initialize_lock = threading.Lock()
@@ -138,7 +77,7 @@ class RAGSystem:
         return self.agent_graph is not None and self._startup_status["state"] == "ready"
 
     @property
-    def container(self) -> ServiceContainer:
+    def container(self):
         """Access the ServiceContainer for dependency injection."""
         return self._container
 
