@@ -63,7 +63,7 @@
 
 - 新增 `ServiceRegistry` 或增强现有 `ServiceContainer`，集中声明服务依赖。
 - 已完成第一步：新增 `AgentGraphFactory`，负责 LLM runtime、tools、skill 注册和 LangGraph 编译。
-- 新增 `KnowledgeBaseSupervisor`，只负责 KB 状态、bootstrap 和 sync scheduler。
+- 已完成第一步：新增 `KnowledgeBaseSupervisor`，负责 KB 状态、bootstrap 和 sync scheduler；`RAGSystem` 保留兼容代理方法。
 - 将 Skill 注册移到 `SkillBootstrapper` 或 manifest loader。
 
 验收：
@@ -134,6 +134,6 @@
 
 ## 下一阶段建议
 
-- 继续拆 `RAGSystem`：下一步优先抽 `KnowledgeBaseSupervisor`，再把 Skill 注册从 `AgentGraphFactory` 进一步收敛到 manifest/bootstrapper。
+- 继续拆 `RAGSystem`：下一步把 Skill 注册从 `AgentGraphFactory` 进一步收敛到 manifest/bootstrapper。
 - 为 schema guard 后续接入正式迁移工具（如 Alembic）预留 metadata/version 表。
 - 将 MCP pool 的健康状态和熔断状态从进程内迁移到 Redis/PostgreSQL。
