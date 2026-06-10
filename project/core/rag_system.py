@@ -15,6 +15,7 @@ import threading
 import time
 from datetime import datetime
 import config
+from core.agent_graph_factory import AgentGraphFactory
 from core.container import ServiceContainer
 from db.vector_db_manager import VectorDbManager
 from db.parent_store_manager import ParentStoreManager
@@ -28,9 +29,6 @@ from db.chat_session_store import ChatSessionStore
 from mcp_integration.mcp_server_registry import MCPServerRegistry
 from mcp_integration.user_mcp_credential_store import UserMCPCredentialStore
 from mcp_integration.user_mcp_pool import UserMCPPool
-from model_factory import get_chat_model
-from rag_agent.tools import ToolFactory
-from rag_agent.graph import create_agent_graph
 from core.observability import Observability
 from services.appointment_service import AppointmentService
 
@@ -55,6 +53,12 @@ class RAGSystem:
         self.user_mcp_pool = UserMCPPool(self.mcp_server_registry, self.user_mcp_credential_store)
         self.appointment_service = AppointmentService()
         self.observability = Observability()
+        self.agent_graph_factory = AgentGraphFactory(
+            vector_db=self.vector_db,
+            appointment_service=self.appointment_service,
+            user_mcp_pool=self.user_mcp_pool,
+            chat_sessions=self.chat_sessions,
+        )
         self.document_manager = None
         self.agent_graph = None
         # ServiceContainer — new code should access services via container
@@ -74,6 +78,7 @@ class RAGSystem:
             ("user_mcp_pool", self.user_mcp_pool),
             ("appointment_service", self.appointment_service),
             ("observability", self.observability),
+            ("agent_graph_factory", self.agent_graph_factory),
         ]:
             self._container.register(_name, _svc)
         self.thread_id = str(uuid.uuid4())
@@ -364,42 +369,14 @@ class RAGSystem:
                 self._set_startup_step("database_check", "completed", "数据库 schema 检查完成。")
 
                 self._set_startup_step("model_init", "running", "初始化聊天模型。")
-                from llm_tiered_router import TieredLLMRouter
-                llm_router = TieredLLMRouter.from_env()
-                llm = llm_router.get_llm("default")
+                llm_router, llm = self.agent_graph_factory.create_llm_runtime()
                 self._set_startup_step("model_init", "completed", "聊天模型初始化完成。")
 
                 self._set_startup_step("graph_compile", "running", "构建代理图。")
-                collection = self.vector_db.get_collection(self.collection_name)
-                tools = ToolFactory(collection).create_tools()
-
-                # Register skills (if enabled)
-                if getattr(config, "SKILLS_ENABLED", False):
-                    from skills.registry import get_skill_registry
-                    from skills.greeting_skill import GreetingSkill
-                    from skills.medical_rag_skill import MedicalRagSkill
-                    from skills.booking_skill import AppointmentSkill as BookingIntentSkill
-                    from skills.cancel_skill import CancelSkill
-                    from skills.triage_skill import TriageSkill
-                    from mcp_integration.mcp_skill import MCPSkill
-                    registry = get_skill_registry()
-                    registry.register(GreetingSkill())
-                    registry.register(TriageSkill())
-                    registry.register(BookingIntentSkill())
-                    registry.register(CancelSkill())
-                    registry.register(MedicalRagSkill())
-                    registry.register(MCPSkill())
-                    logger.info("Skill plugin framework enabled: %d skills registered", len(registry.skills))
-
-                extra_services = {
-                    "user_mcp_pool": self.user_mcp_pool,
-                    "chat_sessions": self.chat_sessions,
-                }
-                self.agent_graph = create_agent_graph(
-                    llm, tools,
-                    appointment_service=self.appointment_service,
+                self.agent_graph = self.agent_graph_factory.build_graph(
+                    collection_name=self.collection_name,
                     llm_router=llm_router,
-                    extra_services=extra_services,
+                    llm=llm,
                 )
                 self._set_startup_step("graph_compile", "completed", "代理图已就绪。")
 

@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "project"))
 from fastapi.testclient import TestClient  # noqa: E402
 from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
 
+import api.auth as auth_module  # noqa: E402
 from api.app import create_app  # noqa: E402
 from api.dependencies import set_container_for_tests  # noqa: E402
 
@@ -269,6 +270,8 @@ class FakeContainer:
 
 class ApiAppTests(unittest.TestCase):
     def setUp(self):
+        auth_module._rate_limiter = auth_module.InMemoryRateLimiter()
+        auth_module._login_lockout = auth_module.LoginLockoutTracker()
         self.tmp = TemporaryDirectory()
         self.container = FakeContainer(self.tmp.name)
         self.container.rag_system.session_memory.messages["thread-existing"] = [

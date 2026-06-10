@@ -55,14 +55,14 @@
 - 单元测试可以绕过 FastAPI，直接测试一次 chat turn 的状态变化。
 - Gradio 和 React API 使用同一业务服务，不再复制状态逻辑。
 
-## 阶段 3：RAGSystem 瘦身
+## 阶段 3：RAGSystem 瘦身（已开始）
 
 目标：把系统启动、依赖组装、图编译和后台任务分离。
 
 任务：
 
 - 新增 `ServiceRegistry` 或增强现有 `ServiceContainer`，集中声明服务依赖。
-- 新增 `AgentGraphFactory`，只负责创建 LangGraph。
+- 已完成第一步：新增 `AgentGraphFactory`，负责 LLM runtime、tools、skill 注册和 LangGraph 编译。
 - 新增 `KnowledgeBaseSupervisor`，只负责 KB 状态、bootstrap 和 sync scheduler。
 - 将 Skill 注册移到 `SkillBootstrapper` 或 manifest loader。
 
@@ -134,6 +134,6 @@
 
 ## 下一阶段建议
 
-- 拆 `RAGSystem`：优先抽 `AgentGraphFactory`、`KnowledgeBaseSupervisor` 和 Skill bootstrapper。
+- 继续拆 `RAGSystem`：下一步优先抽 `KnowledgeBaseSupervisor`，再把 Skill 注册从 `AgentGraphFactory` 进一步收敛到 manifest/bootstrapper。
 - 为 schema guard 后续接入正式迁移工具（如 Alembic）预留 metadata/version 表。
 - 将 MCP pool 的健康状态和熔断状态从进程内迁移到 Redis/PostgreSQL。
