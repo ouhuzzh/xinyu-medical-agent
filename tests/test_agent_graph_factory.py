@@ -1,7 +1,6 @@
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "project"))
 
@@ -30,6 +29,15 @@ class FakeRouter:
         return f"llm:{tier}"
 
 
+class FakeSkillBootstrapper:
+    def __init__(self):
+        self.calls = 0
+
+    def bootstrap(self):
+        self.calls += 1
+        return 3
+
+
 class AgentGraphFactoryTests(unittest.TestCase):
     def test_create_llm_runtime_uses_router_default_tier(self):
         router = FakeRouter()
@@ -52,6 +60,7 @@ class AgentGraphFactoryTests(unittest.TestCase):
         appointment_service = object()
         user_mcp_pool = object()
         chat_sessions = object()
+        skill_bootstrapper = FakeSkillBootstrapper()
 
         def graph_builder(llm, tools, **kwargs):
             captured["llm"] = llm
@@ -66,27 +75,18 @@ class AgentGraphFactoryTests(unittest.TestCase):
             chat_sessions=chat_sessions,
             tool_factory_cls=FakeToolFactory,
             graph_builder=graph_builder,
+            skill_bootstrapper=skill_bootstrapper,
         )
 
         graph = factory.build_graph(collection_name="child_chunks", llm_router="router", llm="llm")
 
         self.assertEqual(graph, "graph")
+        self.assertEqual(skill_bootstrapper.calls, 1)
         self.assertEqual(captured["tools"], [{"tool_collection": "child_chunks"}])
         self.assertIs(captured["kwargs"]["appointment_service"], appointment_service)
         self.assertEqual(captured["kwargs"]["llm_router"], "router")
         self.assertIs(captured["kwargs"]["extra_services"]["user_mcp_pool"], user_mcp_pool)
         self.assertIs(captured["kwargs"]["extra_services"]["chat_sessions"], chat_sessions)
-
-    def test_register_skills_returns_zero_when_disabled(self):
-        factory = AgentGraphFactory(
-            vector_db=FakeVectorDb(),
-            appointment_service=object(),
-            user_mcp_pool=object(),
-            chat_sessions=object(),
-        )
-
-        with patch("core.agent_graph_factory.config.SKILLS_ENABLED", False):
-            self.assertEqual(factory.register_skills(), 0)
 
 
 if __name__ == "__main__":

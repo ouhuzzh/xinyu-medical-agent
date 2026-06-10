@@ -17,6 +17,7 @@ import config
 from core.agent_graph_factory import AgentGraphFactory
 from core.container import ServiceContainer
 from core.knowledge_base_supervisor import KnowledgeBaseSupervisor
+from core.skill_bootstrapper import SkillBootstrapper
 from db.vector_db_manager import VectorDbManager
 from db.parent_store_manager import ParentStoreManager
 from db.import_task_store import ImportTaskStore
@@ -53,11 +54,13 @@ class RAGSystem:
         self.user_mcp_pool = UserMCPPool(self.mcp_server_registry, self.user_mcp_credential_store)
         self.appointment_service = AppointmentService()
         self.observability = Observability()
+        self.skill_bootstrapper = SkillBootstrapper()
         self.agent_graph_factory = AgentGraphFactory(
             vector_db=self.vector_db,
             appointment_service=self.appointment_service,
             user_mcp_pool=self.user_mcp_pool,
             chat_sessions=self.chat_sessions,
+            skill_bootstrapper=self.skill_bootstrapper,
         )
         self.knowledge_base_supervisor = KnowledgeBaseSupervisor(self)
         self._knowledge_base_status = self.knowledge_base_supervisor.status
@@ -80,6 +83,7 @@ class RAGSystem:
             ("user_mcp_pool", self.user_mcp_pool),
             ("appointment_service", self.appointment_service),
             ("observability", self.observability),
+            ("skill_bootstrapper", self.skill_bootstrapper),
             ("agent_graph_factory", self.agent_graph_factory),
             ("knowledge_base_supervisor", self.knowledge_base_supervisor),
         ]:

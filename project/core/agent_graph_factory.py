@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Callable
 
-import config
+from core.skill_bootstrapper import SkillBootstrapper
 from rag_agent.graph import create_agent_graph
 from rag_agent.tools import ToolFactory
-
-
-logger = logging.getLogger(__name__)
-
 
 class AgentGraphFactory:
     def __init__(
@@ -24,7 +19,7 @@ class AgentGraphFactory:
         tool_factory_cls=ToolFactory,
         graph_builder: Callable = create_agent_graph,
         llm_router_factory: Callable | None = None,
-        skill_registrar: Callable | None = None,
+        skill_bootstrapper: SkillBootstrapper | None = None,
     ):
         self.vector_db = vector_db
         self.appointment_service = appointment_service
@@ -33,7 +28,7 @@ class AgentGraphFactory:
         self._tool_factory_cls = tool_factory_cls
         self._graph_builder = graph_builder
         self._llm_router_factory = llm_router_factory
-        self._skill_registrar = skill_registrar
+        self._skill_bootstrapper = skill_bootstrapper or SkillBootstrapper()
 
     def create_llm_runtime(self):
         if self._llm_router_factory is not None:
@@ -60,25 +55,4 @@ class AgentGraphFactory:
         )
 
     def register_skills(self) -> int:
-        if not getattr(config, "SKILLS_ENABLED", False):
-            return 0
-        if self._skill_registrar is not None:
-            return int(self._skill_registrar() or 0)
-
-        from mcp_integration.mcp_skill import MCPSkill
-        from skills.booking_skill import AppointmentSkill as BookingIntentSkill
-        from skills.cancel_skill import CancelSkill
-        from skills.greeting_skill import GreetingSkill
-        from skills.medical_rag_skill import MedicalRagSkill
-        from skills.registry import get_skill_registry
-        from skills.triage_skill import TriageSkill
-
-        registry = get_skill_registry()
-        registry.register(GreetingSkill())
-        registry.register(TriageSkill())
-        registry.register(BookingIntentSkill())
-        registry.register(CancelSkill())
-        registry.register(MedicalRagSkill())
-        registry.register(MCPSkill())
-        logger.info("Skill plugin framework enabled: %d skills registered", len(registry.skills))
-        return len(registry.skills)
+        return self._skill_bootstrapper.bootstrap()
