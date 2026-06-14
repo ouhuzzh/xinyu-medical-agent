@@ -117,6 +117,27 @@ OPENAI_API_KEY=真实 key
 python scripts/validate_prod_env.py .env.docker.prod.local
 ```
 
+再做一次生产主机预检：
+
+```bash
+python scripts/check_prod_host.py .env.docker.prod.local
+```
+
+它会额外检查这些上线前常见坑：
+
+- `docker` / `docker compose` 是否可用
+- Docker daemon 是否正常
+- `docker-compose.prod.yml` 和 `deploy/Caddyfile` 是否存在
+- `80/443` 端口是否已被别的进程占用
+- `APP_DOMAIN` / `API_DOMAIN` 是否已经能解析
+- 当前部署盘的剩余空间是否过低
+
+如果你只是提前在本机演练，也可以跳过部分项：
+
+```bash
+python scripts/check_prod_host.py .env.docker.prod.local --skip-dns --skip-ports
+```
+
 启动生产拓扑：
 
 ```bash
@@ -132,8 +153,17 @@ python scripts/deploy_prod_stack.py .env.docker.prod.local
 它会按顺序执行：
 
 - 校验 `.env.docker.prod.local`
+- 生产主机预检
 - `docker compose ... up --build -d`
 - 对前端和 `/api/healthz` 做冒烟检查
+
+如果你已经确认域名还没切 DNS，或者服务器上 80/443 端口检查不适合当前场景，也可以临时跳过：
+
+```bash
+python scripts/deploy_prod_stack.py .env.docker.prod.local --skip-dns
+python scripts/deploy_prod_stack.py .env.docker.prod.local --skip-ports
+python scripts/deploy_prod_stack.py .env.docker.prod.local --skip-preflight
+```
 
 启动后冒烟检查：
 
