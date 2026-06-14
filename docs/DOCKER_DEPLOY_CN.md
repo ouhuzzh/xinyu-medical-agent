@@ -91,6 +91,12 @@ docker compose down -v
 cp .env.docker.prod.example .env.docker.prod.local
 ```
 
+生成生产密钥：
+
+```bash
+python scripts/generate_prod_secrets.py
+```
+
 编辑 `.env.docker.prod.local`，至少替换：
 
 ```text
@@ -105,10 +111,30 @@ DEEPSEEK_API_KEY=真实 key
 OPENAI_API_KEY=真实 key
 ```
 
+启动前校验配置：
+
+```bash
+python scripts/validate_prod_env.py .env.docker.prod.local
+```
+
 启动生产拓扑：
 
 ```bash
 docker compose --env-file .env.docker.prod.local -f docker-compose.prod.yml up --build -d
+```
+
+启动后冒烟检查：
+
+```bash
+FRONTEND_URL=https://medical.example.com \
+API_BASE_URL=https://api.medical.example.com \
+python scripts/smoke_docker_deploy.py
+```
+
+如果你保留了管理员 API token，也可以检查系统状态：
+
+```bash
+API_AUTH_TOKEN=你的管理员token python scripts/smoke_docker_deploy.py
 ```
 
 生产拓扑和本机拓扑的区别：
@@ -141,3 +167,13 @@ backups/postgres/postgres-YYYYMMDD-HHMMSS.sql.gz
 ```
 
 `backups/` 已加入 `.gitignore`，不要把备份文件提交到仓库。第一次正式上线前，务必做一次恢复演练。
+
+恢复时不要直接覆盖生产库。建议先在临时服务器或临时数据库验证：
+
+```bash
+gunzip -c backups/postgres/postgres-YYYYMMDD-HHMMSS.sql.gz | \
+  docker compose --env-file .env.docker.prod.local -f docker-compose.prod.yml exec -T postgres \
+  sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+真实生产恢复前，要先停止 API 写入流量，并确认当前库已经另存一份备份。
