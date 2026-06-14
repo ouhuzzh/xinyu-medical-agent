@@ -123,6 +123,18 @@ python scripts/validate_prod_env.py .env.docker.prod.local
 docker compose --env-file .env.docker.prod.local -f docker-compose.prod.yml up --build -d
 ```
 
+或者直接用一键脚本：
+
+```bash
+python scripts/deploy_prod_stack.py .env.docker.prod.local
+```
+
+它会按顺序执行：
+
+- 校验 `.env.docker.prod.local`
+- `docker compose ... up --build -d`
+- 对前端和 `/api/healthz` 做冒烟检查
+
 启动后冒烟检查：
 
 ```bash
@@ -152,6 +164,14 @@ https://medical.example.com      前端
 https://api.medical.example.com  后端 API
 ```
 
+建议首次正式上线前做一次最小生产演练：
+
+1. 在服务器上复制 `.env.docker.prod.example` 为 `.env.docker.prod.local`
+2. 用 `python scripts/generate_prod_secrets.py` 生成密钥并填入
+3. 用 `python scripts/validate_prod_env.py .env.docker.prod.local` 校验
+4. 用 `python scripts/deploy_prod_stack.py .env.docker.prod.local` 启动并冒烟
+5. 登录页面、发一条真实聊天、查看 `/api/system/status`
+
 ## 7. 数据库备份
 
 生产服务器上可以执行：
@@ -176,4 +196,40 @@ gunzip -c backups/postgres/postgres-YYYYMMDD-HHMMSS.sql.gz | \
   sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
 ```
 
+也可以使用脚本恢复：
+
+```bash
+sh scripts/restore_postgres.sh backups/postgres/postgres-YYYYMMDD-HHMMSS.sql.gz .env.docker.prod.local --yes
+```
+
 真实生产恢复前，要先停止 API 写入流量，并确认当前库已经另存一份备份。
+
+## 8. 用户记忆加密巡检
+
+如果你之前在缺少 `cryptography` 或错误加密 key 的环境里运行过服务，可能会留下历史坏密文或哨兵值。现在可以用下面的脚本先做只读巡检：
+
+```bash
+python scripts/repair_user_memory_encryption.py
+```
+
+如果输出里存在：
+
+- `plaintext`
+- `encrypted_invalid_format`
+- `encrypted_unreadable`
+
+说明库里还有需要处理的历史记录。
+
+只把旧明文重写为加密内容：
+
+```bash
+python scripts/repair_user_memory_encryption.py --apply --reencrypt-plaintext
+```
+
+把坏格式密文重写成哨兵值（避免持续刷日志）：
+
+```bash
+python scripts/repair_user_memory_encryption.py --apply
+```
+
+`--rewrite-unreadable` 风险更高，因为它会把“当前 key 解不开”的密文直接改成哨兵值，只有在你确认那部分内容已经不可恢复时再用。
