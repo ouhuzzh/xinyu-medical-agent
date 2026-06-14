@@ -179,6 +179,24 @@ python scripts/smoke_docker_deploy.py
 API_AUTH_TOKEN=你的管理员token python scripts/smoke_docker_deploy.py
 ```
 
+如果你要做更接近真实上线的验收，可以用：
+
+```bash
+python scripts/prod_acceptance_check.py \
+  --frontend-url https://medical.example.com \
+  --api-base-url https://api.medical.example.com
+```
+
+如果要连带鉴权接口和真实聊天链路一起验收：
+
+```bash
+API_AUTH_TOKEN=你的token \
+python scripts/prod_acceptance_check.py \
+  --frontend-url https://medical.example.com \
+  --api-base-url https://api.medical.example.com \
+  --chat-smoke
+```
+
 生产拓扑和本机拓扑的区别：
 
 - 只暴露 `80/443`，由 Caddy 自动处理 HTTPS。
@@ -201,6 +219,10 @@ https://api.medical.example.com  后端 API
 3. 用 `python scripts/validate_prod_env.py .env.docker.prod.local` 校验
 4. 用 `python scripts/deploy_prod_stack.py .env.docker.prod.local` 启动并冒烟
 5. 登录页面、发一条真实聊天、查看 `/api/system/status`
+
+更完整的真实服务器演练步骤，可以看：
+
+- [真实服务器上线清单](./PRODUCTION_ROLLOUT_CHECKLIST_CN.md)
 
 ## 7. 数据库备份
 
