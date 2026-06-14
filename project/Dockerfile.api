@@ -13,13 +13,12 @@ WORKDIR /app
 
 ARG INSTALL_LOCAL_ML=false
 
-COPY requirements.txt ./requirements.txt
+COPY requirements-api.txt ./requirements-api.txt
+COPY requirements-ml-local.txt ./requirements-ml-local.txt
 RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements-api.txt \
     && if [ "$INSTALL_LOCAL_ML" = "true" ]; then \
-        pip install --no-cache-dir -r requirements.txt; \
-    else \
-        grep -Ev '^(sentence-transformers|torch|transformers)==' requirements.txt > /tmp/requirements-runtime.txt; \
-        pip install --no-cache-dir -r /tmp/requirements-runtime.txt; \
+        pip install --no-cache-dir -r requirements-ml-local.txt; \
     fi
 
 COPY project ./project

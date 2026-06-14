@@ -143,7 +143,7 @@ API_AUTH_TOKEN=你的管理员token python scripts/smoke_docker_deploy.py
 - PostgreSQL 和 Redis 不映射到公网端口。
 - 前端生产构建不再默认使用 `demo-admin-token`。
 - API healthcheck 使用公开的 `/api/healthz`，不依赖 demo token。
-- 后端镜像默认不安装 `torch/sentence-transformers/transformers`；只有本地 HuggingFace embedding 才设置 `INSTALL_LOCAL_ML=true`。
+- 后端镜像默认安装 `requirements-api.txt`，不安装 `requirements-ml-local.txt` 里的 `torch/sentence-transformers/transformers`；只有本地 HuggingFace embedding 才设置 `INSTALL_LOCAL_ML=true`。
 
 建议域名：
 
