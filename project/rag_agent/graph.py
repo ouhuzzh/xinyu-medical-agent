@@ -45,6 +45,7 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     if llm_router is not None and llm_router.has_tiers:
         _light_llm = llm_router.get_llm("light")
         _strong_llm = llm_router.get_llm("strong")
+    mcp_pool = (extra_services or {}).get("user_mcp_pool")
 
     llm_with_tools = _strong_llm.bind_tools(tools_list)
     tool_node = ToolNode(tools_list)
@@ -78,9 +79,9 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     graph_builder.add_node("plan_retrieval_queries", partial(plan_retrieval_queries, llm=_light_llm))
     # strong tier: answer generation, department recommendation
     graph_builder.add_node("recommend_department", partial(recommend_department, llm=_strong_llm))
-    graph_builder.add_node("handle_appointment_skill", partial(handle_appointment_skill, llm=_strong_llm, appointment_service=appointment_service))
-    graph_builder.add_node("handle_appointment", partial(handle_appointment, llm=_strong_llm, appointment_service=appointment_service))
-    graph_builder.add_node("handle_cancel_appointment", partial(handle_cancel_appointment, llm=_strong_llm, appointment_service=appointment_service))
+    graph_builder.add_node("handle_appointment_skill", partial(handle_appointment_skill, llm=_strong_llm, appointment_service=appointment_service, mcp_pool=mcp_pool))
+    graph_builder.add_node("handle_appointment", partial(handle_appointment, llm=_strong_llm, appointment_service=appointment_service, mcp_pool=mcp_pool))
+    graph_builder.add_node("handle_cancel_appointment", partial(handle_cancel_appointment, llm=_strong_llm, appointment_service=appointment_service, mcp_pool=mcp_pool))
     graph_builder.add_node(request_clarification)
     graph_builder.add_node("prepare_secondary_turn", prepare_secondary_turn)
     graph_builder.add_node("agent", agent_subgraph)

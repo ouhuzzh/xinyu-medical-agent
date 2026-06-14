@@ -716,8 +716,15 @@ def _mcp_discover_schedules(mcp, department="", date=None, slot="", doctor_name=
     return msg, items, None
 
 
-def _resolve_hospital_selection(state: State, user_query: str, appointment_context: dict, pending_payload: dict):
-    pool = state.get("_mcp_pool")
+def _resolve_hospital_selection(
+    state: State,
+    user_query: str,
+    appointment_context: dict,
+    pending_payload: dict,
+    *,
+    mcp_pool=None,
+):
+    pool = mcp_pool if mcp_pool is not None else state.get("_mcp_pool")
     user_id = (state.get("user_id") or "").strip()
     if pool is None or not user_id:
         return appointment_context, None, ""
@@ -837,7 +844,7 @@ def _with_hospital_payload(payload: dict, appointment_context: dict) -> dict:
 # Public appointment nodes
 # ---------------------------------------------------------------------------
 
-def handle_appointment_skill(state: State, llm, appointment_service):
+def handle_appointment_skill(state: State, llm, appointment_service, mcp_pool=None):
     user_query = _get_user_query(state)
     appointment_context = _get_appointment_context(state)
     pending_action_type = state.get("pending_action_type", "")
@@ -849,10 +856,13 @@ def handle_appointment_skill(state: State, llm, appointment_service):
         user_query,
         appointment_context,
         pending_payload,
+        mcp_pool=mcp_pool,
     )
     selected_hospital_code = appointment_context.get("hospital_code", "")
     mcp = MCPAppointmentBackend.try_create(
         state,
+        pool=mcp_pool,
+        user_id=(state.get("user_id") or "").strip(),
         preferred_hospital_code=selected_hospital_code,
     )
 
@@ -1711,18 +1721,18 @@ def handle_appointment_skill(state: State, llm, appointment_service):
     }
 
 
-def handle_appointment(state: State, llm, appointment_service):
+def handle_appointment(state: State, llm, appointment_service, mcp_pool=None):
     merged_state = dict(state)
     merged_state.setdefault("intent", "appointment")
     merged_state.setdefault("primary_intent", "appointment")
-    return handle_appointment_skill(merged_state, llm, appointment_service)
+    return handle_appointment_skill(merged_state, llm, appointment_service, mcp_pool=mcp_pool)
 
 
-def handle_cancel_appointment(state: State, llm, appointment_service):
+def handle_cancel_appointment(state: State, llm, appointment_service, mcp_pool=None):
     merged_state = dict(state)
     merged_state.setdefault("intent", "cancel_appointment")
     merged_state.setdefault("primary_intent", "cancel_appointment")
-    return handle_appointment_skill(merged_state, llm, appointment_service)
+    return handle_appointment_skill(merged_state, llm, appointment_service, mcp_pool=mcp_pool)
 
 
 __all__ = [

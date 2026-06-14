@@ -116,6 +116,18 @@ class RoutingEdgeTests(unittest.TestCase):
             ["高血压应该注意什么"],
         )
 
+    def test_route_after_rewrite_treats_medical_rag_skill_as_retrieval_pipeline(self):
+        self.assertEqual(
+            route_after_rewrite(
+                {
+                    "questionIsClear": True,
+                    "intent": "medical_rag",
+                    "rewrittenQuestions": ["高血压日常注意事项"],
+                }
+            ),
+            "plan_retrieval_queries",
+        )
+
     def test_route_after_action_prepares_secondary_turn_when_primary_is_done(self):
         decision = route_after_action(
             {

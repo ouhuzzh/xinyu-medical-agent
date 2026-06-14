@@ -71,7 +71,9 @@ def route_after_rewrite(state: State) -> str:
         if registry.skills:
             skill_routes = registry.get_route_mapping()
             if intent in skill_routes:
-                return skill_routes[intent]
+                target = skill_routes[intent]
+                if target != "rewrite_query":
+                    return target
     except Exception:
         pass
 

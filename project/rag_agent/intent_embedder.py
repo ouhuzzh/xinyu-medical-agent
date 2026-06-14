@@ -121,9 +121,17 @@ class IntentEmbedder:
                 return
             try:
                 embedding_model = self._load_embedding_model()
-                centroids = self._compute_centroids(embedding_model)
-                # Assign atomically from locals — no thread sees partial state
+                if embedding_model is None or not hasattr(embedding_model, "embed_query") or not hasattr(embedding_model, "embed_documents"):
+                    logger.warning("IntentEmbedder disabled: embedding model is unavailable.")
+                    self._embedding_model = None
+                    self._centroids = {}
+                    self._initialized = True
+                    return
+
                 self._embedding_model = embedding_model
+                centroids = self._compute_centroids()
+                # Assign atomically after centroid computation — no thread sees
+                # partial centroid state.
                 self._centroids = centroids
                 self._initialized = True
                 threshold = self._threshold if self._threshold is not None else _default_threshold()
@@ -155,7 +163,7 @@ class IntentEmbedder:
     # Centroid computation
     # ------------------------------------------------------------------
 
-    def _compute_centroids(self, embedding_model) -> Dict[str, np.ndarray]:
+    def _compute_centroids(self) -> Dict[str, np.ndarray]:
         """Pre-compute intent centroids as the mean of utterance embeddings."""
         centroids: Dict[str, np.ndarray] = {}
         for intent_label, utterances in _load_utterances().items():

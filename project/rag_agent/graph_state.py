@@ -62,8 +62,6 @@ class State(MessagesState):
     agent_answers: Annotated[List[dict], accumulate_or_reset] = []
     skill_data: Dict[str, Any] = {}
     user_memories: str = ""
-    # Injected at graph invocation time for MCP backend construction
-    _mcp_pool: Any = None
     user_id: str = ""
 
 class AgentState(MessagesState):

@@ -151,6 +151,5 @@ class ChatTurnInputService:
             "messages": [*state_messages, *stored_messages, HumanMessage(content=user_message)],
             "request_id": request_id,
             "user_memories": user_memories_text,
-            "_mcp_pool": getattr(self.rag_system, "user_mcp_pool", None),
             "user_id": user_id,
         }

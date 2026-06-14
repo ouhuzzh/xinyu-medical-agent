@@ -11,6 +11,7 @@ charset-normalizer==3.4.4
 click==8.3.1
 coloredlogs==15.0.1
 comm==0.2.3
+cryptography==48.0.0
 debugpy==1.8.19
 decorator==5.2.1
 executing==2.2.1

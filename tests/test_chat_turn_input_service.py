@@ -118,7 +118,7 @@ class ChatTurnInputServiceTests(unittest.TestCase):
         self.assertEqual(turn_input.active_thread_id, "default-thread")
         self.assertEqual(turn_input.user_id, "")
         self.assertEqual(turn_input.user_memories_text, "")
-        self.assertIsNone(turn_input.stream_input["_mcp_pool"])
+        self.assertNotIn("_mcp_pool", turn_input.stream_input)
 
 
 if __name__ == "__main__":

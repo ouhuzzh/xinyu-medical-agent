@@ -118,7 +118,8 @@ def decrypt_token(encrypted_token: str) -> str:
     try:
         return _get_crypto().decrypt(encrypted_token.encode("utf-8")).decode("utf-8")
     except Exception:
-        logger.warning("Failed to decrypt token", exc_info=True)
+        logger.warning("Failed to decrypt token; returning empty result.")
+        logger.debug("Token decryption failure details", exc_info=True)
         return ""
 
 
