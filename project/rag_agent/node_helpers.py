@@ -208,7 +208,7 @@ def _json_safe_value(value):
 
 def _sanitize_pending_payload(payload: dict | None) -> dict:
     cleaned = dict(payload or {})
-    for key in ("department", "date", "time_slot", "doctor_name", "appointment_no", "action"):
+    for key in ("department", "date", "time_slot", "doctor_name", "appointment_no", "action", "hospital_code", "hospital_name"):
         value = cleaned.get(key)
         if isinstance(value, str):
             cleaned[key] = value.strip()

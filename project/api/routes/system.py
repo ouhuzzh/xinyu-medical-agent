@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, Request
 
 from api.auth import AuthenticatedUser, get_auth_runtime_status, require_current_user
@@ -6,6 +8,7 @@ from api.schemas import CurrentUserResponse, KnowledgeBaseStatusResponse, System
 
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/api/health")
@@ -23,7 +26,39 @@ def system_status(
     current_user: AuthenticatedUser = Depends(require_current_user),
 ):
     request.state.route_type = "system_status"
-    container = get_container()
+    try:
+        container = get_container()
+    except Exception as exc:
+        logger.exception("System status requested while API container is unavailable")
+        return SystemStatusResponse(
+            state="failed",
+            message="系统初始化失败。",
+            last_error=str(exc),
+            steps={},
+            degraded_components=["api_container"],
+            runtime_backends={
+                "session_lock_backend": "unknown",
+                "mcp_pool_backend": "unknown",
+                "schema_guard_backend": "unknown",
+                **get_auth_runtime_status(),
+            },
+            schema_health={
+                "status": "unknown",
+                "message": "API container is unavailable; schema guard did not run.",
+                "expected_dimension": 0,
+                "actual_dimensions": {},
+                "errors": [str(exc)],
+            },
+            current_user=CurrentUserResponse(
+                user_id=current_user.user_id, role=current_user.role, username=current_user.username or ""
+            ),
+            knowledge_base=KnowledgeBaseStatusResponse(
+                status="failed",
+                message="知识库状态不可用。",
+                last_error=str(exc),
+                stats={},
+            ),
+        )
     system = container.rag_system.get_system_status()
     knowledge = container.rag_system.get_knowledge_base_status()
     session_lock_backend = "unknown"
@@ -53,7 +88,10 @@ def system_status(
             schema_guard_backend = str(backend_name())
         get_health = getattr(schema_guard, "get_health", None)
         if callable(get_health):
-            schema_health = dict(get_health())
+            try:
+                schema_health = dict(get_health(refresh=True))
+            except TypeError:
+                schema_health = dict(get_health())
     runtime_backends = {
         "session_lock_backend": session_lock_backend,
         "mcp_pool_backend": mcp_pool_backend,

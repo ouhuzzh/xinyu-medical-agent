@@ -23,6 +23,11 @@ from .prompts import get_appointment_request_prompt, get_cancel_appointment_prom
 from db.appointment_skill_log_store import AppointmentSkillLogStore
 from services.appointment_skill import AppointmentSkill
 from services.mcp_appointment_backend import MCPAppointmentBackend
+from mcp_integration.hospital_selection import (
+    MCPHospitalSelectionPolicy,
+    format_hospital_confirmation,
+    format_hospital_clarification,
+)
 
 from .node_helpers import (
     _APPOINTMENT_NO_RE,
@@ -109,6 +114,8 @@ def _schedule_to_preview_payload(schedule: dict, *, action: str = "book") -> dic
         "time_slot": schedule.get("time_slot") or "",
         "doctor_name": schedule.get("doctor_name") or "",
         "action": action,
+        "hospital_code": schedule.get("hospital_code") or "",
+        "hospital_name": schedule.get("hospital_name") or "",
     }
 
 
@@ -155,8 +162,10 @@ def _build_pending_confirmation(action_type: str, payload: dict) -> dict:
 
 def _format_booking_preview(payload: dict) -> str:
     doctor_name = payload.get("doctor_name") or "不限"
+    hospital_line = f"- 医院：**{payload['hospital_name']}**\n" if payload.get("hospital_name") else ""
     return (
         "我已经整理好预约信息，请回复 **确认预约** 来正式提交：\n\n"
+        f"{hospital_line}"
         f"- 科室：**{payload['department']}**\n"
         f"- 日期：**{payload['date']}**\n"
         f"- 时段：**{payload['time_slot']}**\n"
@@ -166,8 +175,10 @@ def _format_booking_preview(payload: dict) -> str:
 
 
 def _format_cancel_preview(payload: dict) -> str:
+    hospital_line = f"- 医院：**{payload['hospital_name']}**\n" if payload.get("hospital_name") else ""
     return (
         "我已找到要取消的预约，请回复 **确认取消** 来正式提交：\n\n"
+        f"{hospital_line}"
         f"- 预约号：**{payload['appointment_no']}**\n"
         f"- 科室：**{payload['department']}**\n"
         f"- 日期：**{payload['date']}**\n"
@@ -179,8 +190,10 @@ def _format_cancel_preview(payload: dict) -> str:
 def _format_reschedule_confirmation_preview(payload: dict) -> str:
     previous_doctor = payload.get("previous_doctor_name") or "未指定"
     next_doctor = payload.get("doctor_name") or "未指定"
+    hospital_line = f"- 医院：**{payload['hospital_name']}**\n" if payload.get("hospital_name") else ""
     return (
         "我已整理好改约信息，请回复 **确认预约** 来正式提交改约：\n\n"
+        f"{hospital_line}"
         f"- 原预约：**{payload['previous_department']}**，**{payload['previous_date']}**，**{payload['previous_time_slot']}**，医生：**{previous_doctor}**\n"
         f"- 新预约：**{payload['department']}**，**{payload['date']}**，**{payload['time_slot']}**，医生：**{next_doctor}**\n\n"
         "如果你想再换一个日期、时段或医生，直接告诉我新的要求即可。"
@@ -466,6 +479,7 @@ def _handle_cancel_appointment_legacy(state: State, llm, appointment_service):
                 "doctor_name": selected.get("doctor_name") or "",
                 "action": "cancel",
             }
+            preview_payload = _with_hospital_payload(preview_payload, appointment_context)
             return {
                 "intent": "cancel_appointment",
                 "pending_clarification": "",
@@ -702,6 +716,123 @@ def _mcp_discover_schedules(mcp, department="", date=None, slot="", doctor_name=
     return msg, items, None
 
 
+def _resolve_hospital_selection(state: State, user_query: str, appointment_context: dict, pending_payload: dict):
+    pool = state.get("_mcp_pool")
+    user_id = (state.get("user_id") or "").strip()
+    if pool is None or not user_id:
+        return appointment_context, None, ""
+
+    try:
+        connected = pool.get_connected_hospitals(user_id)
+    except Exception:
+        connected = []
+
+    registry = getattr(pool, "_registry", None)
+    hospital_lookup = getattr(registry, "get_by_code", None)
+    selection_context = dict(appointment_context or {})
+    if pending_payload.get("hospital_code"):
+        selection_context["hospital_code"] = pending_payload.get("hospital_code", "")
+    if pending_payload.get("hospital_name"):
+        selection_context["hospital_name"] = pending_payload.get("hospital_name", "")
+
+    pending_hospital_code = (selection_context.get("pending_hospital_code") or "").strip()
+    pending_hospital_name = (selection_context.get("pending_hospital_name") or "").strip()
+    if pending_hospital_code:
+        if _is_hospital_confirmation(user_query):
+            updated_context = _replace_pending_hospital(
+                appointment_context,
+                hospital_code=pending_hospital_code,
+                hospital_name=pending_hospital_name or pending_hospital_code,
+            )
+            return updated_context, None, ""
+        if _is_hospital_rejection(user_query):
+            selection_context.pop("pending_hospital_code", None)
+            selection_context.pop("pending_hospital_name", None)
+        elif not _looks_like_new_hospital_choice(user_query):
+            message = f"为避免挂错医院，请先确认是否使用 {pending_hospital_name or pending_hospital_code}。请回复“确认医院”，或直接说另一家医院。"
+            return appointment_context, None, message
+
+    selection = MCPHospitalSelectionPolicy(hospital_lookup=hospital_lookup).select(
+        user_query=user_query,
+        appointment_context=selection_context,
+        connected_hospital_codes=connected,
+    )
+    if selection.needs_clarification:
+        return appointment_context, selection, format_hospital_clarification(selection)
+    if selection.needs_confirmation:
+        updated_context = _replace_pending_hospital(
+            appointment_context,
+            pending_hospital_code=selection.selected_code,
+            pending_hospital_name=selection.selected_name,
+        )
+        return updated_context, selection, format_hospital_confirmation(selection)
+    if selection.selected_code:
+        updated_context = _build_appointment_context(
+            appointment_context,
+            {
+                "hospital_code": selection.selected_code,
+                "hospital_name": selection.selected_name,
+            },
+        )
+        return updated_context, selection, ""
+    return appointment_context, selection, ""
+
+
+def _replace_pending_hospital(
+    appointment_context: dict,
+    *,
+    hospital_code: str = "",
+    hospital_name: str = "",
+    pending_hospital_code: str = "",
+    pending_hospital_name: str = "",
+) -> dict:
+    updated = dict(appointment_context or {})
+    for key in ("hospital_code", "hospital_name", "pending_hospital_code", "pending_hospital_name"):
+        updated.pop(key, None)
+    if hospital_code:
+        updated["hospital_code"] = hospital_code
+    if hospital_name:
+        updated["hospital_name"] = hospital_name
+    if pending_hospital_code:
+        updated["pending_hospital_code"] = pending_hospital_code
+    if pending_hospital_name:
+        updated["pending_hospital_name"] = pending_hospital_name
+    return updated
+
+
+def _is_hospital_confirmation(user_query: str) -> bool:
+    normalized = (user_query or "").strip().lower()
+    return normalized in {"确认医院", "确认这家医院", "确认", "是", "是的", "对", "对的", "没错", "就是这家"}
+
+
+def _is_hospital_rejection(user_query: str) -> bool:
+    normalized = (user_query or "").strip().lower()
+    return any(word in normalized for word in ("不是", "不对", "换一家", "其他医院", "别的医院", "重新选"))
+
+
+def _looks_like_new_hospital_choice(user_query: str) -> bool:
+    normalized = (user_query or "").strip()
+    if not normalized:
+        return False
+    return len(normalized) <= 20
+
+
+def _hospital_payload(appointment_context: dict) -> dict:
+    return {
+        "hospital_code": appointment_context.get("hospital_code", ""),
+        "hospital_name": appointment_context.get("hospital_name", ""),
+    }
+
+
+def _with_hospital_payload(payload: dict, appointment_context: dict) -> dict:
+    merged = dict(payload or {})
+    hospital = _hospital_payload(appointment_context)
+    for key, value in hospital.items():
+        if value and not merged.get(key):
+            merged[key] = value
+    return merged
+
+
 # ---------------------------------------------------------------------------
 # Public appointment nodes
 # ---------------------------------------------------------------------------
@@ -713,7 +844,34 @@ def handle_appointment_skill(state: State, llm, appointment_service):
     pending_payload = _get_pending_payload(state)
     pending_candidates = state.get("pending_candidates", []) or []
     active_intent = state.get("intent") or state.get("primary_intent") or "appointment"
-    mcp = MCPAppointmentBackend.try_create(state)
+    appointment_context, hospital_selection, hospital_clarification = _resolve_hospital_selection(
+        state,
+        user_query,
+        appointment_context,
+        pending_payload,
+    )
+    selected_hospital_code = appointment_context.get("hospital_code", "")
+    mcp = MCPAppointmentBackend.try_create(
+        state,
+        preferred_hospital_code=selected_hospital_code,
+    )
+
+    if hospital_clarification:
+        hospital_mode = "confirm_hospital" if getattr(hospital_selection, "needs_confirmation", False) else "select_hospital"
+        return {
+            **_base_skill_state_update(
+                state,
+                intent=active_intent,
+                skill_mode=hospital_mode,
+                appointment_context=appointment_context,
+                skill_last_prompt=hospital_clarification,
+            ),
+            "pending_clarification": hospital_clarification,
+            "clarification_target": "handle_appointment_skill",
+            "clarification_attempts": _next_clarification_attempt(state),
+            "messages": [AIMessage(content=hospital_clarification)],
+        }
+    pending_payload = _with_hospital_payload(pending_payload, appointment_context)
 
     if pending_action_type == "appointment":
         if _is_abort_request(user_query):
@@ -959,6 +1117,7 @@ def handle_appointment_skill(state: State, llm, appointment_service):
         if _wants_any_available_doctor(user_query):
             chosen_schedule = _sort_schedule_options(available_doctors)[0]
             payload = _schedule_to_preview_payload(chosen_schedule)
+            payload = _with_hospital_payload(payload, appointment_context)
             preview_message = _format_booking_preview(payload)
             _log_appointment_skill_event(
                 state,
@@ -998,6 +1157,7 @@ def handle_appointment_skill(state: State, llm, appointment_service):
             if len(matching_doctor_options) == 1 or _wants_earliest_available_slot(user_query):
                 chosen_schedule = _sort_schedule_options(matching_doctor_options)[0]
                 payload = _schedule_to_preview_payload(chosen_schedule)
+                payload = _with_hospital_payload(payload, appointment_context)
                 preview_message = _format_booking_preview(payload)
                 _log_appointment_skill_event(
                     state,
@@ -1087,6 +1247,7 @@ def handle_appointment_skill(state: State, llm, appointment_service):
         if wants_any_doctor:
             chosen_schedule = _sort_schedule_options(available_doctors)[0]
             payload = _schedule_to_preview_payload(chosen_schedule)
+            payload = _with_hospital_payload(payload, merged_context)
             preview_message = _format_booking_preview(payload)
             _log_appointment_skill_event(
                 state,
@@ -1125,6 +1286,7 @@ def handle_appointment_skill(state: State, llm, appointment_service):
             if len(matching_doctor_options) == 1 or _wants_earliest_available_slot(user_query):
                 chosen_schedule = _sort_schedule_options(matching_doctor_options)[0]
                 payload = _schedule_to_preview_payload(chosen_schedule)
+                payload = _with_hospital_payload(payload, merged_context)
                 preview_message = _format_booking_preview(payload)
                 _log_appointment_skill_event(
                     state,
@@ -1347,6 +1509,7 @@ def handle_appointment_skill(state: State, llm, appointment_service):
         )
         if preview:
             payload = preview.__dict__
+            payload = _with_hospital_payload(payload, merged_context)
             _log_appointment_skill_event(state, skill_mode="planning", request_type="prepare_reschedule", selected_candidate_count=len(doctor_options), required_confirmation=True, final_action="prepare_reschedule")
             return {
                 **_base_skill_state_update(state, intent="appointment", skill_mode="prepare_reschedule", topic_focus=payload["department"], appointment_context=_build_appointment_context(merged_context, {"department": payload["department"], "date": payload["date"], "time_slot": payload["time_slot"], "doctor_name": payload.get("doctor_name", "")}), candidates=doctor_options, skill_last_prompt=_format_reschedule_confirmation_preview(payload)),
@@ -1414,6 +1577,7 @@ def handle_appointment_skill(state: State, llm, appointment_service):
             preview = candidates[0] if len(candidates) == 1 else None
         if preview:
             payload = preview.__dict__
+            payload = _with_hospital_payload(payload, merged_context)
             _log_appointment_skill_event(state, skill_mode="planning", request_type="prepare_cancellation", required_confirmation=True, final_action="prepare_cancellation")
             return {
                 **_base_skill_state_update(state, intent="cancel_appointment", skill_mode="prepare_cancellation", topic_focus=payload["department"], appointment_context=merged_context, skill_last_prompt=_format_cancel_preview(payload)),
@@ -1499,6 +1663,7 @@ def handle_appointment_skill(state: State, llm, appointment_service):
         preview = None; doctor_options = []; alternatives = []
     if preview:
         payload = preview.__dict__
+        payload = _with_hospital_payload(payload, merged_context)
         _log_appointment_skill_event(state, skill_mode="planning", request_type="prepare_appointment", selected_candidate_count=len(doctor_options), required_confirmation=True, final_action="prepare_appointment")
         return {
             **_base_skill_state_update(state, intent="appointment", skill_mode="prepare_appointment", topic_focus=payload["department"], appointment_context=_build_appointment_context(merged_context, {"available_doctors": doctor_options, "doctor_name": payload.get("doctor_name", "")}), candidates=doctor_options, skill_last_prompt=_format_booking_preview(payload)),

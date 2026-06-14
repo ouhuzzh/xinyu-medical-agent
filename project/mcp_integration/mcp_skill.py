@@ -1,6 +1,6 @@
 """MCPSkill — registers MCP tools into the LangGraph agent as a pluggable skill.
 
-Any MCP service a user has bound credentials for (hospital booking, pharmacy
+Any MCP service a user has bound credentials for (hospital lookup, pharmacy
 ordering, lab-result lookup, payment processing, ...) has its tools loaded
 per-user and namespaced by server code.  The LLM sees all available tools
 and decides which to call based on the user's request.
@@ -10,7 +10,11 @@ Architecture:
   2. On first use, UserMCPPool connects to each server and loads its tools.
   3. MCPSkill's match() activates whenever the query has an MCP-action verb
      AND the user has bound servers (checked via context).
-  4. The handler binds all of the user's tools to the LLM and lets it choose.
+4. The handler binds safe generic tools to the LLM and lets it choose.
+
+Appointment mutations are deliberately excluded from this generic skill. Real
+booking/cancellation tools are only allowed through the appointment state
+machine, which requires an explicit confirmation turn.
 """
 
 from __future__ import annotations
@@ -20,6 +24,10 @@ from typing import Any, Callable, Dict, List, Tuple
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from mcp_integration.tool_policy import (
+    filter_generic_mcp_tools,
+    is_appointment_mutation_name,
+)
 from skills.base_skill import BaseSkill
 
 logger = logging.getLogger(__name__)
@@ -34,7 +42,9 @@ _SYSTEM_PROMPT = """你是智能助手中的外部服务调用模块。
 2. 调用工具前正确组装参数，用自然语言回复结果。
 3. 用户没指定具体服务时，先描述可选的服务让用户选择。
 4. 严禁伪造工具调用结果。若工具调用全部失败，明确告知用户。
+5. 预约挂号、取消预约、改约等需要确认或有副作用的工具不在此模块处理。
 """
+
 
 class MCPSkill(BaseSkill):
     """Skill that delegates to MCP-provided tools for pharmacy, payment, etc.
@@ -182,6 +192,37 @@ class MCPSkill(BaseSkill):
                     "decision_source": "skill",
                 }
 
+            user_tools, blocked_tool_decisions = filter_generic_mcp_tools(user_tools)
+            blocked_tool_map = {
+                decision.tool_name: decision
+                for decision in blocked_tool_decisions
+                if decision.tool_name
+            }
+            if blocked_tool_decisions:
+                logger.info(
+                    "Filtered %d unsafe MCP tools from generic handler for user %s: %s",
+                    len(blocked_tool_decisions),
+                    user_id,
+                    ", ".join(
+                        f"{decision.tool_name}({decision.reason})"
+                        for decision in blocked_tool_decisions
+                    ),
+                )
+            if not user_tools:
+                return {
+                    "intent": "mcp_services",
+                    "messages": [
+                        AIMessage(
+                            content=(
+                                "这个外部服务只暴露了需要确认或有副作用的操作。"
+                                "这类操作必须经过专门流程和明确确认，我不会在通用 MCP 服务里直接提交。"
+                            )
+                        )
+                    ],
+                    "route_reason": "skill:mcp_reserved_tools_blocked",
+                    "decision_source": "skill",
+                }
+
             # Build context-rich prompt
             context_parts = []
             conv_summary = state.get("conversation_summary", "") or ""
@@ -232,6 +273,18 @@ class MCPSkill(BaseSkill):
             for tc in tool_calls:
                 tool_name = tc.get("name", "")
                 tool_args = tc.get("args", {}) or {}
+                blocked_decision = blocked_tool_map.get(tool_name)
+                if blocked_decision or is_appointment_mutation_name(tool_name):
+                    any_failure = True
+                    logger.warning(
+                        "Blocked unsafe MCP tool call from generic handler: %s (%s)",
+                        tool_name,
+                        blocked_decision.reason if blocked_decision else "appointment_mutation_name",
+                    )
+                    tool_outputs.append(
+                        f"[已拦截] {tool_name}: 该操作需要专门流程或明确确认，不能在通用 MCP 服务里直接执行。"
+                    )
+                    continue
                 tool = tool_map.get(tool_name)
                 if tool is None:
                     any_failure = True
@@ -280,6 +333,3 @@ class MCPSkill(BaseSkill):
 
     def get_route_targets(self) -> Dict[str, str]:
         return {"mcp_services": "mcp_services_handler"}
-
-
-_NAMESPACE_SEP = __import__("config").MCP_TOOL_NAMESPACE_SEPARATOR

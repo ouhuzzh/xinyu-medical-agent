@@ -18,34 +18,18 @@ import logging
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
+from mcp_integration.tool_mapping import (
+    DEFAULT_APPOINTMENT_TOOL_ALIASES,
+    MCPAppointmentToolMapper,
+)
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # MCP tool name patterns — try each synonym until one is found in the user's
 # tool list.  Individual hospital MCP servers may name these differently.
 # ---------------------------------------------------------------------------
-_TOOL_ALIASES: Dict[str, List[str]] = {
-    "search_doctors": [
-        "search_doctors", "list_doctors", "query_doctor", "get_doctors",
-        "find_doctor", "doctor_search",
-    ],
-    "search_schedules": [
-        "search_schedules", "query_schedule", "get_schedules",
-        "get_availability", "check_availability", "find_slot",
-    ],
-    "book_appointment": [
-        "book_appointment", "create_appointment", "make_booking",
-        "book", "schedule_appointment",
-    ],
-    "list_appointments": [
-        "list_appointments", "my_appointments", "get_bookings",
-        "get_appointments", "query_appointments",
-    ],
-    "cancel_appointment": [
-        "cancel_appointment", "cancel_booking", "delete_booking",
-        "cancel", "revoke_appointment",
-    ],
-}
+_TOOL_ALIASES: Dict[str, List[str]] = DEFAULT_APPOINTMENT_TOOL_ALIASES
 
 
 class MCPAppointmentBackend:
@@ -60,17 +44,34 @@ class MCPAppointmentBackend:
         ... use doctors ...
     """
 
-    def __init__(self, pool, user_id: str):
+    def __init__(
+        self,
+        pool,
+        user_id: str,
+        *,
+        tool_mapper: MCPAppointmentToolMapper | None = None,
+        preferred_hospital_code: str = "",
+    ):
         self._pool = pool
         self._uid = user_id
         self._available = pool is not None and bool(user_id)
+        self._tool_mapper = tool_mapper or MCPAppointmentToolMapper()
+        self._preferred_hospital_code = str(preferred_hospital_code or "").strip().lower()
 
     # ------------------------------------------------------------------
     # Factory
     # ------------------------------------------------------------------
 
     @classmethod
-    def try_create(cls, state: dict, *, pool=None, user_id: str = "") -> Optional["MCPAppointmentBackend"]:
+    def try_create(
+        cls,
+        state: dict,
+        *,
+        pool=None,
+        user_id: str = "",
+        tool_mapper: MCPAppointmentToolMapper | None = None,
+        preferred_hospital_code: str = "",
+    ) -> Optional["MCPAppointmentBackend"]:
         """Try to build an MCP backend from graph state.  Returns None if
         MCP is not available for this user (not enabled, not logged in,
         no credentials bound, or no matching tools).
@@ -96,17 +97,21 @@ class MCPAppointmentBackend:
         # Verify at least one appointment-relevant tool exists
         try:
             tools = pool.get_tools_for_user(user_id)
-            has_appt_tool = any(
-                any(alias in t.name for alias in aliases)
-                for t in tools
-                for aliases in _TOOL_ALIASES.values()
-            )
-            if not has_appt_tool:
+            mapper = tool_mapper or MCPAppointmentToolMapper()
+            if not mapper.supports_any_action(
+                tools,
+                preferred_hospital_code=preferred_hospital_code,
+            ):
                 return None
         except Exception:
             return None
 
-        return cls(pool, user_id)
+        return cls(
+            pool,
+            user_id,
+            tool_mapper=mapper,
+            preferred_hospital_code=preferred_hospital_code,
+        )
 
     # ------------------------------------------------------------------
     # Public data operations
@@ -200,18 +205,21 @@ class MCPAppointmentBackend:
             logger.warning("Failed to get MCP tools: %s", e)
             return (None, "医院服务暂时不可用，请稍后重试。")
 
-        aliases = _TOOL_ALIASES.get(action, [action])
-        tool = None
-        for alias in aliases:
-            for t in tools:
-                if alias in getattr(t, "name", ""):
-                    tool = t
-                    break
-            if tool:
-                break
+        resolution = self._tool_mapper.find_tool(
+            tools,
+            action,
+            preferred_hospital_code=self._preferred_hospital_code,
+        )
+        tool = resolution.tool if resolution else None
 
         if tool is None:
             return (None, f"该医院暂不支持{action}操作，请确认服务配置。")
+        logger.debug(
+            "Resolved MCP appointment action %s to tool %s via %s",
+            action,
+            resolution.tool_name,
+            resolution.source,
+        )
 
         max_retries = 3
         retry_delays = [1.0, 2.0, 4.0]

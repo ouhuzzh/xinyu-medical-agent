@@ -213,6 +213,8 @@ MCP_ENABLED = os.environ.get("MCP_ENABLED", "true").lower() == "true"
 MCP_DEFAULT_TIMEOUT_SECONDS = float(os.environ.get("MCP_DEFAULT_TIMEOUT_SECONDS", "10"))
 MCP_HEALTH_CHECK_INTERVAL_SECONDS = int(os.environ.get("MCP_HEALTH_CHECK_INTERVAL_SECONDS", "300"))
 MCP_TOOL_NAMESPACE_SEPARATOR = os.environ.get("MCP_TOOL_NAMESPACE_SEPARATOR", "__")
+MCP_APPOINTMENT_TOOL_MAPPING = _load_json_mapping("MCP_APPOINTMENT_TOOL_MAPPING")
+MCP_HOSPITAL_ALIASES = _load_json_mapping("MCP_HOSPITAL_ALIASES")
 # Fernet key (44-char base64) for encrypting per-user hospital tokens. Generate with:
 #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 # If empty in development, falls back to a deterministic dev key (UNSAFE for production).

@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
 
 import api.auth as auth_module  # noqa: E402
+import api.routes.system as system_routes  # noqa: E402
 from api.app import create_app  # noqa: E402
 from api.dependencies import set_container_for_tests  # noqa: E402
 
@@ -349,6 +350,25 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(data["runtime_backends"]["schema_guard_backend"], "postgres")
         self.assertEqual(data["schema_health"]["status"], "ok")
         self.assertEqual(data["schema_health"]["expected_dimension"], 1024)
+
+    def test_system_status_returns_failed_payload_when_container_unavailable(self):
+        original_get_container = system_routes.get_container
+
+        def raise_container_error():
+            raise ValueError("missing model key")
+
+        system_routes.get_container = raise_container_error
+        try:
+            response = self.client.get("/api/system/status", headers=ADMIN_HEADERS)
+        finally:
+            system_routes.get_container = original_get_container
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["state"], "failed")
+        self.assertEqual(data["knowledge_base"]["status"], "failed")
+        self.assertIn("api_container", data["degraded_components"])
+        self.assertIn("missing model key", data["last_error"])
 
     def test_chat_history_returns_visible_messages_for_owner(self):
         response = self.client.get(

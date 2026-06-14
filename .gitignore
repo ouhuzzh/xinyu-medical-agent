@@ -25,6 +25,7 @@ htmlcov/
 node_modules/
 frontend/dist/
 .env
+.env.docker.local
 project/.env
 /config.json
 /events.jsonl
