@@ -2,6 +2,8 @@ import { AUTH_TOKEN_KEY } from "../constants/app";
 
 const configuredApiBaseUrl = import.meta.env.VITE_API_BASE_URL;
 const configuredApiAuthToken = import.meta.env.VITE_API_AUTH_TOKEN;
+const appEnv = import.meta.env.VITE_APP_ENV || "development";
+const demoAuthToken = appEnv === "production" ? "" : "demo-admin-token";
 const browserApiBaseUrl =
   typeof window !== "undefined" && window.location.hostname
     ? `${window.location.protocol}//${window.location.hostname}:8000`
@@ -14,9 +16,9 @@ export function initialApiBaseUrl() {
 
 export function initialAuthToken() {
   if (typeof window === "undefined") {
-    return configuredApiAuthToken || "demo-admin-token";
+    return configuredApiAuthToken || demoAuthToken;
   }
-  return localStorage.getItem(AUTH_TOKEN_KEY) || configuredApiAuthToken || "demo-admin-token";
+  return localStorage.getItem(AUTH_TOKEN_KEY) || configuredApiAuthToken || demoAuthToken;
 }
 
 function buildHeaders(authToken, headers = {}) {

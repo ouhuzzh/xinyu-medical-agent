@@ -20,6 +20,12 @@ def health(
     return {"ok": True, "user_id": current_user.user_id, "role": current_user.role}
 
 
+@router.get("/api/healthz")
+def healthz(request: Request):
+    request.state.route_type = "health"
+    return {"ok": True}
+
+
 @router.get("/api/system/status", response_model=SystemStatusResponse)
 def system_status(
     request: Request,

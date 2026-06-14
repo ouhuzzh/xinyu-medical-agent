@@ -1,26 +1,43 @@
 services:
+  caddy:
+    image: caddy:2.10-alpine
+    container_name: medical-agent-caddy
+    depends_on:
+      frontend:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+
   postgres:
     image: pgvector/pgvector:pg16
     container_name: medical-agent-postgres
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-ai_companion}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docker-postgres-password}
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-ai_companion}"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     container_name: medical-agent-redis
-    ports:
-      - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -28,6 +45,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
   api:
     build:
@@ -42,25 +60,24 @@ services:
       redis:
         condition: service_healthy
     environment:
-      APP_ENV: ${APP_ENV:-development}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-please}
-      API_AUTH_TOKENS_JSON: ${API_AUTH_TOKENS_JSON:-}
-      API_HEALTHCHECK_TOKEN: ${API_HEALTHCHECK_TOKEN:-demo-admin-token}
-      API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173,http://127.0.0.1:5173}
+      APP_ENV: production
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      API_AUTH_TOKENS_JSON: ${API_AUTH_TOKENS_JSON:-{}}
+      API_CORS_ORIGINS: ${API_CORS_ORIGINS}
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
-      POSTGRES_DB: ${POSTGRES_DB:-ai_companion}
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docker-postgres-password}
-      REDIS_ENABLED: ${REDIS_ENABLED:-true}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_ENABLED: "true"
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_DB: ${REDIS_DB:-0}
-      ACTIVE_LLM_PROVIDER: ${ACTIVE_LLM_PROVIDER:-deepseek}
-      ACTIVE_EMBEDDING_PROVIDER: ${ACTIVE_EMBEDDING_PROVIDER:-openai_compatible}
-      LLM_MODEL: ${LLM_MODEL:-Qwen/Qwen3-32B}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
-      VECTOR_DIMENSION: ${VECTOR_DIMENSION:-1024}
+      ACTIVE_LLM_PROVIDER: ${ACTIVE_LLM_PROVIDER}
+      ACTIVE_EMBEDDING_PROVIDER: ${ACTIVE_EMBEDDING_PROVIDER}
+      LLM_MODEL: ${LLM_MODEL}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL}
+      VECTOR_DIMENSION: ${VECTOR_DIMENSION}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -69,45 +86,45 @@ services:
       RERANK_API_KEY: ${RERANK_API_KEY:-}
       RERANK_BASE_URL: ${RERANK_BASE_URL:-https://api.siliconflow.cn/v1/rerank}
       MCP_ENABLED: ${MCP_ENABLED:-false}
-      MCP_TOKEN_ENCRYPTION_KEY: ${MCP_TOKEN_ENCRYPTION_KEY:-}
-      MCP_TOKEN_ENCRYPTION_KEYS: ${MCP_TOKEN_ENCRYPTION_KEYS:-}
-      MCP_APPOINTMENT_TOOL_MAPPING: ${MCP_APPOINTMENT_TOOL_MAPPING:-}
-      MCP_HOSPITAL_ALIASES: ${MCP_HOSPITAL_ALIASES:-}
+      MCP_TOKEN_ENCRYPTION_KEYS: ${MCP_TOKEN_ENCRYPTION_KEYS}
+      MCP_APPOINTMENT_TOOL_MAPPING: ${MCP_APPOINTMENT_TOOL_MAPPING:-{}}
+      MCP_HOSPITAL_ALIASES: ${MCP_HOSPITAL_ALIASES:-{}}
       AUTO_BOOTSTRAP_KNOWLEDGE_BASE: ${AUTO_BOOTSTRAP_KNOWLEDGE_BASE:-false}
       ENABLE_KB_SYNC_SCHEDULER: ${ENABLE_KB_SYNC_SCHEDULER:-false}
+      CHECKPOINT_SIGNING_KEY: ${CHECKPOINT_SIGNING_KEY}
       LANGGRAPH_CHECKPOINT_PATH: /app/runtime/langgraph_checkpoints.pkl
-    ports:
-      - "8000:8000"
     volumes:
       - ./runtime:/app/runtime
-      - ./markdown_docs:/app/markdown_docs
+      - ./markdown_docs:/app/markdown_docs:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/healthz >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 20
       start_period: 30s
+    restart: unless-stopped
 
   frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
-        VITE_API_AUTH_TOKEN: ${VITE_API_AUTH_TOKEN:-demo-admin-token}
-        VITE_APP_ENV: ${VITE_APP_ENV:-development}
+        VITE_API_BASE_URL: ${PUBLIC_API_BASE_URL}
+        VITE_API_AUTH_TOKEN: ""
+        VITE_APP_ENV: production
     container_name: medical-agent-frontend
     depends_on:
       api:
         condition: service_healthy
-    ports:
-      - "8080:80"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
 
 volumes:
   postgres_data:
   redis_data:
+  caddy_data:
+  caddy_config:

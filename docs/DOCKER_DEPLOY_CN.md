@@ -82,3 +82,62 @@ docker compose down -v
 - 明确 MCP 医院服务地址、工具 mapping、医院 alias 审核流程
 
 当前 compose 更适合“先跑起来用一用”，不是最终生产拓扑。
+
+## 6. 生产部署骨架
+
+生产环境使用单独的 compose 文件：
+
+```bash
+cp .env.docker.prod.example .env.docker.prod.local
+```
+
+编辑 `.env.docker.prod.local`，至少替换：
+
+```text
+APP_DOMAIN=你的前端域名
+API_DOMAIN=你的 API 域名
+PUBLIC_API_BASE_URL=https://你的 API 域名
+JWT_SECRET_KEY=强随机字符串
+CHECKPOINT_SIGNING_KEY=另一个强随机字符串
+POSTGRES_PASSWORD=强数据库密码
+MCP_TOKEN_ENCRYPTION_KEYS=生产 Fernet key
+DEEPSEEK_API_KEY=真实 key
+OPENAI_API_KEY=真实 key
+```
+
+启动生产拓扑：
+
+```bash
+docker compose --env-file .env.docker.prod.local -f docker-compose.prod.yml up --build -d
+```
+
+生产拓扑和本机拓扑的区别：
+
+- 只暴露 `80/443`，由 Caddy 自动处理 HTTPS。
+- PostgreSQL 和 Redis 不映射到公网端口。
+- 前端生产构建不再默认使用 `demo-admin-token`。
+- API healthcheck 使用公开的 `/api/healthz`，不依赖 demo token。
+- 后端镜像默认不安装 `torch/sentence-transformers/transformers`；只有本地 HuggingFace embedding 才设置 `INSTALL_LOCAL_ML=true`。
+
+建议域名：
+
+```text
+https://medical.example.com      前端
+https://api.medical.example.com  后端 API
+```
+
+## 7. 数据库备份
+
+生产服务器上可以执行：
+
+```bash
+sh scripts/backup_postgres.sh .env.docker.prod.local
+```
+
+备份会写入：
+
+```text
+backups/postgres/postgres-YYYYMMDD-HHMMSS.sql.gz
+```
+
+`backups/` 已加入 `.gitignore`，不要把备份文件提交到仓库。第一次正式上线前，务必做一次恢复演练。

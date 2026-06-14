@@ -169,9 +169,14 @@ def _create_embedding_model(provider=None):
         )
 
     if provider_name == "huggingface_local":
-        from langchain_huggingface import HuggingFaceEmbeddings
-
-        return HuggingFaceEmbeddings(model_name=config.EMBEDDING_MODEL)
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+            return HuggingFaceEmbeddings(model_name=config.EMBEDDING_MODEL)
+        except ImportError as exc:
+            raise RuntimeError(
+                "Embedding provider `huggingface_local` requires local ML dependencies. "
+                "Install the full requirements or build Docker with INSTALL_LOCAL_ML=true."
+            ) from exc
 
     if provider_name == "ollama":
         from langchain_ollama import OllamaEmbeddings

@@ -20,9 +20,10 @@ parent_store
 output
 reports
 tmp
+backups
 
 .env
 project/.env
 .env.docker
 .env.docker.local
-
+.env.docker.prod.local

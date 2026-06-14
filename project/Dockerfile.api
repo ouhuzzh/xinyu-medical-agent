@@ -11,9 +11,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+ARG INSTALL_LOCAL_ML=false
+
 COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+    && if [ "$INSTALL_LOCAL_ML" = "true" ]; then \
+        pip install --no-cache-dir -r requirements.txt; \
+    else \
+        grep -Ev '^(sentence-transformers|torch|transformers)==' requirements.txt > /tmp/requirements-runtime.txt; \
+        pip install --no-cache-dir -r /tmp/requirements-runtime.txt; \
+    fi
 
 COPY project ./project
 
@@ -22,4 +29,3 @@ WORKDIR /app/project
 EXPOSE 8000
 
 CMD ["uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8000"]
-

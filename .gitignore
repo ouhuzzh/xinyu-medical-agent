@@ -14,6 +14,7 @@ parent_store/
 output/
 .playwright-cli/
 reports/
+backups/
 __pycache__/
 *.py[cod]
 *.pkl
@@ -26,6 +27,7 @@ node_modules/
 frontend/dist/
 .env
 .env.docker.local
+.env.docker.prod.local
 project/.env
 /config.json
 /events.jsonl

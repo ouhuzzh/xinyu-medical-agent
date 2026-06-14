@@ -301,6 +301,12 @@ class ApiAppTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    def test_healthz_is_public_for_container_healthchecks(self):
+        response = self.client.get("/api/healthz")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"ok": True})
+
     def test_invalid_bearer_token_is_rejected(self):
         response = self.client.get(
             "/api/system/status",
