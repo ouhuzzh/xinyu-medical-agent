@@ -8,7 +8,13 @@ from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "project"))
 
-from memory.user_memory_store import UserMemoryStore  # noqa: E402
+from memory.user_memory_store import (  # noqa: E402
+    UserMemoryStore,
+    _PII_MARKER,
+    _PII_SENTINEL,
+    _classify_stored_content,
+    _decrypt_content,
+)
 
 
 class TestUserMemoryStoreRecencyScore(unittest.TestCase):
@@ -82,6 +88,84 @@ class TestUserMemoryStoreStatusInfo(unittest.TestCase):
             info = store.status_info()
             self.assertEqual(info["mode"], "importance_only")
             self.assertTrue(info["degraded"])
+
+
+class TestUserMemoryStoreEncryptionHelpers(unittest.TestCase):
+    def test_decrypt_content_handles_sentinel_and_invalid_marker_without_exception(self):
+        self.assertEqual(_decrypt_content(_PII_MARKER + _PII_SENTINEL), "[decrypt-failed]")
+        self.assertEqual(_decrypt_content(_PII_MARKER + "not-a-token"), "[decrypt-failed]")
+
+    def test_classify_stored_content_identifies_plaintext_and_invalid_format(self):
+        self.assertEqual(_classify_stored_content("旧的明文记忆"), "plaintext")
+        self.assertEqual(_classify_stored_content(_PII_MARKER + _PII_SENTINEL), "encrypted_sentinel")
+        self.assertEqual(_classify_stored_content(_PII_MARKER + "broken-data"), "encrypted_invalid_format")
+
+    def test_inspect_encryption_health_counts_categories(self):
+        with patch("memory.user_memory_store.config") as mock_config:
+            mock_config.POSTGRES_HOST = "localhost"
+            mock_config.POSTGRES_PORT = 5432
+            mock_config.POSTGRES_DB = "test"
+            mock_config.POSTGRES_USER = "test"
+            mock_config.POSTGRES_PASSWORD = ""
+            store = UserMemoryStore()
+
+            rows = [
+                (1, "u1", "旧的明文记忆"),
+                (2, "u1", _PII_MARKER + _PII_SENTINEL),
+                (3, "u2", _PII_MARKER + "broken-data"),
+            ]
+            mock_conn = MagicMock()
+            mock_cursor = MagicMock()
+            mock_cursor.fetchall.return_value = rows
+            mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+            mock_conn.__exit__ = MagicMock(return_value=False)
+            mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+            mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+            with patch.object(store, "_connect", return_value=mock_conn):
+                report = store.inspect_encryption_health()
+
+            self.assertEqual(report["counts"]["total"], 3)
+            self.assertEqual(report["counts"]["plaintext"], 1)
+            self.assertEqual(report["counts"]["encrypted_sentinel"], 1)
+            self.assertEqual(report["counts"]["encrypted_invalid_format"], 1)
+
+    def test_repair_encryption_records_plans_plaintext_and_invalid_repairs(self):
+        with patch("memory.user_memory_store.config") as mock_config:
+            mock_config.POSTGRES_HOST = "localhost"
+            mock_config.POSTGRES_PORT = 5432
+            mock_config.POSTGRES_DB = "test"
+            mock_config.POSTGRES_USER = "test"
+            mock_config.POSTGRES_PASSWORD = ""
+            mock_config.USER_MEMORY_ENCRYPT_PII = True
+            store = UserMemoryStore()
+
+            rows = [
+                (1, "旧的明文记忆"),
+                (2, _PII_MARKER + "broken-data"),
+                (3, _PII_MARKER + _PII_SENTINEL),
+            ]
+            mock_conn = MagicMock()
+            mock_cursor = MagicMock()
+            mock_cursor.fetchall.return_value = rows
+            mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+            mock_conn.__exit__ = MagicMock(return_value=False)
+            mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+            mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
+
+            with patch.object(store, "_connect", return_value=mock_conn):
+                with patch.object(store, "inspect_encryption_health", return_value={"counts": {}, "samples": []}):
+                    with patch("config.MCP_TOKEN_ENCRYPTION_KEYS", ""), \
+                         patch("config.MCP_TOKEN_ENCRYPTION_KEY", "9qNwD0nSS3MqQb5d9fD3YFPoY7_nN0slVdAy8W6kvVE="):
+                        report = store.repair_encryption_records(
+                            apply=False,
+                            reencrypt_plaintext=True,
+                            rewrite_invalid_format=True,
+                        )
+
+            self.assertEqual(report["planned_updates"], 2)
+            self.assertEqual(report["by_category"]["plaintext"], 1)
+            self.assertEqual(report["by_category"]["encrypted_invalid_format"], 1)
 
 
 class TestUserMemoryStoreSaveMemory(unittest.TestCase):

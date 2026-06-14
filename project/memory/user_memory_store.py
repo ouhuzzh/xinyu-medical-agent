@@ -51,14 +51,36 @@ def _encrypt_content(text: str) -> str:
 _PII_SENTINEL = "[encrypt-failed]"
 
 
+def _classify_stored_content(stored: str) -> str:
+    if not stored:
+        return "empty"
+    if not stored.startswith(_PII_MARKER):
+        return "plaintext"
+
+    body = stored[len(_PII_MARKER):]
+    if body == _PII_SENTINEL:
+        return "encrypted_sentinel"
+
+    try:
+        from mcp_integration.token_crypto import looks_like_fernet_token, try_decrypt_pii
+    except Exception:
+        return "encrypted_unreadable"
+
+    if not looks_like_fernet_token(body):
+        return "encrypted_invalid_format"
+    return "encrypted_valid" if try_decrypt_pii(body) else "encrypted_unreadable"
+
+
 def _decrypt_content(stored: str) -> str:
     """Decrypt content; transparently returns plaintext for legacy rows."""
-    if not stored or not stored.startswith(_PII_MARKER):
+    category = _classify_stored_content(stored or "")
+    if category in {"empty", "plaintext"}:
         return stored or ""
+    if category in {"encrypted_sentinel", "encrypted_invalid_format", "encrypted_unreadable"}:
+        return "[decrypt-failed]"
     try:
-        from mcp_integration.token_crypto import decrypt_pii
-        decrypted = decrypt_pii(stored[len(_PII_MARKER):])
-        # decrypt_pii returns "" on failure — keep the marker visible for ops debugging
+        from mcp_integration.token_crypto import try_decrypt_pii
+        decrypted = try_decrypt_pii(stored[len(_PII_MARKER):])
         return decrypted if decrypted else "[decrypt-failed]"
     except Exception:
         logger.warning("PII decryption failed for stored memory.", exc_info=True)
@@ -318,6 +340,114 @@ class UserMemoryStore:
             "degraded": True,
             "encrypted_at_rest": encryption_on,
             "message": "Embedding model unavailable; falling back to importance-only retrieval.",
+        }
+
+    def inspect_encryption_health(self, sample_limit: int = 20) -> Dict[str, Any]:
+        """Inspect stored memory encryption health without mutating data."""
+        counts = {
+            "total": 0,
+            "plaintext": 0,
+            "encrypted_valid": 0,
+            "encrypted_sentinel": 0,
+            "encrypted_invalid_format": 0,
+            "encrypted_unreadable": 0,
+            "empty": 0,
+        }
+        samples: list[dict[str, Any]] = []
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, user_id, content
+                    FROM user_memories
+                    ORDER BY id
+                    """
+                )
+                rows = cur.fetchall()
+
+        for memory_id, user_id, content in rows:
+            category = _classify_stored_content(content or "")
+            counts["total"] += 1
+            counts[category] = counts.get(category, 0) + 1
+            if category in {"plaintext", "encrypted_invalid_format", "encrypted_unreadable"} and len(samples) < sample_limit:
+                samples.append(
+                    {
+                        "id": memory_id,
+                        "user_id": user_id,
+                        "category": category,
+                    }
+                )
+
+        return {"counts": counts, "samples": samples}
+
+    def repair_encryption_records(
+        self,
+        *,
+        apply: bool = False,
+        reencrypt_plaintext: bool = False,
+        rewrite_invalid_format: bool = True,
+        rewrite_unreadable: bool = False,
+        sample_limit: int = 20,
+    ) -> Dict[str, Any]:
+        """Repair legacy plaintext or bad encrypted rows in user_memories."""
+        inspection = self.inspect_encryption_health(sample_limit=sample_limit)
+        planned_updates: list[tuple[int, str, str]] = []
+
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, content
+                    FROM user_memories
+                    ORDER BY id
+                    """
+                )
+                rows = cur.fetchall()
+
+            for memory_id, content in rows:
+                stored = content or ""
+                category = _classify_stored_content(stored)
+                replacement = ""
+
+                if category == "plaintext" and reencrypt_plaintext and config.USER_MEMORY_ENCRYPT_PII and stored:
+                    replacement = _encrypt_content(stored)
+                elif category == "encrypted_invalid_format" and rewrite_invalid_format:
+                    replacement = _PII_MARKER + _PII_SENTINEL
+                elif category == "encrypted_unreadable" and rewrite_unreadable:
+                    replacement = _PII_MARKER + _PII_SENTINEL
+
+                if replacement and replacement != stored:
+                    planned_updates.append((memory_id, replacement, category))
+
+            if apply and planned_updates:
+                with conn.cursor() as cur:
+                    for memory_id, replacement, _category in planned_updates:
+                        cur.execute(
+                            """
+                            UPDATE user_memories
+                            SET content = %s,
+                                updated_at = NOW()
+                            WHERE id = %s
+                            """,
+                            (replacement, memory_id),
+                        )
+                conn.commit()
+
+        categories: dict[str, int] = {}
+        preview: list[dict[str, Any]] = []
+        for memory_id, _replacement, category in planned_updates:
+            categories[category] = categories.get(category, 0) + 1
+            if len(preview) < sample_limit:
+                preview.append({"id": memory_id, "category": category})
+
+        return {
+            "inspection": inspection,
+            "apply": apply,
+            "planned_updates": len(planned_updates),
+            "updated": len(planned_updates) if apply else 0,
+            "by_category": categories,
+            "preview": preview,
         }
 
     # ------------------------------------------------------------------

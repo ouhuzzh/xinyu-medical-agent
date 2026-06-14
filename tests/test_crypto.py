@@ -41,6 +41,14 @@ class TokenCryptoTests(unittest.TestCase):
             self.assertEqual(self.tc.encrypt_token(""), "")
             self.assertEqual(self.tc.decrypt_token(""), "")
 
+    def test_looks_like_fernet_token(self):
+        key = _new_key()
+        with patch("config.MCP_TOKEN_ENCRYPTION_KEYS", ""), \
+             patch("config.MCP_TOKEN_ENCRYPTION_KEY", key):
+            ciphertext = self.tc.encrypt_token("hospital-secret-abc")
+            self.assertTrue(self.tc.looks_like_fernet_token(ciphertext))
+            self.assertFalse(self.tc.looks_like_fernet_token("not-a-real-token"))
+
     def test_decrypt_unknown_ciphertext_returns_empty(self):
         with patch("config.MCP_TOKEN_ENCRYPTION_KEYS", ""), \
              patch("config.MCP_TOKEN_ENCRYPTION_KEY", _new_key()):

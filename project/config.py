@@ -158,6 +158,7 @@ LOGIN_LOCKOUT_WINDOW_SECONDS = int(os.environ.get("LOGIN_LOCKOUT_WINDOW_SECONDS"
 # --- JWT Authentication ---
 _INSECURE_JWT_DEFAULT = "change-me-in-production-please"
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", _INSECURE_JWT_DEFAULT if APP_ENV == "development" else "")
+CHECKPOINT_SIGNING_KEY = os.environ.get("CHECKPOINT_SIGNING_KEY", "")
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 24h
 JWT_REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "30"))

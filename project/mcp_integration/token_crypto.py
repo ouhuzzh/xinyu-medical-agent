@@ -26,6 +26,7 @@ import base64
 import os
 import hashlib
 import logging
+import re
 import threading
 from typing import List
 
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 _crypto_cache = None
 _crypto_lock = threading.Lock()
+_FERNET_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]+=*")
 
 
 def _derive_dev_key() -> bytes:
@@ -104,6 +106,15 @@ def _reset_cache_for_tests():
         _crypto_cache = None
 
 
+def looks_like_fernet_token(value: str) -> bool:
+    token = str(value or "").strip()
+    return (
+        len(token) >= 80
+        and token.startswith("gAAAAA")
+        and _FERNET_TOKEN_RE.fullmatch(token) is not None
+    )
+
+
 def encrypt_token(plain_token: str) -> str:
     """Encrypt a plaintext token.  Returns a base64 ciphertext string."""
     if not plain_token:
@@ -111,16 +122,26 @@ def encrypt_token(plain_token: str) -> str:
     return _get_crypto().encrypt(plain_token.encode("utf-8")).decode("utf-8")
 
 
-def decrypt_token(encrypted_token: str) -> str:
-    """Decrypt a ciphertext token.  Returns '' on any failure."""
+def _decrypt_token(encrypted_token: str, *, log_failures: bool) -> str:
     if not encrypted_token:
         return ""
     try:
         return _get_crypto().decrypt(encrypted_token.encode("utf-8")).decode("utf-8")
     except Exception:
-        logger.warning("Failed to decrypt token; returning empty result.")
-        logger.debug("Token decryption failure details", exc_info=True)
+        if log_failures:
+            logger.warning("Failed to decrypt token; returning empty result.")
+            logger.debug("Token decryption failure details", exc_info=True)
         return ""
+
+
+def decrypt_token(encrypted_token: str) -> str:
+    """Decrypt a ciphertext token.  Returns '' on any failure."""
+    return _decrypt_token(encrypted_token, log_failures=True)
+
+
+def try_decrypt_token(encrypted_token: str) -> str:
+    """Decrypt a ciphertext token without emitting warning logs on failure."""
+    return _decrypt_token(encrypted_token, log_failures=False)
 
 
 # --- PII helpers (medical memories, user-private text) ---
@@ -133,6 +154,10 @@ def encrypt_pii(plaintext: str) -> str:
 
 def decrypt_pii(ciphertext: str) -> str:
     return decrypt_token(ciphertext)
+
+
+def try_decrypt_pii(ciphertext: str) -> str:
+    return try_decrypt_token(ciphertext)
 
 
 def mask_token(plain_or_encrypted: str, prefix_len: int = 4, suffix_len: int = 4) -> str:

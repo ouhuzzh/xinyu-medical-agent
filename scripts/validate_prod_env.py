@@ -7,9 +7,14 @@ Usage:
 from __future__ import annotations
 
 import json
-import re
 import sys
 from pathlib import Path
+
+PROJECT_DIR = Path(__file__).resolve().parents[1] / "project"
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
+from core.runtime_security import collect_security_issues_from_settings
 
 
 PLACEHOLDERS = {
@@ -36,6 +41,7 @@ REQUIRED = (
     "EMBEDDING_MODEL",
     "VECTOR_DIMENSION",
     "MCP_TOKEN_ENCRYPTION_KEYS",
+    "USER_MEMORY_ENCRYPT_PII",
 )
 
 
@@ -53,13 +59,6 @@ def _load_env(path: Path) -> dict[str, str]:
 def _is_placeholder(value: str) -> bool:
     lowered = value.strip().lower()
     return lowered in PLACEHOLDERS or "example.com" in lowered or lowered.startswith("replace-")
-
-
-def _looks_like_fernet(value: str) -> bool:
-    keys = [item.strip() for item in value.split(",") if item.strip()]
-    return bool(keys) and all(re.fullmatch(r"[A-Za-z0-9_-]{43}=", key) for key in keys)
-
-
 def validate(env: dict[str, str]) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -84,8 +83,10 @@ def validate(env: dict[str, str]) -> tuple[list[str], list[str]]:
         errors.append("CHECKPOINT_SIGNING_KEY should be at least 32 characters.")
     if len(env.get("POSTGRES_PASSWORD", "")) < 16:
         errors.append("POSTGRES_PASSWORD should be at least 16 characters.")
-    if not _looks_like_fernet(env.get("MCP_TOKEN_ENCRYPTION_KEYS", "")):
-        errors.append("MCP_TOKEN_ENCRYPTION_KEYS must contain one or more Fernet keys.")
+
+    security_errors, security_warnings = collect_security_issues_from_settings(env)
+    errors.extend(item for item in security_errors if item not in errors)
+    warnings.extend(item for item in security_warnings if item not in warnings)
 
     api_tokens = env.get("API_AUTH_TOKENS_JSON", "{}")
     try:
