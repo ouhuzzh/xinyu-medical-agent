@@ -531,11 +531,11 @@ body::after {
    Hospital detail polish
    ------------------------------------------------------------- */
 .page:has(.page-body--hospitals) { background: linear-gradient(135deg, rgba(240, 253, 250, 0.40), rgba(238, 242, 255, 0.34)); }
-.page-header { position: relative; display: flex; align-items: flex-start; justify-content: center; min-height: 132px; padding: 34px 36px 24px; border-bottom: 1px solid rgba(255, 255, 255, 0.56); background: linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0.06)); }
-.page-header::after { content: "医院 MCP 连接 · 安全凭证管理"; position: absolute; left: 50%; top: 86px; transform: translateX(-50%); width: max-content; max-width: calc(100% - 160px); color: var(--slate-500); font-family: var(--font-sans); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-align: center; }
-.page-header h2 { margin: 0; text-align: center; font-family: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", var(--font-sans) !important; font-size: clamp(34px, 4.8vw, 52px); font-weight: 900 !important; line-height: 1; letter-spacing: -0.07em; background: linear-gradient(135deg, #061826 0%, #0d9488 48%, #4f46e5 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 18px 34px rgba(13, 148, 136, 0.14); }
-.page-header .icon-button { position: absolute; left: 28px; top: 26px; width: 42px; height: 42px; border-radius: 14px !important; }
-.page-header__badge { position: absolute; right: 36px; top: 32px; padding: 6px 12px !important; color: var(--aurora-teal) !important; }
+.page-header { position: relative; display: flex; align-items: flex-start; gap: 14px; padding: 24px 28px 18px; border-bottom: 1px solid rgba(255, 255, 255, 0.56); background: linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.05)); }
+.page-header::after { content: "医院 MCP 连接 · 安全凭证管理"; position: absolute; left: 84px; top: 58px; color: var(--slate-500); font-family: var(--font-sans); font-size: 12px; font-weight: 600; letter-spacing: 0.02em; }
+.page-header h2 { margin: 0; font-family: var(--font-display) !important; font-size: 28px; font-weight: 600 !important; line-height: 1.1; letter-spacing: -0.025em; background: linear-gradient(135deg, #0f172a, #0d9488 58%, #4f46e5); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+.page-header .icon-button { width: 42px; height: 42px; border-radius: 14px !important; }
+.page-header__badge { margin-left: auto; padding: 6px 12px !important; color: var(--aurora-teal) !important; }
 .page-body--hospitals { padding-top: 18px !important; scrollbar-width: thin; scrollbar-color: rgba(20, 184, 166, 0.32) transparent; }
 .hospital-grid { align-items: stretch; gap: 22px !important; max-width: 980px !important; margin: 0 auto !important; }
 .hospital-card { min-height: 168px; border-radius: 22px !important; padding: 20px 24px 18px !important; }
@@ -664,9 +664,9 @@ body::after {
    Responsive safeguards
    ------------------------------------------------------------- */
 @media (max-width: 920px) {
-  .page-header { min-height: 120px; padding: 28px 20px 18px; }
-  .page-header h2 { font-size: 36px; }
-  .page-header::after { top: 76px; }
+  .page-header { padding: 18px 16px; }
+  .page-header h2 { font-size: 26px; }
+  .page-header::after { left: 72px; top: 52px; }
   .hospital-grid { max-width: 100% !important; }
 }
 
@@ -694,11 +694,11 @@ body::after {
   .login-card__brand h1 { font-size: 24px !important; }
   .documents-shell { padding: 18px 14px !important; }
   .documents-shell .documents-header p { font-size: 13px; }
-  .page-header { min-height: 118px; padding: 24px 16px 16px; }
-  .page-header h2 { font-size: 32px; }
-  .page-header::after { top: 70px; max-width: calc(100% - 96px); font-size: 11px; letter-spacing: 0.04em; }
-  .page-header .icon-button { left: 14px; top: 18px; width: 38px; height: 38px; }
-  .page-header__badge { right: 16px; top: 22px; }
+  .page-header { gap: 10px; padding: 16px 14px 28px; }
+  .page-header h2 { font-size: 24px; }
+  .page-header::after { left: 62px; top: 48px; max-width: calc(100% - 92px); font-size: 11px; }
+  .page-header .icon-button { width: 38px; height: 38px; }
+  .page-header__badge { padding: 5px 10px !important; }
   .hospital-grid { grid-template-columns: 1fr !important; gap: 16px !important; }
   .hospital-card { min-height: 150px; padding: 18px !important; }
   .hospital-card__actions,
