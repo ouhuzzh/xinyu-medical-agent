@@ -122,6 +122,14 @@ python scripts\seed_mock_hospital.py
 
 显示 `[OK] 北京协和医院 registered` 即成功。
 
+如果你使用 Docker 版后端，mock MCP 服务跑在宿主机上，注册时要用：
+
+```bash
+python scripts\seed_mock_hospital.py --docker-desktop
+```
+
+这样 API 容器会通过 `host.docker.internal` 访问宿主机上的 mock MCP 服务。
+
 ---
 
 ## 三、使用流程
@@ -273,6 +281,12 @@ curl http://127.0.0.1:8000/api/health
 确认运行了种子脚本：
 ```bash
 python scripts\seed_mock_hospital.py
+```
+
+Docker 版后端使用：
+
+```bash
+python scripts\seed_mock_hospital.py --docker-desktop
 ```
 
 ### Q5：starlette 版本冲突

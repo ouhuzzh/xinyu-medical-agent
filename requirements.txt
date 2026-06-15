@@ -47,6 +47,7 @@ jupyter_client==8.8.0
 jupyter_core==5.9.1
 langchain==1.2.3
 langchain-core==1.2.7
+langchain-mcp-adapters==0.2.2
 langchain-huggingface==1.2.0
 langchain-openai==1.0.1
 langchain-ollama==1.0.1

@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+import config
 from api.auth import AuthenticatedUser, require_current_user, _client_ip
 from api.dependencies import get_container
 from pydantic import BaseModel, Field
@@ -146,14 +147,20 @@ def test_connection(
     current_user: AuthenticatedUser = Depends(require_current_user),
 ):
     request.state.route_type = "hospitals_credentials_test"
+    if not config.MCP_ENABLED:
+        return {"ok": False, "error": "MCP 未启用，请先开启 MCP_ENABLED。"}
+
     container = get_container()
     rag = container.rag_system
 
     # Just trigger a pool rebuild and see if it succeeds
     rag.user_mcp_pool.invalidate(current_user.user_id)
     _ = rag.user_mcp_pool.get_tools_for_user(current_user.user_id)
+    connected = rag.user_mcp_pool.get_connected_hospitals(current_user.user_id)
     failed = rag.user_mcp_pool.get_failed_hospitals(current_user.user_id)
 
+    if payload.hospital_code in connected:
+        return {"ok": True}
     if payload.hospital_code in failed:
         return {"ok": False, "error": failed[payload.hospital_code]}
-    return {"ok": True}
+    return {"ok": False, "error": "该医院尚未成功连接，请确认已绑定凭证且 MCP 服务可用。"}

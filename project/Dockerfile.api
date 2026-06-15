@@ -21,6 +21,8 @@ RUN pip install --no-cache-dir --upgrade pip \
         pip install --no-cache-dir -r requirements-ml-local.txt; \
     fi
 
+RUN pip install --no-cache-dir langchain-mcp-adapters==0.2.2
+
 COPY project ./project
 
 WORKDIR /app/project

@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
 
 import api.auth as auth_module  # noqa: E402
 import api.routes.system as system_routes  # noqa: E402
+import config  # noqa: E402
 from api.app import create_app  # noqa: E402
 from api.dependencies import set_container_for_tests  # noqa: E402
 
@@ -39,6 +40,8 @@ class FakeRagSystem:
         self.session_memory = FakeSessionMemory()
         self.cleared = []
         self.user_mcp_pool = self
+        self.connected_hospitals = []
+        self.failed_hospitals = {}
 
     def get_system_status(self):
         return {
@@ -89,6 +92,19 @@ class FakeRagSystem:
 
     def backend_name(self):
         return "in_process"
+
+    def invalidate(self, user_id):
+        self.invalidated_user_id = user_id
+
+    def get_tools_for_user(self, user_id):
+        self.loaded_tools_user_id = user_id
+        return []
+
+    def get_connected_hospitals(self, user_id):
+        return list(self.connected_hospitals)
+
+    def get_failed_hospitals(self, user_id):
+        return dict(self.failed_hospitals)
 
 
 class FakeChatInterface:
@@ -514,6 +530,46 @@ class ApiAppTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 409)
+
+    def test_hospital_connection_reports_disabled_mcp(self):
+        original = config.MCP_ENABLED
+        config.MCP_ENABLED = False
+        try:
+            response = self.client.post(
+                "/api/hospitals/credentials/test",
+                json={"hospital_code": "xiehe"},
+                headers=USER_HEADERS,
+            )
+        finally:
+            config.MCP_ENABLED = original
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["ok"], False)
+        self.assertIn("MCP 未启用", response.json()["error"])
+
+    def test_hospital_connection_requires_requested_hospital_connected(self):
+        original = config.MCP_ENABLED
+        config.MCP_ENABLED = True
+        self.container.rag_system.connected_hospitals = ["xiehe"]
+        try:
+            connected_response = self.client.post(
+                "/api/hospitals/credentials/test",
+                json={"hospital_code": "xiehe"},
+                headers=USER_HEADERS,
+            )
+            unbound_response = self.client.post(
+                "/api/hospitals/credentials/test",
+                json={"hospital_code": "renji"},
+                headers=USER_HEADERS,
+            )
+        finally:
+            config.MCP_ENABLED = original
+
+        self.assertEqual(connected_response.status_code, 200)
+        self.assertEqual(connected_response.json(), {"ok": True})
+        self.assertEqual(unbound_response.status_code, 200)
+        self.assertEqual(unbound_response.json()["ok"], False)
+        self.assertIn("尚未成功连接", unbound_response.json()["error"])
 
 
 if __name__ == "__main__":
