@@ -18,9 +18,9 @@
 
 </div>
 
-![Current React/Vite product demo](assets/demo.gif)
+![Aurora Glassmorphism UI](assets/demo.png)
 
-> The demo shows the React/Vite user app: chat workspace, Documents page, hospital binding, theme toggle, message search, and chat export. Gradio is kept as an admin/debug console.
+> The React/Vite frontend features an **Aurora glassmorphism design system** — teal/indigo gradients, refined typography, and medical-grade visual clarity across Chat, Documents, and Hospital Binding pages.
 
 ## Key Metrics
 
@@ -54,6 +54,7 @@ Most RAG demos answer one question from a few documents. This project is closer 
 | Appointment Skill | Discovery → Preview → Confirm; code-gated state transitions (idempotency + state machine), not LLM judgment |
 | Knowledge base | Local document upload, official source sync (NHC/WHO), content-hash update detection, soft delete |
 | Security | High-risk symptom alerts, PII column-level encryption, JWT auth + login lockout, rate limiting, audit log |
+| Frontend | Aurora glassmorphism UI — responsive, accessible, dark-mode, PWA-ready |
 
 ## Architecture
 
@@ -116,7 +117,7 @@ Assistant: Shows available departments or asks for symptoms.
 User: 呼吸内科
 Assistant: Lists available doctors and slots.
 User: 我要预约张医生 2026-04-18 下午
-Assistant: Creates a preview and asks for “确认预约”.
+Assistant: Creates a preview and asks for "确认预约".
 User: 确认预约
 Assistant: Executes the booking once, with idempotency protection.
 ```
@@ -318,20 +319,22 @@ project/
   api/                       # FastAPI app, route modules, SSE helpers, DTOs
   core/                      # bootstrap, chat interface, document sync, RAG system
   rag_agent/                 # LangGraph graph, nodes, prompts, tools, state schemas
+  skills/                    # pluggable skill framework (BaseSkill + registry)
   services/appointment_skill/# discovery / planning / action skill package
   db/                        # PostgreSQL stores, schema manager, vector DB manager
   memory/                    # Redis memory and summary persistence
   ui/                        # Gradio admin/debug console
   benchmarks/                # memory, retrieval, route, answer-quality benchmarks
 frontend/
-  src/pages/                 # Chat and Documents pages
+  src/pages/                 # Chat, Documents, Hospital Binding pages
   src/hooks/                 # chat, status, and documents state hooks
   src/components/            # reusable UI components
+  src/styles/                # Aurora glassmorphism design system
   src/lib/                   # API and SSE helpers
   src/constants/             # frontend constants and status mapping
 scripts/                     # smoke and maintenance scripts
 tests/                       # unit, regression, and live DB tests
-docs/                        # project guide, setup, sequence diagrams, QA notes
+docs/                        # project guide, setup, QA notes
 assets/                      # README demo media
 ```
 
@@ -342,7 +345,6 @@ assets/                      # README demo media
 - [Architecture refactor plan, Chinese](docs/ARCHITECTURE_REFACTOR_PLAN_CN.md)
 - [FastAPI API layer notes](project/api/README.md)
 - [Project guide, Chinese](docs/PROJECT_GUIDE_CN.md)
-- [Sequence diagrams and source walk-through, Chinese](docs/PROJECT_SEQUENCE_CN.md)
 - [PostgreSQL setup, Chinese](docs/POSTGRES_SETUP_CN.md)
 - [Medical import guide](docs/MEDICAL_IMPORT.md)
 - [Medical sources guide](docs/MEDICAL_SOURCES.md)

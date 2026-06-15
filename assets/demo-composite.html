@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Xinyu Medical Agent — Demo Composite</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700;900&family=Inter+Tight:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --font-display: "Fraunces", "Noto Serif SC", Georgia, serif;
+      --font-sans: "Inter Tight", "Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", Consolas, monospace;
+      --aurora-teal: #0d9488;
+      --aurora-teal-bright: #14b8a6;
+      --aurora-indigo: #6366f1;
+      --aurora-indigo-deep: #4f46e5;
+      --aurora-mint: #5eead4;
+      --aurora-rose: #f43f5e;
+      --aurora-amber: #f59e0b;
+      --slate-500: #64748b;
+      --slate-600: #475569;
+      --slate-800: #1e293b;
+      --glass-bg-strong: rgba(255, 255, 255, 0.74);
+      --glass-border-light: rgba(255, 255, 255, 0.62);
+      --aurora-shadow-md: 0 10px 30px -10px rgba(13, 148, 136, 0.18), 0 4px 6px -2px rgba(0, 0, 0, 0.04);
+      --aurora-shadow-lg: 0 20px 40px -16px rgba(13, 148, 136, 0.22), 0 6px 10px -4px rgba(0, 0, 0, 0.04);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font-sans);
+      background:
+        radial-gradient(ellipse 70% 55% at 18% 22%, rgba(94, 234, 212, 0.28) 0%, transparent 55%),
+        radial-gradient(ellipse 65% 50% at 88% 78%, rgba(99, 102, 241, 0.22) 0%, transparent 55%),
+        radial-gradient(ellipse 50% 40% at 55% 0%, rgba(13, 148, 136, 0.18) 0%, transparent 50%),
+        radial-gradient(ellipse 45% 35% at 50% 100%, rgba(244, 114, 182, 0.10) 0%, transparent 50%),
+        linear-gradient(180deg, #f3faf9 0%, #eef3fb 60%, #f5f0fa 100%);
+      min-height: 100vh;
+      padding: 40px;
+      display: grid;
+      place-items: center;
+    }
+    .composite {
+      width: 1200px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 20px;
+    }
+    .panel {
+      background: var(--glass-bg-strong);
+      border: 1px solid var(--glass-border-light);
+      border-radius: 20px;
+      box-shadow: var(--aurora-shadow-md);
+      backdrop-filter: saturate(180%) blur(22px);
+      overflow: hidden;
+      position: relative;
+    }
+    .panel--chat { grid-row: span 2; }
+    .panel__header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 18px 22px 14px;
+      border-bottom: 1px solid rgba(255,255,255,0.5);
+    }
+    .panel__header h3 {
+      font-family: var(--font-display);
+      font-size: 20px; font-weight: 600;
+      background: linear-gradient(135deg, #0f172a, #0d9488 60%, #4f46e5);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .panel__badge {
+      margin-left: auto;
+      padding: 4px 10px; border-radius: 999px;
+      background: linear-gradient(135deg, rgba(20,184,166,0.12), rgba(99,102,241,0.10));
+      border: 1px solid rgba(20,184,166,0.16);
+      color: var(--aurora-teal); font-size: 10px; font-weight: 700; font-family: var(--font-mono);
+    }
+    .panel__body { padding: 18px 22px; }
+
+    /* Chat mockup */
+    .chat-msg { display: flex; gap: 10px; margin-bottom: 14px; align-items: flex-end; }
+    .chat-msg--user { flex-direction: row-reverse; }
+    .chat-avatar {
+      width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+      display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff;
+    }
+    .chat-avatar--ai { background: linear-gradient(135deg, var(--aurora-teal), var(--aurora-indigo)); }
+    .chat-avatar--user { background: linear-gradient(135deg, var(--aurora-indigo-deep), var(--aurora-rose)); }
+    .chat-bubble {
+      max-width: 80%; padding: 10px 14px; border-radius: 14px;
+      font-size: 12.5px; line-height: 1.65; color: var(--slate-800);
+      border: 1px solid rgba(255,255,255,0.5);
+    }
+    .chat-bubble--ai { background: rgba(255,255,255,0.6); border-bottom-left-radius: 4px; }
+    .chat-bubble--user { background: rgba(20,184,166,0.08); border-bottom-right-radius: 4px; }
+    .chat-input {
+      display: flex; align-items: center; gap: 10px;
+      margin-top: 14px; padding: 10px 14px;
+      background: rgba(255,255,255,0.5); border-radius: 14px;
+      border: 1px solid rgba(255,255,255,0.5);
+    }
+    .chat-input__placeholder { color: var(--slate-500); font-size: 12px; flex: 1; }
+    .chat-input__btn {
+      width: 32px; height: 32px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--aurora-teal), var(--aurora-indigo));
+      display: grid; place-items: center; color: #fff; font-size: 14px;
+    }
+
+    /* Hospital cards */
+    .hospital-cards { display: flex; flex-direction: column; gap: 12px; }
+    .h-card {
+      display: flex; align-items: center; gap: 14px;
+      padding: 16px 18px; border-radius: 16px;
+      background: rgba(255,255,255,0.55);
+      border: 1px solid rgba(255,255,255,0.5);
+      box-shadow: 0 4px 12px -4px rgba(13,148,136,0.10);
+    }
+    .h-card__icon {
+      width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+      background: linear-gradient(135deg, rgba(20,184,166,0.15), rgba(99,102,241,0.10));
+      border: 1px solid rgba(20,184,166,0.20);
+      display: grid; place-items: center; color: var(--aurora-teal); font-size: 18px;
+    }
+    .h-card__info { flex: 1; }
+    .h-card__name { font-size: 14px; font-weight: 700; color: var(--slate-800); margin-bottom: 4px; }
+    .h-card__meta { font-size: 11px; color: var(--slate-500); }
+    .h-card__badge {
+      padding: 3px 10px; border-radius: 999px; font-size: 10px; font-weight: 700;
+      background: rgba(34,197,94,0.08); color: #047857; border: 1px solid rgba(34,197,94,0.14);
+    }
+
+    /* Documents */
+    .doc-list { display: flex; flex-direction: column; gap: 10px; }
+    .doc-row {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; border-radius: 14px;
+      background: rgba(255,255,255,0.45);
+      border: 1px solid rgba(255,255,255,0.45);
+    }
+    .doc-icon {
+      width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+      background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(20,184,166,0.08));
+      display: grid; place-items: center; color: var(--aurora-indigo-deep); font-size: 16px;
+    }
+    .doc-info { flex: 1; }
+    .doc-name { font-size: 13px; font-weight: 600; color: var(--slate-800); margin-bottom: 2px; }
+    .doc-meta { font-size: 11px; color: var(--slate-500); }
+    .doc-status {
+      padding: 3px 10px; border-radius: 999px; font-size: 10px; font-weight: 700;
+      background: rgba(20,184,166,0.08); color: var(--aurora-teal); border: 1px solid rgba(20,184,166,0.14);
+    }
+
+    .trust-badges {
+      display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap;
+    }
+    .trust-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 5px 10px; border-radius: 999px;
+      background: rgba(255,255,255,0.45); border: 1px solid rgba(255,255,255,0.5);
+      font-size: 11px; font-weight: 600; color: var(--aurora-teal);
+    }
+
+    @media print {
+      body { padding: 0; background: #f3faf9; }
+      .composite { gap: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="composite">
+    <!-- Chat Panel -->
+    <div class="panel panel--chat">
+      <div class="panel__header">
+        <div style="width:32px;height:32px;border-radius:10px;background:linear-gradient(135deg,#0d9488,#6366f1);display:grid;place-items:center;color:#fff;font-size:14px;font-weight:700;">心</div>
+        <div>
+          <h3>心语医疗 AI</h3>
+          <div style="font-size:11px;color:var(--slate-500);margin-top:2px;">直接说你的问题</div>
+        </div>
+        <span class="panel__badge">#7a3f9e</span>
+      </div>
+      <div class="panel__body">
+        <div style="text-align:center;padding:18px 0;">
+          <div style="width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#0d9488,#6366f1);margin:0 auto 10px;display:grid;place-items:center;color:#fff;font-size:20px;">心</div>
+          <div style="font-family:var(--font-display);font-size:22px;font-weight:600;background:linear-gradient(135deg,#0f172a,#0d9488);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;">你好，我是心语医疗小助手</div>
+          <div style="font-size:12px;color:var(--slate-500);margin-top:6px;">专业的 AI 医疗咨询助手</div>
+          <div class="trust-badges" style="justify-content:center;">
+            <span class="trust-badge">✦ 安全分诊</span>
+            <span class="trust-badge" style="color:var(--aurora-indigo-deep);">✦ RAG 知识增强</span>
+          </div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar chat-avatar--ai">AI</div>
+          <div class="chat-bubble chat-bubble--ai">
+            您好！我是心语医疗小助手。我可以帮您解答健康咨询、症状分析，以及协助医院预约挂号。请问有什么可以帮您的？
+          </div>
+        </div>
+        <div class="chat-msg chat-msg--user">
+          <div class="chat-avatar chat-avatar--user">U</div>
+          <div class="chat-bubble chat-bubble--user">最近血压有点高，饮食上要注意什么？</div>
+        </div>
+        <div class="chat-msg">
+          <div class="chat-avatar chat-avatar--ai">AI</div>
+          <div class="chat-bubble chat-bubble--ai">
+            高血压患者饮食建议：① 低盐（每日 &lt;5g）；② 增加蔬果和全谷物；③ 限制饮酒；④ 适量补充钾。建议您定期监测血压并遵医嘱用药。
+          </div>
+        </div>
+        <div class="chat-input">
+          <span class="chat-input__placeholder">输入症状、医学问题或挂号需求…</span>
+          <div class="chat-input__btn">▶</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hospital Panel -->
+    <div class="panel">
+      <div class="panel__header">
+        <div style="width:28px;height:28px;border-radius:8px;background:rgba(20,184,166,0.12);display:grid;place-items:center;color:var(--aurora-teal);font-size:14px;">←</div>
+        <h3 style="font-size:18px;">医院绑定</h3>
+        <span class="panel__badge">2/2</span>
+      </div>
+      <div class="panel__body">
+        <div class="hospital-cards">
+          <div class="h-card">
+            <div class="h-card__icon">🏥</div>
+            <div class="h-card__info">
+              <div class="h-card__name">上海仁济医院</div>
+              <div class="h-card__meta">本机 Mock 仁济</div>
+            </div>
+            <span class="h-card__badge">● 在线</span>
+          </div>
+          <div class="h-card">
+            <div class="h-card__icon">🏥</div>
+            <div class="h-card__info">
+              <div class="h-card__name">北京协和医院</div>
+              <div class="h-card__meta">本机 Mock 协和</div>
+            </div>
+            <span class="h-card__badge">● 在线</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Documents Panel -->
+    <div class="panel">
+      <div class="panel__header">
+        <div style="width:28px;height:28px;border-radius:8px;background:rgba(20,184,166,0.12);display:grid;place-items:center;color:var(--aurora-teal);font-size:14px;">←</div>
+        <h3 style="font-size:18px;">知识库管理</h3>
+        <span class="panel__badge">3 文档</span>
+      </div>
+      <div class="panel__body">
+        <div class="doc-list">
+          <div class="doc-row">
+            <div class="doc-icon">📄</div>
+            <div class="doc-info">
+              <div class="doc-name">高血压防治指南（2024）</div>
+              <div class="doc-meta">NHC · 2024-03-12 · 128 段落</div>
+            </div>
+            <span class="doc-status">✓ 已同步</span>
+          </div>
+          <div class="doc-row">
+            <div class="doc-icon">📄</div>
+            <div class="doc-info">
+              <div class="doc-name">WHO 糖尿病管理手册</div>
+              <div class="doc-meta">WHO · 2024-01-08 · 96 段落</div>
+            </div>
+            <span class="doc-status">✓ 已同步</span>
+          </div>
+          <div class="doc-row">
+            <div class="doc-icon">📄</div>
+            <div class="doc-info">
+              <div class="doc-name">MedlinePlus 药物相互作用数据库</div>
+              <div class="doc-meta">MedlinePlus · 2024-05-20 · 256 段落</div>
+            </div>
+            <span class="doc-status">✓ 已同步</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
