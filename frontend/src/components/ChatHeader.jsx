@@ -1,5 +1,5 @@
 import React from "react";
-import { Menu, Search, Download } from "lucide-react";
+import { Menu, Search, Download, ShieldCheck, Sparkles } from "lucide-react";
 
 const STATE_MAP = {
   connecting: { text: "连接中", variant: "info" },
@@ -37,6 +37,10 @@ const ChatHeader = React.memo(function ChatHeader({
       <div className="chat-header__title">
         <span className="eyebrow">心语医疗 AI</span>
         <h2>直接说你的问题</h2>
+        <div className="chat-header__trust" aria-label="医疗助手能力说明">
+          <span><ShieldCheck size={13} /> 安全分诊</span>
+          <span><Sparkles size={13} /> RAG 知识增强</span>
+        </div>
       </div>
 
       <div className="chat-header__meta">

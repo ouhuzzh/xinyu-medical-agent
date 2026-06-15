@@ -3176,6 +3176,52 @@ button:disabled {
   margin: 0 auto;
 }
 
+.hospital-empty {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  max-width: 520px;
+  margin: 88px auto 0;
+  padding: 34px 28px;
+  border: 1px dashed rgba(15, 118, 110, 0.22);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.66);
+  text-align: center;
+}
+
+.hospital-empty__icon {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--radius-md);
+  background: var(--teal-50);
+  color: var(--teal-700);
+}
+
+.hospital-empty__copy {
+  display: grid;
+  gap: 6px;
+}
+
+.hospital-empty__copy h3 {
+  margin: 0;
+  color: #172126;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.hospital-empty__copy p {
+  margin: 0;
+  color: var(--slate-500);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.hospital-empty__refresh {
+  margin-top: 2px;
+}
+
 /* ── Card base ── */
 .hospital-card {
   display: flex;
@@ -3506,6 +3552,20 @@ button:disabled {
 [data-theme="dark"] .hospital-bind-form__name { color: var(--slate-200); }
 [data-theme="dark"] .hospital-all-bound {
   background: rgba(34,197,94,0.08);
+}
+
+[data-theme="dark"] .hospital-empty {
+  background: rgba(22, 32, 51, 0.72);
+  border-color: rgba(20, 184, 166, 0.22);
+}
+
+[data-theme="dark"] .hospital-empty__copy h3 {
+  color: var(--slate-200);
+}
+
+[data-theme="dark"] .hospital-empty__icon {
+  background: rgba(20, 184, 166, 0.12);
+  color: var(--teal-500);
 }
 
 /* Legacy empty state — for other pages if needed */

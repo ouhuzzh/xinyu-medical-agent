@@ -46,6 +46,21 @@ const EmptyState = React.memo(function EmptyState({ onSendMessage }) {
             );
           })}
         </ul>
+
+        <div className="empty-state__metrics" aria-label="助手能力概览">
+          <div>
+            <strong>24/7</strong>
+            <span>健康咨询</span>
+          </div>
+          <div>
+            <strong>RAG</strong>
+            <span>知识增强</span>
+          </div>
+          <div>
+            <strong>3-Step</strong>
+            <span>预约确认</span>
+          </div>
+        </div>
       </div>
 
       <div className="prompt-grid">

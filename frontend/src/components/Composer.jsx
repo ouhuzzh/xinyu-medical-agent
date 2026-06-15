@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, forwardRef } from "react";
-import { Send, Square } from "lucide-react";
+import { Send, Square, CornerDownLeft, HeartPulse } from "lucide-react";
 
 const Composer = React.memo(
   forwardRef(function Composer(
@@ -77,20 +77,26 @@ const Composer = React.memo(
         }}
         aria-label="消息输入区"
       >
-        <textarea
-          ref={setRefs}
-          value={input}
-          onChange={(e) => {
-            onChange(e.target.value);
-          }}
-          onInput={autoResize}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          placeholder={placeholder}
-          rows={1}
-          disabled={disabled}
-          aria-label="输入消息"
-        />
+        <div className="composer__field">
+          <textarea
+            ref={setRefs}
+            value={input}
+            onChange={(e) => {
+              onChange(e.target.value);
+            }}
+            onInput={autoResize}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            placeholder={placeholder}
+            rows={1}
+            disabled={disabled}
+            aria-label="输入消息"
+          />
+          <div className="composer__hints" aria-hidden="true">
+            <span><HeartPulse size={12} /> 可描述症状、时长、用药与挂号需求</span>
+            <span><CornerDownLeft size={12} /> Enter 发送</span>
+          </div>
+        </div>
         {isStreaming ? (
           <button
             type="button"

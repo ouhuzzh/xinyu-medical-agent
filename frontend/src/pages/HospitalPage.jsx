@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { ArrowLeft, Plus, Trash2, Wifi, Building2, CheckCircle2, XCircle, Loader2, Unlink, ShieldCheck, Clock, Lock, ChevronDown } from "lucide-react";
+import { ArrowLeft, Wifi, Building2, CheckCircle2, XCircle, Loader2, Unlink, ShieldCheck, Clock, Lock, RefreshCw } from "lucide-react";
 import {
   fetchHospitalList,
   fetchHospitalCredentials,
@@ -95,6 +95,20 @@ export default function HospitalPage({ apiBaseUrl, authToken, onMenuClick }) {
 
         {loading ? (
           <div className="page-loader"><div className="page-loader__spinner" /><span>加载中…</span></div>
+        ) : hospitals.length === 0 ? (
+          <div className="hospital-empty">
+            <div className="hospital-empty__icon">
+              <Building2 size={22} strokeWidth={1.8} />
+            </div>
+            <div className="hospital-empty__copy">
+              <h3>当前没有可绑定医院</h3>
+              <p>管理员添加医院 MCP 注册表后，这里会显示可绑定的医院。</p>
+            </div>
+            <button type="button" className="secondary-btn hospital-empty__refresh" onClick={load}>
+              <RefreshCw size={14} />
+              刷新
+            </button>
+          </div>
         ) : (
           <div className="hospital-grid">
             {hospitals.map((hospital) => {
