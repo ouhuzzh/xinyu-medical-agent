@@ -28,7 +28,7 @@
 你可以把它理解成：  
 **一个医疗 AI 助手产品原型，而不是单文件问答脚本。**
 
-现在项目也支持前后端分离的 v1 形态：
+当前主线已经是前后端分离形态：
 
 - `frontend/` 是 React/Vite 用户聊天端
 - `project/api/` 是 FastAPI 后端 API
@@ -37,7 +37,7 @@
 `frontend/src/` 内部再分三块：
 
 - `components/`：聊天页面 UI 组件
-- `lib/`：API 请求、SSE 连接等浏览器侧协议适配
+- `lib/`：API 请求、流式聊天协议适配等浏览器侧逻辑
 - `constants/`：前端常量、示例问题、状态 tone 映射
 
 ---
@@ -46,14 +46,14 @@
 
 如果你想快速建立整体认识，建议按这个顺序读：
 
-1. `D:\nageoffer\agentic-rag-for-dummies\project\app.py`  
-   Gradio 后台入口。
+1. `D:\nageoffer\agentic-rag-for-dummies\project\api_app.py` 和 `D:\nageoffer\agentic-rag-for-dummies\project\api\app.py`
+   FastAPI 用户端入口，是当前主线 API 启动方式。
 
-2. `D:\nageoffer\agentic-rag-for-dummies\project\api_app.py` 和 `D:\nageoffer\agentic-rag-for-dummies\project\api\app.py`  
-   前后端分离模式下的 FastAPI 用户端入口。
+2. `D:\nageoffer\agentic-rag-for-dummies\frontend\src\App.jsx`
+   React 用户聊天端，负责 thread_id 持久化、流式消息接收和界面状态管理。
 
-3. `D:\nageoffer\agentic-rag-for-dummies\frontend\src\App.jsx`  
-   React 用户聊天端，负责 thread_id 持久化、SSE 接收和消息渲染。
+3. `D:\nageoffer\agentic-rag-for-dummies\project\app.py`
+   Gradio 管理/调试台入口。
 
 4. `D:\nageoffer\agentic-rag-for-dummies\project\ui\gradio_app.py`  
    Gradio 后台页面，负责文档管理、官方同步和诊断查看。
@@ -78,7 +78,7 @@
 
 如果只想先看图编排，就看 `graph.py`；如果想理解行为，就按 `routing_nodes.py -> appointment_nodes.py / rag_nodes.py -> tools.py` 的顺序看。
 
-`nodes.py` 仍保留为兼容层，历史测试和旧导入可以继续工作；新的维护入口已经按领域拆到上面的模块。
+`nodes.py` 目前仍存在，但新的维护入口已经按领域拆到 `routing_nodes.py`、`rag_nodes.py` 和 `appointment_nodes.py`，阅读主线时优先看这些模块。
 
 ---
 
@@ -90,7 +90,7 @@
   主要代码都在这里。
 
 - `frontend/`  
-  React/Vite 用户聊天端，和 FastAPI 通过 HTTP/SSE 通信。页面组件在 `src/components/`，请求与 SSE helper 在 `src/lib/`，前端常量在 `src/constants/`。
+  React/Vite 用户聊天端，和 FastAPI 通过 HTTP 流式接口通信。页面组件在 `src/components/`，请求与流式 helper 在 `src/lib/`，前端常量在 `src/constants/`。
 
 - `docs/`  
   文档说明，比如导入资料、评估、Postgres 配置。
@@ -104,7 +104,7 @@
 `project/` 下面再分 8 个子域：
 
 - `project/api/`  
-  FastAPI API 层，负责用户端会话、状态和 SSE 聊天接口。
+  FastAPI API 层，负责用户端会话、状态和流式聊天接口。
 
 - `project/core/`  
   系统总编排，比如 `RAGSystem`、`ChatInterface`、文档管理器。
@@ -135,10 +135,10 @@
 
 ```mermaid
 flowchart TD
-    A["用户端: React/Vite frontend"] --> I["API: FastAPI + SSE"]
-    J["后台: gradio_app.py"] --> B["编排层: chat_interface.py"]
+    A["用户端: React/Vite frontend"] --> I["API: FastAPI"]
+    J["后台: Gradio admin/debug"] --> B["编排层: chat_interface.py"]
     I --> B
-    B --> C["主图: graph.py + nodes.py + edges.py"]
+    B --> C["主图: graph.py + edges.py + domain nodes"]
     C --> D["RAG 工具层: tools.py"]
     C --> E["预约领域层: appointment_skill + appointment_service"]
     D --> F["PostgreSQL / pgvector / 文档块"]
@@ -159,11 +159,12 @@ flowchart TD
 
 ## 5. 程序从哪里启动
 
-入口是：
+当前主入口分成两类：
 
-- `D:\nageoffer\agentic-rag-for-dummies\project\app.py`
+- 用户端主入口：`D:\nageoffer\agentic-rag-for-dummies\project\api_app.py`
+- 管理/调试台入口：`D:\nageoffer\agentic-rag-for-dummies\project\app.py`
 
-它做的事非常少，主要是：
+`app.py` 做的事非常少，主要是：
 
 1. 调 `create_gradio_ui()`
 2. 拿到 Gradio demo
@@ -187,7 +188,8 @@ flowchart TD
 
 所以：
 
-- `app.py` 是外壳
+- `api_app.py` / FastAPI 是当前用户端主入口
+- `app.py` 是管理/调试台外壳
 - `RAGSystem` 才是系统总装配器
 
 ---
@@ -199,7 +201,7 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant User as 用户
-    participant UI as gradio_app.py
+    participant UI as frontend / api
     participant Chat as chat_interface.py
     participant Graph as LangGraph
     participant RAG as tools.py
@@ -281,8 +283,10 @@ sequenceDiagram
 
 - `D:\nageoffer\agentic-rag-for-dummies\project\rag_agent\graph.py`
 - `D:\nageoffer\agentic-rag-for-dummies\project\rag_agent\edges.py`
-- `D:\nageoffer\agentic-rag-for-dummies\project\rag_agent\nodes.py`
 - `D:\nageoffer\agentic-rag-for-dummies\project\rag_agent\graph_state.py`
+- `D:\nageoffer\agentic-rag-for-dummies\project\rag_agent\routing_nodes.py`
+- `D:\nageoffer\agentic-rag-for-dummies\project\rag_agent\rag_nodes.py`
+- `D:\nageoffer\agentic-rag-for-dummies\project\rag_agent\appointment_nodes.py`
 
 主图里最关键的节点顺序是：
 
@@ -340,7 +344,7 @@ sequenceDiagram
 
 RAG 相关核心文件：
 
-- `D:\nageoffer\agentic-rag-for-dummies\project\rag_agent\nodes.py`
+- `D:\nageoffer\agentic-rag-for-dummies\project\rag_agent\rag_nodes.py`
 - `D:\nageoffer\agentic-rag-for-dummies\project\rag_agent\tools.py`
 - `D:\nageoffer\agentic-rag-for-dummies\project\db\vector_db_manager.py`
 - `D:\nageoffer\agentic-rag-for-dummies\project\db\parent_store_manager.py`
@@ -599,7 +603,7 @@ RAG 相关核心文件：
 
 - `D:\nageoffer\agentic-rag-for-dummies\project\core\document_manager.py`
 - `D:\nageoffer\agentic-rag-for-dummies\project\core\medical_source_ingest.py`
-- `D:\nageoffer\agentic-rag-for-dummies\project\document_chunker.py`
+- `D:\nageoffer\agentic-rag-for-dummies\project\core\document_chunker.py`
 
 ### 本地导入
 
@@ -703,25 +707,25 @@ RAG 相关核心文件：
 
 看这些：
 
-- `project/app.py`
-- `project/ui/gradio_app.py`
+- `project/api_app.py`
+- `frontend/src/App.jsx`
 - `project/core/chat_interface.py`
 - `project/rag_agent/graph.py`
 
 目标：
 
-- 弄清一次请求怎么进来、怎么出去了
+- 弄清用户请求怎么从前端进来、怎么经过 API 和图再返回
 
 ### 第二轮：分开看两条业务线
 
 先看 RAG：
 
-- `project/rag_agent/nodes.py`
+- `project/rag_agent/rag_nodes.py`
 - `project/rag_agent/tools.py`
 
 再看预约：
 
-- `project/rag_agent/nodes.py`
+- `project/rag_agent/appointment_nodes.py`
 - `project/services/appointment_skill/__init__.py`
 - `project/services/appointment_service.py`
 
@@ -764,7 +768,7 @@ RAG 相关核心文件：
 
 1. 先单独走读 `chat_interface.py`
 2. 再单独走读 `graph.py + edges.py`
-3. 再单独走读 `nodes.py` 里的这 4 个函数：
+3. 再单独走读这 4 个关键函数：
    - `analyze_turn`
    - `intent_router`
    - `handle_appointment_skill`
