@@ -88,13 +88,14 @@ START -> orchestrator
 3. **LLM 失败兜底**：反思调用抛错或解析失败 → 退回 `check_sufficiency` 的结论（含其 `retry_query`）。保证 LLM 不可用时系统不挂。
 4. 写回 state：`evidence_critique`、`last_refined_query`、`evidence_rounds += 1`，并把 `refined_query` 追加进 `refined_queries`。
 
-**输出 schema**（`schemas.py` 新增 `EvidenceSufficiencyCheck`）：
+**输出 schema**：复用 `project/rag_agent/schemas.py:175` 已存在但当前未被调用的 `EvidenceSufficiency`：
 ```python
-class EvidenceSufficiencyCheck(BaseModel):
-    sufficient: bool
-    critique: str = ""
-    refined_query: str | None = None
+class EvidenceSufficiency(BaseModel):
+    is_sufficient: bool
+    reason: str        # 用作 critique
+    retry_query: str   # 用作 refined_query（充分时为空串）
 ```
+> 取舍：代码盘点发现该 schema 已定义但从无调用点。复用它而非新建 `EvidenceSufficiencyCheck`，避免两个近义 schema 并存。`reason` 语义对齐 critique，`retry_query` 语义对齐 refined_query。该 schema 已被 `structured_output.py` 的字段类型反射逻辑覆盖（bool→False/str→""），失败兜底安全。
 
 ### 4.2 `route_after_evidence` 边（`edges.py` 新增）
 
