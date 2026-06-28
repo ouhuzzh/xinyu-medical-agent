@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, ToolMessage, HumanMessage  # noqa
 from langchain_core.documents import Document  # noqa: E402
 from project.rag_agent.graph_state import AgentState  # noqa: E402
 from project.rag_agent.rag_nodes import evaluate_evidence  # noqa: E402
+from project.rag_agent.edges import route_after_evidence  # noqa: E402
 
 
 class TestAgentStateFields(unittest.TestCase):
@@ -73,7 +74,7 @@ class TestEvaluateEvidenceFastPath(unittest.TestCase):
             result = evaluate_evidence(state, llm)
             mock_so.assert_not_called()  # fast path skips LLM
 
-        self.assertTrue(result["_evidence_sufficient"])
+        self.assertTrue(result["evidence_sufficient"])
         self.assertEqual(result["evidence_critique"], "direct_evidence")
         self.assertEqual(result["evidence_rounds"], 0)  # no round counted on fast-path success
         self.assertEqual(result["last_refined_query"], "")
@@ -100,7 +101,7 @@ class TestEvaluateEvidenceReflection(unittest.TestCase):
             result = evaluate_evidence(state, llm)
 
             mock_so.assert_called_once()
-        self.assertFalse(result["_evidence_sufficient"])
+        self.assertFalse(result["evidence_sufficient"])
         self.assertEqual(result["evidence_rounds"], 1)
         self.assertEqual(result["last_refined_query"], "高血压 合并痛风 药物 相互作用 禁忌")
         self.assertEqual(result["refined_queries"], ["高血压 合并痛风 药物 相互作用 禁忌"])
@@ -111,7 +112,7 @@ class TestEvaluateEvidenceReflection(unittest.TestCase):
 
         When the LLM verdict is sufficient, the node must NOT increment
         evidence_rounds, must NOT record a refined query, and must signal
-        `_evidence_sufficient=True` so the downstream edge terminates the loop.
+        `evidence_sufficient=True` so the downstream edge terminates the loop.
         """
         tool_msg = ToolMessage(content="[DOC1] 高血压常规用药包括ACEI。", tool_call_id="1")
         state = _make_state([tool_msg], evidence_rounds=2)
@@ -132,7 +133,7 @@ class TestEvaluateEvidenceReflection(unittest.TestCase):
 
             mock_so.assert_called_once()
 
-        self.assertTrue(result["_evidence_sufficient"])
+        self.assertTrue(result["evidence_sufficient"])
         self.assertEqual(result["evidence_rounds"], 2)  # unchanged, not incremented
         self.assertEqual(result["last_refined_query"], "")
         # No refined query recorded when sufficient.
@@ -157,7 +158,56 @@ class TestEvaluateEvidenceLLMFailureFallback(unittest.TestCase):
             result = evaluate_evidence(state, llm)
 
         self.assertEqual(result["last_refined_query"], "高血压 痛风 医学资料")
-        self.assertFalse(result["_evidence_sufficient"])
+        self.assertFalse(result["evidence_sufficient"])
+
+
+class TestRouteAfterEvidence(unittest.TestCase):
+    def test_sufficient_routes_to_compress(self):
+        state = _make_state([], evidence_sufficient=True, evidence_rounds=0)
+        self.assertEqual(route_after_evidence(state), "should_compress_context")
+
+    def test_insufficient_with_budget_routes_to_compress(self):
+        """Insufficient but under round limit and novel query → loop back via compress."""
+        state = _make_state(
+            [],
+            evidence_sufficient=False,
+            evidence_rounds=1,
+            last_refined_query="新检索式A",
+            refined_queries=["新检索式A"],
+        )
+        self.assertEqual(route_after_evidence(state), "should_compress_context")
+
+    def test_round_limit_reached_routes_to_fallback(self):
+        import config
+        state = _make_state(
+            [],
+            evidence_sufficient=False,
+            evidence_rounds=config.MAX_EVIDENCE_ROUNDS,
+            last_refined_query="q",
+            refined_queries=["q"],
+        )
+        self.assertEqual(route_after_evidence(state), "fallback_response")
+
+    def test_repeated_refined_query_routes_to_fallback(self):
+        """Refined query repeats a prior one (no progress) → fallback."""
+        state = _make_state(
+            [],
+            evidence_sufficient=False,
+            evidence_rounds=1,
+            last_refined_query="重复检索式",
+            refined_queries=["重复检索式", "别的", "重复检索式"],
+        )
+        self.assertEqual(route_after_evidence(state), "fallback_response")
+
+    def test_no_progress_when_refined_query_empty_routes_to_fallback(self):
+        state = _make_state(
+            [],
+            evidence_sufficient=False,
+            evidence_rounds=1,
+            last_refined_query="",
+            refined_queries=[],
+        )
+        self.assertEqual(route_after_evidence(state), "fallback_response")
 
 
 if __name__ == "__main__":

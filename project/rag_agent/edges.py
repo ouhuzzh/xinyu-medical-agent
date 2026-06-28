@@ -227,3 +227,39 @@ def _has_repeated_search_query(state: AgentState) -> bool:
             if len(queries) >= 2:
                 return queries[0] == queries[1]
     return False
+
+
+def _has_repeated_refined_query(state: AgentState) -> bool:
+    """No-progress guard: the latest refined query already appeared earlier."""
+    refined = [str(q or "").strip().lower() for q in (state.get("refined_queries") or []) if str(q or "").strip()]
+    if len(refined) < 2:
+        return False
+    return refined[-1] in refined[:-1]
+
+
+def route_after_evidence(state: AgentState) -> Literal["should_compress_context", "fallback_response"]:
+    """P1: route after evidence reflection.
+
+    - sufficient → should_compress_context (then orchestrator → collect_answer)
+    - insufficient + budget + progress → should_compress_context (re-search)
+    - insufficient + exhausted/no-progress → fallback_response
+    """
+    import config
+    is_sufficient = bool(state.get("evidence_sufficient", False))
+    if is_sufficient:
+        return "should_compress_context"
+
+    rounds = int(state.get("evidence_rounds", 0) or 0)
+    last_refined = str(state.get("last_refined_query", "") or "").strip()
+
+    # Termination guards.
+    if rounds >= config.MAX_EVIDENCE_ROUNDS:
+        return "fallback_response"
+    if not last_refined:
+        return "fallback_response"
+    if _has_repeated_refined_query(state):
+        return "fallback_response"
+    if _has_repeated_no_evidence(state):
+        return "fallback_response"
+
+    return "should_compress_context"

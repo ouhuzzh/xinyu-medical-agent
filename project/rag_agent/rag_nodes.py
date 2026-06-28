@@ -350,7 +350,7 @@ def evaluate_evidence(state: AgentState, llm):
             "evidence_critique": rule.get("reason", ""),
             "last_refined_query": "",
             "evidence_rounds": rounds,
-            "_evidence_sufficient": True,
+            "evidence_sufficient": True,
         }
 
     # Reflection path.
@@ -375,7 +375,7 @@ def evaluate_evidence(state: AgentState, llm):
     delta = {
         "evidence_critique": critique,
         "evidence_rounds": rounds + 1 if not is_sufficient else rounds,
-        "_evidence_sufficient": is_sufficient,
+        "evidence_sufficient": is_sufficient,
     }
     if refined and not is_sufficient:
         delta["last_refined_query"] = refined

@@ -82,3 +82,4 @@ class AgentState(MessagesState):
     evidence_critique: str = ""
     last_refined_query: str = ""
     refined_queries: Annotated[List[str], operator.add] = []
+    evidence_sufficient: bool = False
