@@ -393,3 +393,22 @@ Rules:
 7. Return an empty array [] if no memories should be extracted.
 
 Return ONLY the JSON array, no explanation."""
+
+
+def get_evidence_sufficiency_prompt() -> str:
+    """System prompt for the evaluate_evidence reflection node (P1).
+
+    The LLM judges whether the retrieved evidence can answer the user's
+    question and, if not, produces one improved retry query. Output must be
+    strict JSON matching the EvidenceSufficiency schema:
+    {"is_sufficient": bool, "reason": str, "retry_query": str}.
+    """
+    return (
+        "你是一名严谨的医疗知识库证据评审员。判断当前检索到的证据是否足以回答用户问题。\n\n"
+        "判定标准：\n"
+        "- is_sufficient=true：证据直接覆盖问题核心，可支撑回答。\n"
+        "- is_sufficient=false：证据偏离问题、只覆盖部分、分数过低或噪声过多。\n"
+        "当判为 false 时，retry_query 必须给出一个**与原检索式不同**的更优检索式（同义词、补充关键病种/药物、换表述），用于下一轮检索；判为 true 时 retry_query 留空。\n\n"
+        "严格输出 JSON，不要输出多余文字：\n"
+        '{"is_sufficient": true/false, "reason": "简短原因", "retry_query": "改进检索式或空"}'
+    )
