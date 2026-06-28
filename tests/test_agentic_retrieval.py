@@ -210,6 +210,18 @@ class TestRouteAfterEvidence(unittest.TestCase):
         )
         self.assertEqual(route_after_evidence(state), "fallback_response")
 
+    def test_repeated_refined_query_at_round_limit_routes_to_fallback(self):
+        """Realistic round-2 scenario: refined query repeats an earlier one → fallback (no-progress guard now reachable before budget)."""
+        import config
+        state = _make_state(
+            [],
+            evidence_sufficient=False,
+            evidence_rounds=config.MAX_EVIDENCE_ROUNDS,
+            last_refined_query="查询A",
+            refined_queries=["查询A", "查询B", "查询A"],  # latest "查询A" repeats the first
+        )
+        self.assertEqual(route_after_evidence(state), "fallback_response")
+
 
 class TestOrchestratorRefinedQueryInjection(unittest.TestCase):
     def test_refined_query_is_injected_as_hint(self):
@@ -373,6 +385,100 @@ class TestAgenticRetrievalLoopIntegration(unittest.TestCase):
             evidence_sufficient=False,
         )
         self.assertEqual(route_after_evidence(state), "fallback_response")
+
+
+class TestCompiledGraphStateHandoff(unittest.TestCase):
+    """Verify the evaluate_evidence -> route_after_evidence handoff survives LangGraph's real state machinery.
+
+    The node-level tests simulate the loop via state.update(delta); this compiles an
+    actual StateGraph and invokes it, proving the declared `evidence_sufficient` field
+    (and friends) persist from node to edge through LangGraph's channels/reducers.
+    """
+    def _build_graph(self, llm):
+        from langgraph.graph import StateGraph, START, END
+        from project.rag_agent.graph_state import AgentState
+        from project.rag_agent.rag_nodes import evaluate_evidence
+        from project.rag_agent.edges import route_after_evidence
+        from functools import partial
+
+        builder = StateGraph(AgentState)
+        builder.add_node("evaluate_evidence", partial(evaluate_evidence, llm=llm))
+        # Sink nodes record which branch the edge routed to.
+        sink = {"hit": None}
+
+        def _sink_compress(state):
+            sink["hit"] = "should_compress_context"
+            return {}
+
+        def _sink_fallback(state):
+            sink["hit"] = "fallback_response"
+            return {}
+
+        builder.add_node("should_compress_context", _sink_compress)
+        builder.add_node("fallback_response", _sink_fallback)
+        builder.add_edge(START, "evaluate_evidence")
+        builder.add_conditional_edges(
+            "evaluate_evidence",
+            route_after_evidence,
+            {"should_compress_context": "should_compress_context", "fallback_response": "fallback_response"},
+        )
+        builder.add_edge("should_compress_context", END)
+        builder.add_edge("fallback_response", END)
+        return builder.compile(), sink
+
+    def test_strong_evidence_routes_to_compress_through_real_graph(self):
+        """Fast path: a strong-evidence tool message → evaluate_evidence writes evidence_sufficient=True
+        → route_after_evidence reads it via real LangGraph state → routes to should_compress_context."""
+        from langchain_core.messages import ToolMessage
+        from unittest.mock import MagicMock
+
+        graph, sink = self._build_graph(MagicMock())
+        state = _make_state([
+            ToolMessage(content="Score: 0.9100\nRelevance Grade: high\nContent: 高血压合并痛风者禁用噻嗪类利尿剂。", tool_call_id="1"),
+        ])
+        # No LLM mock needed: fast path skips _structured_output_llm entirely.
+        graph.invoke(state, {"recursion_limit": 10})
+        self.assertEqual(sink["hit"], "should_compress_context")
+
+    def test_insufficient_with_refined_query_routes_to_compress_through_real_graph(self):
+        """Reflection path: weak evidence → LLM says insufficient + gives refined query
+        → route_after_evidence reads evidence_sufficient=False + last_refined_query → routes to should_compress_context."""
+        from langchain_core.messages import ToolMessage
+        from unittest.mock import MagicMock, patch
+        from project.rag_agent.schemas import EvidenceSufficiency
+
+        parser = MagicMock()
+        parser.invoke.return_value = EvidenceSufficiency(
+            is_sufficient=False,
+            reason="未覆盖痛风交互",
+            retry_query="高血压 合并痛风 药物 禁忌",
+        )
+        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser):
+            graph, sink = self._build_graph(MagicMock())
+            state = _make_state([
+                ToolMessage(content="[DOC1] 高血压常规用药ACEI。", tool_call_id="1"),
+            ], evidence_rounds=0)
+            graph.invoke(state, {"recursion_limit": 10})
+        self.assertEqual(sink["hit"], "should_compress_context")
+
+    def test_round_limit_routes_to_fallback_through_real_graph(self):
+        """Termination: at the round limit with insufficient evidence → route_after_evidence → fallback_response."""
+        import config
+        from langchain_core.messages import ToolMessage
+        from unittest.mock import MagicMock, patch
+        from project.rag_agent.schemas import EvidenceSufficiency
+
+        parser = MagicMock()
+        parser.invoke.return_value = EvidenceSufficiency(
+            is_sufficient=False, reason="仍不足", retry_query="又一次查询"
+        )
+        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser):
+            graph, sink = self._build_graph(MagicMock())
+            state = _make_state([
+                ToolMessage(content="[DOC] 略", tool_call_id="1"),
+            ], evidence_rounds=config.MAX_EVIDENCE_ROUNDS, refined_queries=["前一个查询"])
+            graph.invoke(state, {"recursion_limit": 10})
+        self.assertEqual(sink["hit"], "fallback_response")
 
 
 if __name__ == "__main__":

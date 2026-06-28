@@ -252,14 +252,16 @@ def route_after_evidence(state: AgentState) -> Literal["should_compress_context"
     rounds = int(state.get("evidence_rounds", 0) or 0)
     last_refined = str(state.get("last_refined_query", "") or "").strip()
 
-    # Termination guards.
-    if rounds >= MAX_EVIDENCE_ROUNDS:
-        return "fallback_response"
-    if not last_refined:
-        return "fallback_response"
+    # No-progress guards fire before the budget guard so a stalled loop
+    # terminates as early as possible (a repeated refined query / repeated
+    # NO_EVIDENCE means more rounds cannot help).
     if _has_repeated_refined_query(state):
         return "fallback_response"
     if _has_repeated_no_evidence(state):
+        return "fallback_response"
+    if not last_refined:
+        return "fallback_response"
+    if rounds >= MAX_EVIDENCE_ROUNDS:
         return "fallback_response"
 
     return "should_compress_context"
