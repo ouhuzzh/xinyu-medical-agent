@@ -298,5 +298,82 @@ class TestOrchestratorRefinedQueryInjection(unittest.TestCase):
         self.assertEqual(result.get("last_refined_query"), "")
 
 
+class TestAgenticRetrievalLoopIntegration(unittest.TestCase):
+    """End-to-end-ish: weak first retrieval → reflection → refined re-search → grounded answer.
+
+    Manually threads state through evaluate_evidence + route_after_evidence to
+    simulate the graph loop without a live LLM.  The REAL check_sufficiency
+    rule is exercised in both rounds (no patching of the rule check), so the
+    insufficient→sufficient transition is honest:
+      - Round 1: tool message has no graded block → empty docs → real rule
+        returns insufficient (no_relevant_documents) → LLM reflection (mocked)
+        produces a refined retry query → edge loops back via compress.
+      - Round 2: tool message carries a genuine graded block (Score 0.91 +
+        high grade) → real rule returns sufficient via the fast path, with no
+        LLM call → edge routes to compress → collect_answer.
+    """
+
+    def test_weak_first_then_refined_second_completes(self):
+        from project.rag_agent.schemas import EvidenceSufficiency
+
+        # Round 1: weak evidence (no graded block → empty docs → real
+        # check_sufficiency returns insufficient), triggering LLM reflection
+        # that produces a refined retry query.
+        state1 = _make_state(
+            [ToolMessage(content="[DOC1] 高血压常规用药ACEI。", tool_call_id="1")],
+            evidence_rounds=0,
+        )
+        parser = MagicMock()
+        parser.invoke.return_value = EvidenceSufficiency(
+            is_sufficient=False,
+            reason="未覆盖痛风交互",
+            retry_query="高血压 合并痛风 药物 相互作用 禁忌",
+        )
+        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser) as mock_so1:
+            delta1 = evaluate_evidence(state1, MagicMock())
+            mock_so1.assert_called_once()  # reflection path invoked the LLM
+
+        state1.update(delta1)
+        # Insufficient + novel query + under budget → loop back via compress.
+        self.assertFalse(state1["evidence_sufficient"])
+        self.assertEqual(state1["evidence_rounds"], 1)
+        self.assertEqual(state1["last_refined_query"], "高血压 合并痛风 药物 相互作用 禁忌")
+        self.assertEqual(route_after_evidence(state1), "should_compress_context")
+
+        # Round 2: refined retrieval yields strong evidence.  We do NOT patch
+        # check_sufficiency — the tool message carries a genuine graded block
+        # (Score 0.91 >= RAG_DIRECT_EVIDENCE_SCORE 0.84 + high grade), so the
+        # REAL rule check must return sufficient via the fast path, without
+        # any LLM call.  This honestly verifies the fast path.
+        state2 = dict(state1)
+        state2["messages"] = [ToolMessage(
+            content="Score: 0.9100\nRelevance Grade: high\nContent: 高血压合并痛风者禁用噻嗪类利尿剂，首选CCB；避免非甾体抗炎药。",
+            tool_call_id="2",
+        )]
+        llm2 = MagicMock()
+        with patch("project.rag_agent.rag_nodes._structured_output_llm") as mock_so2:
+            delta2 = evaluate_evidence(state2, llm2)
+            mock_so2.assert_not_called()  # fast path skips LLM
+        state2.update(delta2)
+        self.assertTrue(state2["evidence_sufficient"])
+        self.assertEqual(state2["evidence_critique"], "direct_evidence")
+        self.assertEqual(state2["last_refined_query"], "")
+        # sufficient → compress → collect
+        self.assertEqual(route_after_evidence(state2), "should_compress_context")
+
+    def test_loop_terminates_on_round_limit(self):
+        """Two insufficient rounds with distinct queries hit MAX_EVIDENCE_ROUNDS → fallback."""
+        import config
+
+        state = _make_state(
+            [ToolMessage(content="[DOC] 略", tool_call_id="1")],
+            evidence_rounds=config.MAX_EVIDENCE_ROUNDS,  # already at limit
+            last_refined_query="某检索式",
+            refined_queries=["别的", "某检索式"],
+            evidence_sufficient=False,
+        )
+        self.assertEqual(route_after_evidence(state), "fallback_response")
+
+
 if __name__ == "__main__":
     unittest.main()
