@@ -13,6 +13,7 @@ from .rag_nodes import (
     answer_grounding_check,
     collect_answer,
     compress_context,
+    evaluate_evidence,
     fallback_response,
     grounded_answer_generation,
     orchestrator,
@@ -60,10 +61,21 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     agent_builder.add_node("fallback_response", partial(fallback_response, llm=_strong_llm))
     agent_builder.add_node(should_compress_context)
     agent_builder.add_node(collect_answer)
+    if config.ENABLE_AGENTIC_RETRIEVAL:
+        # evidence reflection is a LIGHT-tier task (intent/summarization-class)
+        agent_builder.add_node("evaluate_evidence", partial(evaluate_evidence, llm=_light_llm))
 
     agent_builder.add_edge(START, "orchestrator")
     agent_builder.add_conditional_edges("orchestrator", route_after_orchestrator_call, {"tools": "tools", "fallback_response": "fallback_response", "collect_answer": "collect_answer"})
-    agent_builder.add_edge("tools", "should_compress_context")
+    if config.ENABLE_AGENTIC_RETRIEVAL:
+        agent_builder.add_edge("tools", "evaluate_evidence")
+        agent_builder.add_conditional_edges(
+            "evaluate_evidence",
+            route_after_evidence,
+            {"should_compress_context": "should_compress_context", "fallback_response": "fallback_response"},
+        )
+    else:
+        agent_builder.add_edge("tools", "should_compress_context")
     agent_builder.add_edge("compress_context", "orchestrator")
     agent_builder.add_edge("fallback_response", "collect_answer")
     agent_builder.add_edge("collect_answer", END)
