@@ -81,6 +81,10 @@ RAG_DIRECT_EVIDENCE_SCORE = float(os.environ.get("RAG_DIRECT_EVIDENCE_SCORE", "0
 RAG_LIMITED_EVIDENCE_SCORE = float(os.environ.get("RAG_LIMITED_EVIDENCE_SCORE", "0.76"))
 RAG_RETRY_LIMIT = int(os.environ.get("RAG_RETRY_LIMIT", "1"))
 
+# P1: agentic retrieval — LLM evidence-sufficiency reflection loop
+MAX_EVIDENCE_ROUNDS = int(os.environ.get("MAX_EVIDENCE_ROUNDS", "2"))
+ENABLE_AGENTIC_RETRIEVAL = os.environ.get("ENABLE_AGENTIC_RETRIEVAL", "true").lower() == "true"
+
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "")
 OPENAI_ENABLE_THINKING = os.environ.get("OPENAI_ENABLE_THINKING", "false").lower() == "true"

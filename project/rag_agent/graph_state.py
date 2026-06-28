@@ -77,3 +77,9 @@ class AgentState(MessagesState):
     agent_answers: List[dict] = []
     tool_call_count: Annotated[int, operator.add] = 0
     iteration_count: Annotated[int, operator.add] = 0
+    # P1: agentic retrieval — evidence-sufficiency reflection loop
+    evidence_rounds: int = 0
+    evidence_critique: str = ""
+    last_refined_query: str = ""
+    refined_queries: Annotated[List[str], operator.add] = []
+    evidence_sufficient: bool = False

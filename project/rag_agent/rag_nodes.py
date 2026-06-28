@@ -19,6 +19,7 @@ from .schemas import (
     QueryAnalysis,
     RetrievalQueryPlan,
     GroundedAnswerCheck,
+    EvidenceSufficiency,
 )
 from .prompts import (
     get_rewrite_query_prompt,
@@ -27,11 +28,12 @@ from .prompts import (
     get_fallback_response_prompt,
     get_context_compression_prompt,
     get_aggregation_prompt,
+    get_evidence_sufficiency_prompt,
 )
 from utils import estimate_context_tokens
 import config
 from config import BASE_TOKEN_THRESHOLD, TOKEN_GROWTH_FACTOR
-from rag_agent.tools import plan_queries, ground_answer
+from rag_agent.tools import plan_queries, ground_answer, check_sufficiency
 
 from .node_helpers import (
     _build_history_reset_messages,
@@ -287,6 +289,102 @@ def plan_retrieval_queries(state: State, llm):
     return {"planned_queries": planned}
 
 
+def _latest_tool_message(state: AgentState):
+    for msg in reversed(state.get("messages", [])):
+        if isinstance(msg, ToolMessage):
+            return msg
+    return None
+
+
+def _evidence_docs_from_tool_message(text: str) -> list[Document]:
+    """Parse graded retrieval-result blocks from a ToolMessage content string.
+
+    The retrieval tool (tools.py:654-672) joins per-result blocks with
+    "\\n\\n"; each block carries `Score: 0.8732` and `Relevance Grade: high`
+    lines. We rebuild Document objects carrying the same metadata shape that
+    `check_sufficiency` (tools.py:190) and `_doc_score` (tools.py:84) read, so
+    the rule-based sufficiency check sees genuine scores/grades instead of a
+    hardcoded weak doc. Returns an empty list when no parseable blocks exist.
+    """
+    docs: list[Document] = []
+    if not text:
+        return docs
+    for block in text.split("\n\n"):
+        score_match = re.search(r"Score:\s*([0-9]*\.?[0-9]+)", block, re.IGNORECASE)
+        if not score_match:
+            continue
+        try:
+            score = float(score_match.group(1))
+        except ValueError:
+            continue
+        grade_match = re.search(r"Relevance Grade:\s*(\w+)", block, re.IGNORECASE)
+        grade = grade_match.group(1).strip().lower() if grade_match else ""
+        docs.append(Document(page_content=block, metadata={"score": score, "relevance_grade": grade}))
+    return docs
+
+
+def evaluate_evidence(state: AgentState, llm):
+    """P1: reflect on retrieved evidence; decide sufficiency and refine query.
+
+    Fast path: rule-based check_sufficiency says sufficient → skip LLM.
+    Reflection path: rule says insufficient → light LLM judges via
+    EvidenceSufficiency schema and produces a refined retry_query.
+    Failure path: LLM parse/empty → fall back to rule's retry_query.
+    """
+    tool_msg = _latest_tool_message(state)
+    evidence_text = str(getattr(tool_msg, "content", "") or "")
+    question = str(state.get("question") or "").strip()
+    query_plan = [str(q).strip() for q in (state.get("query_plan") or []) if str(q).strip()]
+
+    # Parse genuine graded docs from the latest tool result so check_sufficiency
+    # sees real scores/grades — this is what makes the fast path reachable.
+    evidence_docs = _evidence_docs_from_tool_message(evidence_text)
+
+    rule = check_sufficiency(question or (query_plan[0] if query_plan else ""), evidence_docs)
+
+    rounds = int(state.get("evidence_rounds", 0) or 0)
+
+    # Fast path: rule says sufficient — skip LLM entirely.
+    if rule.get("is_sufficient"):
+        return {
+            "evidence_critique": rule.get("reason", ""),
+            "last_refined_query": "",
+            "evidence_rounds": rounds,
+            "evidence_sufficient": True,
+        }
+
+    # Reflection path.
+    sys_msg = SystemMessage(content=get_evidence_sufficiency_prompt())
+    user_payload = (
+        f"用户问题：{question}\n"
+        f"已有检索式：{query_plan}\n"
+        f"最新检索证据：\n{evidence_text[:2000]}"
+    )
+    parser = _structured_output_llm(llm, EvidenceSufficiency, max_tokens=config.LLM_STRUCTURED_MAX_TOKENS)
+    verdict = parser.invoke([sys_msg, HumanMessage(content=user_payload)])
+
+    refined = (verdict.retry_query or "").strip()
+    critique = (verdict.reason or rule.get("reason", "")).strip()
+
+    # Failure fallback: LLM gave insufficient but no usable refined query.
+    if not verdict.is_sufficient and not refined:
+        refined = (rule.get("retry_query") or "").strip()
+
+    is_sufficient = bool(verdict.is_sufficient)
+
+    delta = {
+        "evidence_critique": critique,
+        "evidence_rounds": rounds + 1 if not is_sufficient else rounds,
+        "evidence_sufficient": is_sufficient,
+    }
+    if refined and not is_sufficient:
+        delta["last_refined_query"] = refined
+        delta["refined_queries"] = [refined]
+    else:
+        delta["last_refined_query"] = ""
+    return delta
+
+
 # --- Agent Nodes ---
 def orchestrator(state: AgentState, llm_with_tools):
     context_summary = state.get("context_summary", "").strip()
@@ -331,12 +429,29 @@ def orchestrator(state: AgentState, llm_with_tools):
                 "Pass the retrieval query plan into the tool when available. Prefer the current question first; if the first retrieval is weak, you may try one alternate query from the retrieval query plan, but avoid repeating the same search."
             )
             base_messages.append(HumanMessage(content=retrieval_hint))
+        # P1: inject refined-query hint after evidence reflection found evidence insufficient.
+        # When both retrieval_hint and refined_hint are present, refined_hint takes precedence (it is more specific and recent).
+        refined_query = str(state.get("last_refined_query", "") or "").strip()
+        if refined_query:
+            critique = str(state.get("evidence_critique", "") or "").strip()
+            refined_hint = (
+                f"上一次检索证据不足，原因：{critique}。"
+                f"请用以下检索式重新调用 search_child_chunks，不要重复之前的查询：{refined_query}"
+            )
+            base_messages.append(HumanMessage(content=refined_hint))
         response = llm_with_tools.invoke(base_messages)
-        return {"messages": [human_msg, response], "tool_call_count": len(response.tool_calls or []), "iteration_count": 1}
+        return {"messages": [human_msg, response], "tool_call_count": len(response.tool_calls or []), "iteration_count": 1, "last_refined_query": ""}
 
-    response = llm_with_tools.invoke([sys_msg] + summary_injection + recent_context_injection + topic_focus_injection + user_memories_injection + query_plan_injection + state["messages"])
+    reuse_messages = [sys_msg] + summary_injection + recent_context_injection + topic_focus_injection + user_memories_injection + query_plan_injection + state["messages"]
+    refined_query = str(state.get("last_refined_query", "") or "").strip()
+    if refined_query:
+        critique = str(state.get("evidence_critique", "") or "").strip()
+        reuse_messages.append(HumanMessage(
+            content=f"上一次检索证据不足，原因：{critique}。请用以下检索式重新调用 search_child_chunks，不要重复之前的查询：{refined_query}"
+        ))
+    response = llm_with_tools.invoke(reuse_messages)
     tool_calls = response.tool_calls if hasattr(response, "tool_calls") else []
-    return {"messages": [response], "tool_call_count": len(tool_calls) if tool_calls else 0, "iteration_count": 1}
+    return {"messages": [response], "tool_call_count": len(tool_calls) if tool_calls else 0, "iteration_count": 1, "last_refined_query": ""}
 
 def fallback_response(state: AgentState, llm):
     seen = set()
@@ -632,6 +747,7 @@ __all__ = [
     "answer_grounding_check",
     "collect_answer",
     "compress_context",
+    "evaluate_evidence",
     "fallback_response",
     "grounded_answer_generation",
     "orchestrator",
