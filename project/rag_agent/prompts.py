@@ -261,16 +261,6 @@ Rules:
 """
 
 
-def get_evidence_sufficiency_prompt() -> str:
-    return """Decide whether the current retrieved evidence is sufficient to answer the user's question.
-
-Rules:
-1. Mark insufficient when evidence is missing core facts, only weakly related, or clearly incomplete.
-2. At most suggest one improved retry query.
-3. If evidence is enough for a cautious answer, mark sufficient.
-"""
-
-
 def get_answer_grounding_prompt() -> str:
     return """Check whether the drafted answer stays within the supplied evidence.
 
