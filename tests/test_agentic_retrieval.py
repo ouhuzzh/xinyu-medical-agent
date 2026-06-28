@@ -46,22 +46,37 @@ def _make_state(messages, **extra):
 
 class TestEvaluateEvidenceFastPath(unittest.TestCase):
     def test_sufficient_evidence_skips_llm(self):
-        """Rule path returns sufficient=True WITHOUT calling the LLM."""
+        """Strong graded evidence → check_sufficiency returns sufficient=True WITHOUT calling the LLM.
+
+        This is the REAL fast path: the tool message carries genuine
+        `Score:` / `Relevance Grade:` lines (the format tools.py:654-672 emits),
+        the node parses them into graded Documents, and the rule check fires.
+        No mocking of check_sufficiency — it must actually return sufficient.
+        """
         tool_msg = ToolMessage(
-            content="[DOC1] 高血压合并痛风患者应避免使用噻嗪类利尿剂，因可能加重高尿酸血症。",
+            content=(
+                "Parent ID: p_001\n"
+                "File Name: hypertension_gout.md\n"
+                "Source Title: 高血压合并痛风用药指南\n"
+                "Source Type: medlineplus\n"
+                "Score: 0.9100\n"
+                "Relevance Grade: high\n"
+                "Confidence Bucket: high\n"
+                "Content: 高血压合并痛风患者应避免使用噻嗪类利尿剂，因可能加重高尿酸血症。"
+            ),
             tool_call_id="1",
         )
         state = _make_state([tool_msg])
 
         llm = MagicMock()
-        with patch("project.rag_agent.rag_nodes.check_sufficiency") as mock_check:
-            mock_check.return_value = {"is_sufficient": True, "reason": "direct_evidence", "retry_query": ""}
-            with patch("project.rag_agent.rag_nodes._structured_output_llm") as mock_so:
-                result = evaluate_evidence(state, llm)
-                mock_so.assert_not_called()  # fast path skips LLM
+        with patch("project.rag_agent.rag_nodes._structured_output_llm") as mock_so:
+            result = evaluate_evidence(state, llm)
+            mock_so.assert_not_called()  # fast path skips LLM
 
+        self.assertTrue(result["_evidence_sufficient"])
         self.assertEqual(result["evidence_critique"], "direct_evidence")
         self.assertEqual(result["evidence_rounds"], 0)  # no round counted on fast-path success
+        self.assertEqual(result["last_refined_query"], "")
 
 
 class TestEvaluateEvidenceReflection(unittest.TestCase):
@@ -90,6 +105,39 @@ class TestEvaluateEvidenceReflection(unittest.TestCase):
         self.assertEqual(result["last_refined_query"], "高血压 合并痛风 药物 相互作用 禁忌")
         self.assertEqual(result["refined_queries"], ["高血压 合并痛风 药物 相互作用 禁忌"])
         self.assertIn("痛风", result["evidence_critique"])
+
+    def test_llm_says_sufficient_reflection_path(self):
+        """Loop-terminating reflection: rule says insufficient but LLM says sufficient.
+
+        When the LLM verdict is sufficient, the node must NOT increment
+        evidence_rounds, must NOT record a refined query, and must signal
+        `_evidence_sufficient=True` so the downstream edge terminates the loop.
+        """
+        tool_msg = ToolMessage(content="[DOC1] 高血压常规用药包括ACEI。", tool_call_id="1")
+        state = _make_state([tool_msg], evidence_rounds=2)
+
+        llm = MagicMock()
+        parser = MagicMock()
+        from project.rag_agent.schemas import EvidenceSufficiency
+        parser.invoke.return_value = EvidenceSufficiency(
+            is_sufficient=True,
+            reason="证据充分",
+            retry_query="",
+        )
+
+        with patch("project.rag_agent.rag_nodes.check_sufficiency") as mock_check, \
+             patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser) as mock_so:
+            mock_check.return_value = {"is_sufficient": False, "reason": "weak", "retry_query": "x"}
+            result = evaluate_evidence(state, llm)
+
+            mock_so.assert_called_once()
+
+        self.assertTrue(result["_evidence_sufficient"])
+        self.assertEqual(result["evidence_rounds"], 2)  # unchanged, not incremented
+        self.assertEqual(result["last_refined_query"], "")
+        # No refined query recorded when sufficient.
+        self.assertNotIn("refined_queries", result)
+        self.assertEqual(result["evidence_critique"], "证据充分")
 
 
 class TestEvaluateEvidenceLLMFailureFallback(unittest.TestCase):

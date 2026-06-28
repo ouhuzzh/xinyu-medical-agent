@@ -296,6 +296,33 @@ def _latest_tool_message(state: AgentState):
     return None
 
 
+def _evidence_docs_from_tool_message(text: str) -> list[Document]:
+    """Parse graded retrieval-result blocks from a ToolMessage content string.
+
+    The retrieval tool (tools.py:654-672) joins per-result blocks with
+    "\\n\\n"; each block carries `Score: 0.8732` and `Relevance Grade: high`
+    lines. We rebuild Document objects carrying the same metadata shape that
+    `check_sufficiency` (tools.py:190) and `_doc_score` (tools.py:84) read, so
+    the rule-based sufficiency check sees genuine scores/grades instead of a
+    hardcoded weak doc. Returns an empty list when no parseable blocks exist.
+    """
+    docs: list[Document] = []
+    if not text:
+        return docs
+    for block in text.split("\n\n"):
+        score_match = re.search(r"Score:\s*([0-9]*\.?[0-9]+)", block, re.IGNORECASE)
+        if not score_match:
+            continue
+        try:
+            score = float(score_match.group(1))
+        except ValueError:
+            continue
+        grade_match = re.search(r"Relevance Grade:\s*(\w+)", block, re.IGNORECASE)
+        grade = grade_match.group(1).strip().lower() if grade_match else ""
+        docs.append(Document(page_content=block, metadata={"score": score, "relevance_grade": grade}))
+    return docs
+
+
 def evaluate_evidence(state: AgentState, llm):
     """P1: reflect on retrieved evidence; decide sufficiency and refine query.
 
@@ -309,13 +336,11 @@ def evaluate_evidence(state: AgentState, llm):
     question = str(state.get("question") or "").strip()
     query_plan = [str(q).strip() for q in (state.get("query_plan") or []) if str(q).strip()]
 
-    # Build a pseudo doc list for the rule check from the latest tool result text.
-    # check_sufficiency keys off relevance_grade/score metadata; with raw text we
-    # pass a single doc and rely on the empty/weak fallback path, which is the
-    # case we want the LLM to overrule.
-    pseudo_docs = [Document(page_content=evidence_text, metadata={"score": 0.0, "relevance_grade": "low"})] if evidence_text else []
+    # Parse genuine graded docs from the latest tool result so check_sufficiency
+    # sees real scores/grades — this is what makes the fast path reachable.
+    evidence_docs = _evidence_docs_from_tool_message(evidence_text)
 
-    rule = check_sufficiency(question or (query_plan[0] if query_plan else ""), pseudo_docs)
+    rule = check_sufficiency(question or (query_plan[0] if query_plan else ""), evidence_docs)
 
     rounds = int(state.get("evidence_rounds", 0) or 0)
 
@@ -329,7 +354,6 @@ def evaluate_evidence(state: AgentState, llm):
         }
 
     # Reflection path.
-    import config
     sys_msg = SystemMessage(content=get_evidence_sufficiency_prompt())
     user_payload = (
         f"用户问题：{question}\n"
@@ -706,6 +730,7 @@ __all__ = [
     "answer_grounding_check",
     "collect_answer",
     "compress_context",
+    "evaluate_evidence",
     "fallback_response",
     "grounded_answer_generation",
     "orchestrator",
