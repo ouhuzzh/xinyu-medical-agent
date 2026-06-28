@@ -168,10 +168,11 @@ class TestRouteAfterEvidence(unittest.TestCase):
 
     def test_insufficient_with_budget_routes_to_compress(self):
         """Insufficient but under round limit and novel query → loop back via compress."""
+        import config
         state = _make_state(
             [],
             evidence_sufficient=False,
-            evidence_rounds=1,
+            evidence_rounds=config.MAX_EVIDENCE_ROUNDS - 1,
             last_refined_query="新检索式A",
             refined_queries=["新检索式A"],
         )
