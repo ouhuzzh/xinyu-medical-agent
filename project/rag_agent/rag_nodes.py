@@ -429,12 +429,28 @@ def orchestrator(state: AgentState, llm_with_tools):
                 "Pass the retrieval query plan into the tool when available. Prefer the current question first; if the first retrieval is weak, you may try one alternate query from the retrieval query plan, but avoid repeating the same search."
             )
             base_messages.append(HumanMessage(content=retrieval_hint))
+        # P1: inject refined-query hint after evidence reflection found evidence insufficient.
+        refined_query = str(state.get("last_refined_query", "") or "").strip()
+        if refined_query:
+            critique = str(state.get("evidence_critique", "") or "").strip()
+            refined_hint = (
+                f"上一次检索证据不足，原因：{critique}。"
+                f"请用以下检索式重新调用 search_child_chunks，不要重复之前的查询：{refined_query}"
+            )
+            base_messages.append(HumanMessage(content=refined_hint))
         response = llm_with_tools.invoke(base_messages)
-        return {"messages": [human_msg, response], "tool_call_count": len(response.tool_calls or []), "iteration_count": 1}
+        return {"messages": [human_msg, response], "tool_call_count": len(response.tool_calls or []), "iteration_count": 1, "last_refined_query": ""}
 
-    response = llm_with_tools.invoke([sys_msg] + summary_injection + recent_context_injection + topic_focus_injection + user_memories_injection + query_plan_injection + state["messages"])
+    reuse_messages = [sys_msg] + summary_injection + recent_context_injection + topic_focus_injection + user_memories_injection + query_plan_injection + state["messages"]
+    refined_query = str(state.get("last_refined_query", "") or "").strip()
+    if refined_query:
+        critique = str(state.get("evidence_critique", "") or "").strip()
+        reuse_messages.append(HumanMessage(
+            content=f"上一次检索证据不足，原因：{critique}。请用以下检索式重新调用 search_child_chunks，不要重复之前的查询：{refined_query}"
+        ))
+    response = llm_with_tools.invoke(reuse_messages)
     tool_calls = response.tool_calls if hasattr(response, "tool_calls") else []
-    return {"messages": [response], "tool_call_count": len(tool_calls) if tool_calls else 0, "iteration_count": 1}
+    return {"messages": [response], "tool_call_count": len(tool_calls) if tool_calls else 0, "iteration_count": 1, "last_refined_query": ""}
 
 def fallback_response(state: AgentState, llm):
     seen = set()

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch  # noqa: E402
 from langchain_core.messages import AIMessage, ToolMessage, HumanMessage  # noqa: E402
 from langchain_core.documents import Document  # noqa: E402
 from project.rag_agent.graph_state import AgentState  # noqa: E402
-from project.rag_agent.rag_nodes import evaluate_evidence  # noqa: E402
+from project.rag_agent.rag_nodes import evaluate_evidence, orchestrator  # noqa: E402
 from project.rag_agent.edges import route_after_evidence  # noqa: E402
 
 
@@ -209,6 +209,65 @@ class TestRouteAfterEvidence(unittest.TestCase):
             refined_queries=[],
         )
         self.assertEqual(route_after_evidence(state), "fallback_response")
+
+
+class TestOrchestratorRefinedQueryInjection(unittest.TestCase):
+    def test_refined_query_is_injected_as_hint(self):
+        """When last_refined_query is set, orchestrator appends a re-search hint."""
+        from langchain_core.messages import HumanMessage
+        from project.rag_agent.rag_nodes import orchestrator
+
+        state = {
+            "question": "高血压合并痛风吃什么药安全",
+            "query_plan": ["高血压 痛风"],
+            "last_refined_query": "高血压 合并痛风 药物 相互作用 禁忌",
+            "evidence_critique": "证据未涉及与痛风的交互",
+            "messages": [],
+            "context_summary": "",
+            "recent_context": "",
+            "topic_focus": "",
+            "user_memories": "",
+        }
+
+        llm_with_tools = MagicMock()
+        response = MagicMock()
+        response.tool_calls = [{"name": "search_child_chunks", "args": {"query": "高血压 合并痛风 药物 相互作用 禁忌"}, "id": "1"}]
+        response.content = ""
+        llm_with_tools.invoke.return_value = response
+
+        result = orchestrator(state, llm_with_tools)
+
+        # The injected hint should mention the critique and refined query.
+        invoked_messages = llm_with_tools.invoke.call_args[0][0]
+        joined = "\n".join(str(getattr(m, "content", "")) for m in invoked_messages)
+        self.assertIn("高血压 合并痛风 药物 相互作用 禁忌", joined)
+        self.assertIn("证据未涉及与痛风的交互", joined)
+        # last_refined_query is cleared after injection.
+        self.assertEqual(result.get("last_refined_query", ""), "")
+
+    def test_no_injection_when_refined_query_absent(self):
+        from project.rag_agent.rag_nodes import orchestrator
+
+        state = {
+            "question": "普通问题",
+            "query_plan": [],
+            "last_refined_query": "",
+            "messages": [],
+            "context_summary": "",
+            "recent_context": "",
+            "topic_focus": "",
+            "user_memories": "",
+        }
+        llm_with_tools = MagicMock()
+        response = MagicMock()
+        response.tool_calls = []
+        response.content = "answer"
+        llm_with_tools.invoke.return_value = response
+
+        result = orchestrator(state, llm_with_tools)
+        joined = "\n".join(str(getattr(m, "content", "")) for m in llm_with_tools.invoke.call_args[0][0])
+        self.assertNotIn("上一次检索证据不足", joined)
+        self.assertEqual(result.get("last_refined_query", ""), "")
 
 
 if __name__ == "__main__":
