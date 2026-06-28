@@ -430,6 +430,7 @@ def orchestrator(state: AgentState, llm_with_tools):
             )
             base_messages.append(HumanMessage(content=retrieval_hint))
         # P1: inject refined-query hint after evidence reflection found evidence insufficient.
+        # When both retrieval_hint and refined_hint are present, refined_hint takes precedence (it is more specific and recent).
         refined_query = str(state.get("last_refined_query", "") or "").strip()
         if refined_query:
             critique = str(state.get("evidence_critique", "") or "").strip()

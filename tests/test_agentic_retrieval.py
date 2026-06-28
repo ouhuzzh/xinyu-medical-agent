@@ -269,6 +269,34 @@ class TestOrchestratorRefinedQueryInjection(unittest.TestCase):
         self.assertNotIn("上一次检索证据不足", joined)
         self.assertEqual(result.get("last_refined_query", ""), "")
 
+    def test_refined_query_injected_in_reuse_branch(self):
+        """When messages already exist (multi-turn loop), the reuse branch also injects the hint and clears last_refined_query."""
+        from langchain_core.messages import HumanMessage, AIMessage
+        from project.rag_agent.rag_nodes import orchestrator
+
+        state = {
+            "question": "高血压合并痛风吃什么药安全",
+            "query_plan": ["高血压 痛风"],
+            "last_refined_query": "高血压 合并痛风 药物 禁忌",
+            "evidence_critique": "证据偏离问题",
+            "messages": [HumanMessage(content="高血压合并痛风吃什么药安全"), AIMessage(content="")],
+            "context_summary": "",
+            "recent_context": "",
+            "topic_focus": "",
+            "user_memories": "",
+        }
+        llm_with_tools = MagicMock()
+        response = MagicMock()
+        response.tool_calls = []
+        response.content = "answer"
+        llm_with_tools.invoke.return_value = response
+
+        result = orchestrator(state, llm_with_tools)
+        joined = "\n".join(str(getattr(m, "content", "")) for m in llm_with_tools.invoke.call_args[0][0])
+        self.assertIn("高血压 合并痛风 药物 禁忌", joined)
+        self.assertIn("证据偏离问题", joined)
+        self.assertEqual(result.get("last_refined_query"), "")
+
 
 if __name__ == "__main__":
     unittest.main()
