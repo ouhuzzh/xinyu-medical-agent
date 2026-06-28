@@ -19,6 +19,7 @@ from .schemas import (
     QueryAnalysis,
     RetrievalQueryPlan,
     GroundedAnswerCheck,
+    EvidenceSufficiency,
 )
 from .prompts import (
     get_rewrite_query_prompt,
@@ -27,11 +28,12 @@ from .prompts import (
     get_fallback_response_prompt,
     get_context_compression_prompt,
     get_aggregation_prompt,
+    get_evidence_sufficiency_prompt,
 )
 from utils import estimate_context_tokens
 import config
 from config import BASE_TOKEN_THRESHOLD, TOKEN_GROWTH_FACTOR
-from rag_agent.tools import plan_queries, ground_answer
+from rag_agent.tools import plan_queries, ground_answer, check_sufficiency
 
 from .node_helpers import (
     _build_history_reset_messages,
@@ -285,6 +287,78 @@ def plan_retrieval_queries(state: State, llm):
     base_query = rewritten[0] if rewritten else original_query
     planned = plan_queries(base_query, topic_focus=state.get("topic_focus", ""), recent_context=state.get("recent_context", ""))
     return {"planned_queries": planned}
+
+
+def _latest_tool_message(state: AgentState):
+    for msg in reversed(state.get("messages", [])):
+        if isinstance(msg, ToolMessage):
+            return msg
+    return None
+
+
+def evaluate_evidence(state: AgentState, llm):
+    """P1: reflect on retrieved evidence; decide sufficiency and refine query.
+
+    Fast path: rule-based check_sufficiency says sufficient → skip LLM.
+    Reflection path: rule says insufficient → light LLM judges via
+    EvidenceSufficiency schema and produces a refined retry_query.
+    Failure path: LLM parse/empty → fall back to rule's retry_query.
+    """
+    tool_msg = _latest_tool_message(state)
+    evidence_text = str(getattr(tool_msg, "content", "") or "")
+    question = str(state.get("question") or "").strip()
+    query_plan = [str(q).strip() for q in (state.get("query_plan") or []) if str(q).strip()]
+
+    # Build a pseudo doc list for the rule check from the latest tool result text.
+    # check_sufficiency keys off relevance_grade/score metadata; with raw text we
+    # pass a single doc and rely on the empty/weak fallback path, which is the
+    # case we want the LLM to overrule.
+    pseudo_docs = [Document(page_content=evidence_text, metadata={"score": 0.0, "relevance_grade": "low"})] if evidence_text else []
+
+    rule = check_sufficiency(question or (query_plan[0] if query_plan else ""), pseudo_docs)
+
+    rounds = int(state.get("evidence_rounds", 0) or 0)
+
+    # Fast path: rule says sufficient — skip LLM entirely.
+    if rule.get("is_sufficient"):
+        return {
+            "evidence_critique": rule.get("reason", ""),
+            "last_refined_query": "",
+            "evidence_rounds": rounds,
+            "_evidence_sufficient": True,
+        }
+
+    # Reflection path.
+    import config
+    sys_msg = SystemMessage(content=get_evidence_sufficiency_prompt())
+    user_payload = (
+        f"用户问题：{question}\n"
+        f"已有检索式：{query_plan}\n"
+        f"最新检索证据：\n{evidence_text[:2000]}"
+    )
+    parser = _structured_output_llm(llm, EvidenceSufficiency, max_tokens=config.LLM_STRUCTURED_MAX_TOKENS)
+    verdict = parser.invoke([sys_msg, HumanMessage(content=user_payload)])
+
+    refined = (verdict.retry_query or "").strip()
+    critique = (verdict.reason or rule.get("reason", "")).strip()
+
+    # Failure fallback: LLM gave insufficient but no usable refined query.
+    if not verdict.is_sufficient and not refined:
+        refined = (rule.get("retry_query") or "").strip()
+
+    is_sufficient = bool(verdict.is_sufficient)
+
+    delta = {
+        "evidence_critique": critique,
+        "evidence_rounds": rounds + 1 if not is_sufficient else rounds,
+        "_evidence_sufficient": is_sufficient,
+    }
+    if refined and not is_sufficient:
+        delta["last_refined_query"] = refined
+        delta["refined_queries"] = [refined]
+    else:
+        delta["last_refined_query"] = ""
+    return delta
 
 
 # --- Agent Nodes ---
