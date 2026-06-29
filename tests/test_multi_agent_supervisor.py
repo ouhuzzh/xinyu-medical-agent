@@ -255,6 +255,15 @@ class TestRouteAfterGroundingSupervisor(unittest.TestCase):
         with unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False):
             self.assertEqual(route_after_grounding(state), "__end__")
 
+    def test_not_grounded_with_budget_routes_to_supervise_when_reflection_off(self):
+        """Regression: reflection-off + supervisor-on must not return revise_answer
+        (the revise_answer node isn't registered in that branch). Falls through to supervise."""
+        import project.rag_agent.edges as edges
+        from project.rag_agent.edges import route_after_grounding
+        state = _make_main_state(grounding_passed=False, grounding_rounds=0)
+        with unittest.mock.patch.object(edges.config, "ENABLE_ANSWER_REFLECTION", False):
+            self.assertEqual(route_after_grounding(state), "supervise")
+
 
 class TestRouteAfterActionSupervisorBranch(unittest.TestCase):
     def test_supervisor_active_loops_back_to_supervise(self):

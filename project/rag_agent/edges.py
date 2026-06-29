@@ -291,14 +291,15 @@ def route_after_grounding(state: State) -> Literal["__end__", "revise_answer", "
     """P2/P4: route after the answer grounding check.
 
     - grounded (grounding_passed=True) → supervise (P4) when supervisor enabled, else END
-    - not grounded + budget remaining (grounding_rounds < MAX_GROUNDING_ROUNDS) → revise_answer
+    - not grounded + budget remaining + reflection on → revise_answer
+    - not grounded + budget remaining + reflection off → supervise (P4) / END
     - not grounded + budget exhausted → supervise (P4) when supervisor enabled, else END
     """
     _to_supervisor = "supervise" if config.ENABLE_MULTI_AGENT_SUPERVISOR else "__end__"
     if bool(state.get("grounding_passed", False)):
         return _to_supervisor
     rounds = int(state.get("grounding_rounds", 0) or 0)
-    if rounds < MAX_GROUNDING_ROUNDS:
+    if rounds < MAX_GROUNDING_ROUNDS and config.ENABLE_ANSWER_REFLECTION:
         return "revise_answer"
     return _to_supervisor
 
