@@ -275,6 +275,8 @@ class TestRouteAfterActionSupervisorBranch(unittest.TestCase):
         self.assertEqual(route_after_action(state), "request_clarification")
 
     def test_secondary_turn_beats_supervisor(self):
+        # Tests router priority in isolation; supervise clears these signals on
+        # dispatch, so this combination only arises if a specialist re-populates them.
         from project.rag_agent.edges import route_after_action
         state = _make_main_state(supervisor_active=True,
                                  secondary_intent="appointment",

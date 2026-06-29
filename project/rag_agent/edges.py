@@ -172,7 +172,7 @@ def route_after_orchestrator_call(state: AgentState) -> Literal["tools", "fallba
     return "tools"
 
 
-def route_after_action(state: State) -> str:
+def route_after_action(state: State) -> Literal["request_clarification", "prepare_secondary_turn", "supervise", "__end__"]:
     """Route after an action specialist (appointment/triage) finishes.
 
     Priority: pending clarification > secondary turn > supervisor loop > END.
