@@ -296,5 +296,25 @@ class TestRouteAfterActionSupervisorBranch(unittest.TestCase):
         self.assertEqual(route_after_action(state), "__end__")
 
 
+class TestGraphWiring(unittest.TestCase):
+    def test_graph_source_references_supervisor_wiring(self):
+        import inspect
+        import project.rag_agent.graph as graph_mod
+        src = inspect.getsource(graph_mod)
+        # New nodes registered
+        self.assertIn("supervise", src)
+        self.assertIn("reset_supervisor_state", src)
+        # New edge function used
+        self.assertIn("route_after_supervisor", src)
+        # Supervisor config flag referenced (gating the wiring)
+        self.assertIn("ENABLE_MULTI_AGENT_SUPERVISOR", src)
+        # reset_supervisor_state must sit between START and analyze_turn
+        self.assertIn('add_edge(START, "reset_supervisor_state")', src)
+        self.assertIn('add_edge("reset_supervisor_state", "analyze_turn")', src)
+        # The supervise conditional edge maps to the two specialists + END
+        self.assertIn('"handle_appointment_skill": "handle_appointment_skill"', src)
+        self.assertIn('"recommend_department": "recommend_department"', src)
+
+
 if __name__ == "__main__":
     unittest.main()
