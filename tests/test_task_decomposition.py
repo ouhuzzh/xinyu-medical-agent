@@ -20,6 +20,12 @@ class TestConfigFields(unittest.TestCase):
         self.assertTrue(config.ENABLE_TASK_DECOMPOSITION)
 
 
+class TestStateFields(unittest.TestCase):
+    def test_sub_questions_field_exists(self):
+        from project.rag_agent.graph_state import State
+        self.assertIn("sub_questions", State.__annotations__)
+
+
 def _make_main_state(**extra):
     base = {
         "messages": [],
