@@ -349,7 +349,7 @@ Start from the [documentation index](docs/README.md) if you are not sure which d
 | Architecture | [Architecture refactor plan](docs/ARCHITECTURE_REFACTOR_PLAN_CN.md), [MCP tool contract](docs/MCP_TOOL_CONTRACT_CN.md), [Frontend/backend split](docs/architecture/frontend_backend_split.md), [FastAPI API layer notes](project/api/README.md) |
 | Deployment | [Docker deployment](docs/DOCKER_DEPLOY_CN.md), [Production rollout checklist](docs/PRODUCTION_ROLLOUT_CHECKLIST_CN.md) |
 | Safety | [Security policy](SECURITY.md), [Medical import guide](docs/MEDICAL_IMPORT.md), [Medical sources guide](docs/MEDICAL_SOURCES.md) |
-| Interview | [Interview architecture guide](docs/INTERVIEW_PROJECT_ARCHITECTURE_CN.md), [Architecture gallery](docs/INTERVIEW_PROJECT_ARCHITECTURE_GALLERY.html), [Interview prep](docs/medical-agent-project-interview-prep.md) |
+| Interview | [Interview architecture guide](docs/INTERVIEW_PROJECT_ARCHITECTURE_CN.md), [Architecture gallery](docs/INTERVIEW_PROJECT_ARCHITECTURE_GALLERY.html) |
 
 ## Data and Repository Hygiene
 

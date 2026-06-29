@@ -16,7 +16,6 @@
 
 1. [面试架构说明](INTERVIEW_PROJECT_ARCHITECTURE_CN.md)
 2. [面试架构图展示页](INTERVIEW_PROJECT_ARCHITECTURE_GALLERY.html)
-3. [项目专项面试准备](medical-agent-project-interview-prep.md)
 
 ## 项目总览
 
@@ -44,7 +43,6 @@
 | --- | --- |
 | [架构重构计划](ARCHITECTURE_REFACTOR_PLAN_CN.md) | 系统从复杂单体向清晰边界演进的路线。 |
 | [MCP 工具契约](MCP_TOOL_CONTRACT_CN.md) | 医院 MCP 接入、工具命名、映射和安全边界。 |
-| [MCP 连接池重构计划](mcp-pool-refactor-plan.md) | MCP pool 的专项设计记录。 |
 | [前后端拆分说明](architecture/frontend_backend_split.md) | React/FastAPI 拆分后的边界说明。 |
 | [Superpowers 设计文档](superpowers/specs/) | 较大的阶段性设计规格。 |
 | [Superpowers 实施计划](superpowers/plans/) | 具体阶段的执行计划和检查点。 |
@@ -63,7 +61,6 @@
 | --- | --- |
 | [面试架构说明](INTERVIEW_PROJECT_ARCHITECTURE_CN.md) | 可直接照着讲的项目定位、架构图、RAG 和 MCP 安全说明。 |
 | [面试架构图展示页](INTERVIEW_PROJECT_ARCHITECTURE_GALLERY.html) | 浏览器打开即可展示 4 张架构图。 |
-| [项目专项面试准备](medical-agent-project-interview-prep.md) | 更完整的面试问答、项目亮点和表达材料。 |
 | [系统分层架构图](architecture/interview-system-architecture.svg) | SVG 图片，可单独打开或放入 PPT。 |
 | [核心请求时序图](architecture/interview-request-sequence.svg) | SVG 图片，可单独打开或放入 PPT。 |
 | [Agentic RAG 链路图](architecture/interview-agentic-rag-loop.svg) | SVG 图片，可单独打开或放入 PPT。 |
@@ -76,3 +73,4 @@
 - 大型设计规格和执行计划放在 `docs/superpowers/specs/` 与 `docs/superpowers/plans/`。
 - 微信分享用的 PNG/PDF/zip 是本地导出产物，默认不提交到仓库。
 - 新增文档后请同步更新本索引，避免资料越积越乱。
+- 已被新文档替代的旧面试稿和未落地草案应删除，不继续放在 `docs/` 根目录里混淆主线。
