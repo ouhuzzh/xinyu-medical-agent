@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>心语医疗小助手项目架构图</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(20, 184, 166, 0.16), transparent 32%),
+        radial-gradient(circle at 92% 8%, rgba(99, 102, 241, 0.12), transparent 28%),
+        #f8fafc;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 42px 28px 72px;
+    }
+    header {
+      margin-bottom: 28px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 34px;
+      letter-spacing: 0;
+    }
+    p {
+      margin: 0;
+      color: #475569;
+      line-height: 1.7;
+    }
+    nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 24px 0 34px;
+    }
+    nav a {
+      padding: 10px 14px;
+      border: 1px solid #99f6e4;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.76);
+      color: #0f766e;
+      font-weight: 700;
+      text-decoration: none;
+    }
+    section {
+      margin: 0 0 38px;
+      padding: 22px;
+      border: 1px solid #dbeafe;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: 0 16px 42px rgba(15, 23, 42, 0.08);
+    }
+    h2 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+    .hint {
+      margin-bottom: 16px;
+      font-size: 15px;
+    }
+    img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #fff;
+    }
+    .open {
+      display: inline-block;
+      margin-top: 12px;
+      color: #2563eb;
+      font-weight: 700;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>心语医疗小助手项目架构图</h1>
+      <p>面试展示建议：先讲系统分层架构，再根据追问切到请求时序、Agentic RAG 或 MCP 挂号安全边界。</p>
+    </header>
+
+    <nav aria-label="图表导航">
+      <a href="#system">系统分层架构</a>
+      <a href="#sequence">核心请求时序</a>
+      <a href="#rag">Agentic RAG</a>
+      <a href="#mcp">MCP 安全边界</a>
+    </nav>
+
+    <section id="system">
+      <h2>1. 系统分层架构图</h2>
+      <p class="hint">用于开场说明整体系统边界：React、FastAPI、应用服务、LangGraph、数据层和外部医院 MCP。</p>
+      <img src="architecture/interview-system-architecture.svg" alt="系统分层架构图">
+      <a class="open" href="architecture/interview-system-architecture.svg" target="_blank">单独打开图片</a>
+    </section>
+
+    <section id="sequence">
+      <h2>2. 核心请求时序图</h2>
+      <p class="hint">用于说明用户发一条消息后，后端如何加锁、装配上下文、进入 LangGraph、调用 RAG 或 MCP，并流式返回。</p>
+      <img src="architecture/interview-request-sequence.svg" alt="核心请求时序图">
+      <a class="open" href="architecture/interview-request-sequence.svg" target="_blank">单独打开图片</a>
+    </section>
+
+    <section id="rag">
+      <h2>3. Agentic RAG 链路图</h2>
+      <p class="hint">用于解释为什么它不是普通 RAG：有 query planning、证据评估、重新检索、grounding check 和回答修正。</p>
+      <img src="architecture/interview-agentic-rag-loop.svg" alt="Agentic RAG 链路图">
+      <a class="open" href="architecture/interview-agentic-rag-loop.svg" target="_blank">单独打开图片</a>
+    </section>
+
+    <section id="mcp">
+      <h2>4. MCP 挂号安全边界图</h2>
+      <p class="hint">用于回答怎么防止模型误挂号：多医院先选择或澄清，预约预览后必须用户确认，再调用指定医院工具。</p>
+      <img src="architecture/interview-mcp-safety-boundary.svg" alt="MCP 挂号安全边界图">
+      <a class="open" href="architecture/interview-mcp-safety-boundary.svg" target="_blank">单独打开图片</a>
+    </section>
+  </main>
+</body>
+</html>

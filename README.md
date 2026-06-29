@@ -340,16 +340,16 @@ assets/                      # README demo media
 
 ## Documentation
 
-- [Frontend/backend split architecture](docs/architecture/frontend_backend_split.md)
-- [Current project structure, Chinese](docs/PROJECT_STRUCTURE_CN.md)
-- [Architecture refactor plan, Chinese](docs/ARCHITECTURE_REFACTOR_PLAN_CN.md)
-- [FastAPI API layer notes](project/api/README.md)
-- [Project guide, Chinese](docs/PROJECT_GUIDE_CN.md)
-- [PostgreSQL setup, Chinese](docs/POSTGRES_SETUP_CN.md)
-- [Medical import guide](docs/MEDICAL_IMPORT.md)
-- [Medical sources guide](docs/MEDICAL_SOURCES.md)
-- [QA evaluation guide](docs/QA_EVAL.md)
-- [Contributing guide](CONTRIBUTING.md)
+Start from the [documentation index](docs/README.md) if you are not sure which document to read.
+
+| Area | Documents |
+| --- | --- |
+| Project overview | [Project structure, Chinese](docs/PROJECT_STRUCTURE_CN.md), [Project guide, Chinese](docs/PROJECT_GUIDE_CN.md), [User guide](docs/USER_GUIDE.md) |
+| Development | [Contributing guide](CONTRIBUTING.md), [PostgreSQL setup](docs/POSTGRES_SETUP_CN.md), [QA evaluation guide](docs/QA_EVAL.md) |
+| Architecture | [Architecture refactor plan](docs/ARCHITECTURE_REFACTOR_PLAN_CN.md), [MCP tool contract](docs/MCP_TOOL_CONTRACT_CN.md), [Frontend/backend split](docs/architecture/frontend_backend_split.md), [FastAPI API layer notes](project/api/README.md) |
+| Deployment | [Docker deployment](docs/DOCKER_DEPLOY_CN.md), [Production rollout checklist](docs/PRODUCTION_ROLLOUT_CHECKLIST_CN.md) |
+| Safety | [Security policy](SECURITY.md), [Medical import guide](docs/MEDICAL_IMPORT.md), [Medical sources guide](docs/MEDICAL_SOURCES.md) |
+| Interview | [Interview architecture guide](docs/INTERVIEW_PROJECT_ARCHITECTURE_CN.md), [Architecture gallery](docs/INTERVIEW_PROJECT_ARCHITECTURE_GALLERY.html), [Interview prep](docs/medical-agent-project-interview-prep.md) |
 
 ## Data and Repository Hygiene
 

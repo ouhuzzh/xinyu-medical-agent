@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">心语医疗小助手系统分层架构图</title>
+  <desc id="desc">展示 React 前端、FastAPI API 层、应用服务层、LangGraph Agentic Workflow、数据层和外部系统的职责边界。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f0fdfa"/>
+      <stop offset="48%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#eef2ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto">
+      <path d="M2 2 L10 6 L2 10 Z" fill="#0f766e"/>
+    </marker>
+    <style>
+      .title { font: 700 36px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 18px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #475569; }
+      .layer-title { font: 700 21px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #0f172a; }
+      .box-title { font: 700 18px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #0f172a; }
+      .box-sub { font: 500 14px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #475569; }
+      .note { font: 600 15px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #0f766e; }
+      .layer { fill: rgba(255,255,255,0.72); stroke: #cbd5e1; stroke-width: 1.2; }
+      .box { fill: #ffffff; stroke: #99f6e4; stroke-width: 1.4; filter: url(#shadow); }
+      .box-blue { fill: #ffffff; stroke: #bfdbfe; stroke-width: 1.4; filter: url(#shadow); }
+      .box-purple { fill: #ffffff; stroke: #ddd6fe; stroke-width: 1.4; filter: url(#shadow); }
+      .box-amber { fill: #ffffff; stroke: #fde68a; stroke-width: 1.4; filter: url(#shadow); }
+      .line { stroke: #0f766e; stroke-width: 2.2; fill: none; marker-end: url(#arrow); }
+      .line-soft { stroke: #64748b; stroke-width: 1.8; fill: none; marker-end: url(#arrow); stroke-dasharray: 7 7; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <text x="64" y="68" class="title">心语医疗小助手：可控 Agentic RAG Workflow 架构</text>
+  <text x="64" y="104" class="subtitle">医疗咨询、知识库问答、医院 MCP 挂号工具接入，多会话隔离与运行态安全保护</text>
+
+  <rect x="56" y="145" width="260" height="620" rx="22" class="layer"/>
+  <text x="82" y="185" class="layer-title">Client Layer</text>
+  <rect x="84" y="220" width="204" height="104" rx="16" class="box"/>
+  <text x="112" y="257" class="box-title">React SPA</text>
+  <text x="112" y="286" class="box-sub">聊天 / 医院绑定 / 多会话</text>
+  <rect x="84" y="352" width="204" height="104" rx="16" class="box"/>
+  <text x="112" y="389" class="box-title">Gradio Admin</text>
+  <text x="112" y="418" class="box-sub">知识库导入与管理</text>
+
+  <rect x="356" y="145" width="282" height="620" rx="22" class="layer"/>
+  <text x="382" y="185" class="layer-title">API Layer - FastAPI</text>
+  <rect x="386" y="220" width="222" height="82" rx="15" class="box-blue"/>
+  <text x="414" y="252" class="box-title">Chat API</text>
+  <text x="414" y="280" class="box-sub">HTTP + SSE Streaming</text>
+  <rect x="386" y="326" width="222" height="82" rx="15" class="box-blue"/>
+  <text x="414" y="358" class="box-title">Auth &amp; User Context</text>
+  <text x="414" y="386" class="box-sub">JWT / Role Guard</text>
+  <rect x="386" y="432" width="222" height="82" rx="15" class="box-blue"/>
+  <text x="414" y="464" class="box-title">Hospital API</text>
+  <text x="414" y="492" class="box-sub">医院绑定 / 凭证管理</text>
+  <rect x="386" y="538" width="222" height="82" rx="15" class="box-blue"/>
+  <text x="414" y="570" class="box-title">System Status API</text>
+  <text x="414" y="598" class="box-sub">运行状态 / 后端健康</text>
+
+  <rect x="678" y="145" width="310" height="620" rx="22" class="layer"/>
+  <text x="704" y="185" class="layer-title">Application Services</text>
+  <rect x="708" y="220" width="250" height="82" rx="15" class="box"/>
+  <text x="736" y="252" class="box-title">ChatTurnInputService</text>
+  <text x="736" y="280" class="box-sub">请求解析 / 记忆装配</text>
+  <rect x="708" y="326" width="250" height="82" rx="15" class="box"/>
+  <text x="736" y="358" class="box-title">Session Store</text>
+  <text x="736" y="386" class="box-sub">多会话 / 线程隔离</text>
+  <rect x="708" y="432" width="250" height="82" rx="15" class="box"/>
+  <text x="736" y="464" class="box-title">Hospital Selection</text>
+  <text x="736" y="492" class="box-sub">多医院选择 / 澄清</text>
+  <rect x="708" y="538" width="250" height="82" rx="15" class="box"/>
+  <text x="736" y="570" class="box-title">ChatTurnService</text>
+  <text x="736" y="598" class="box-sub">消息落库 / 收尾格式化</text>
+  <rect x="708" y="644" width="250" height="82" rx="15" class="box"/>
+  <text x="736" y="676" class="box-title">Schema Guard</text>
+  <text x="736" y="704" class="box-sub">Embedding 维度校验</text>
+
+  <rect x="1028" y="145" width="278" height="620" rx="22" class="layer"/>
+  <text x="1054" y="185" class="layer-title">LangGraph Runtime</text>
+  <rect x="1058" y="220" width="218" height="82" rx="15" class="box-purple"/>
+  <text x="1086" y="252" class="box-title">Intent Router</text>
+  <text x="1086" y="280" class="box-sub">医疗咨询 / 预约 / 其他</text>
+  <rect x="1058" y="326" width="218" height="82" rx="15" class="box-purple"/>
+  <text x="1086" y="358" class="box-title">Agentic RAG</text>
+  <text x="1086" y="386" class="box-sub">规划 / 检索 / 评估</text>
+  <rect x="1058" y="432" width="218" height="82" rx="15" class="box-purple"/>
+  <text x="1086" y="464" class="box-title">Appointment Skill</text>
+  <text x="1086" y="492" class="box-sub">预览 / 确认 / MCP 调用</text>
+  <rect x="1058" y="538" width="218" height="82" rx="15" class="box-purple"/>
+  <text x="1086" y="570" class="box-title">Grounding Check</text>
+  <text x="1086" y="598" class="box-sub">证据支持 / 回答修正</text>
+
+  <rect x="1346" y="145" width="198" height="620" rx="22" class="layer"/>
+  <text x="1372" y="185" class="layer-title">Data &amp; External</text>
+  <rect x="1370" y="220" width="150" height="92" rx="15" class="box-amber"/>
+  <text x="1390" y="252" class="box-title">PostgreSQL</text>
+  <text x="1390" y="280" class="box-sub">pgvector / 会话</text>
+  <rect x="1370" y="338" width="150" height="92" rx="15" class="box-amber"/>
+  <text x="1390" y="370" class="box-title">Redis</text>
+  <text x="1390" y="398" class="box-sub">锁 / 运行保护</text>
+  <rect x="1370" y="456" width="150" height="92" rx="15" class="box-amber"/>
+  <text x="1390" y="488" class="box-title">LLM</text>
+  <text x="1390" y="516" class="box-sub">生成 / Embedding</text>
+  <rect x="1370" y="574" width="150" height="92" rx="15" class="box-amber"/>
+  <text x="1390" y="606" class="box-title">Hospital MCP</text>
+  <text x="1390" y="634" class="box-sub">排班 / 挂号</text>
+
+  <path d="M288 272 C326 272 342 261 386 261" class="line"/>
+  <path d="M288 404 C328 404 342 473 386 473" class="line-soft"/>
+  <path d="M608 261 C646 261 664 261 708 261" class="line"/>
+  <path d="M608 367 C646 367 664 367 708 367" class="line-soft"/>
+  <path d="M958 261 C998 261 1014 261 1058 261" class="line"/>
+  <path d="M1276 367 C1314 367 1330 266 1370 266" class="line"/>
+  <path d="M1276 473 C1314 473 1330 620 1370 620" class="line"/>
+  <path d="M958 367 C1000 367 1012 367 1058 367" class="line"/>
+  <path d="M958 473 C1000 473 1012 473 1058 473" class="line"/>
+  <path d="M958 685 C1010 685 1308 384 1370 384" class="line-soft"/>
+  <path d="M958 367 C1086 750 1310 384 1370 384" class="line-soft"/>
+  <path d="M1276 579 C1324 579 1328 502 1370 502" class="line"/>
+
+  <rect x="64" y="808" width="1472" height="46" rx="16" fill="#ffffff" stroke="#ccfbf1"/>
+  <text x="92" y="838" class="note">设计关键词：可控 Agentic Workflow、状态机约束、RAG 证据闭环、MCP 工具隔离、多会话与 Redis 运行态保护</text>
+</svg>

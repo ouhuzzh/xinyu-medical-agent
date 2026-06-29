@@ -38,3 +38,5 @@ project/.env
 /labels/
 /nul
 /frontend/public/generate-icons.html
+/docs/interview-share/
+/docs/xinyu-medical-agent-interview-share.zip

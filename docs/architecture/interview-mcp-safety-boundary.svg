@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">MCP 挂号安全边界图</title>
+  <desc id="desc">展示多医院选择、澄清、预约预览、用户确认和指定医院 MCP 工具调用的安全边界。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#fef2f2"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto">
+      <path d="M2 2 L10 6 L2 10 Z" fill="#0f766e"/>
+    </marker>
+    <style>
+      .title { font: 700 36px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 18px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #475569; }
+      .box { fill: #ffffff; stroke: #99f6e4; stroke-width: 1.4; filter: url(#shadow); }
+      .danger { fill: #fff1f2; stroke: #fda4af; stroke-width: 1.6; filter: url(#shadow); }
+      .guard { fill: #fefce8; stroke: #fde047; stroke-width: 1.6; filter: url(#shadow); }
+      .done { fill: #ecfdf5; stroke: #34d399; stroke-width: 1.6; filter: url(#shadow); }
+      .h { font: 700 20px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #0f172a; }
+      .p { font: 500 15px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #475569; }
+      .tag { font: 700 14px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #b91c1c; }
+      .line { stroke: #0f766e; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+      .stopline { stroke: #dc2626; stroke-width: 2.4; fill: none; marker-end: url(#arrow); stroke-dasharray: 8 7; }
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <text x="64" y="70" class="title">MCP 医院挂号：安全边界与医院锁定</text>
+  <text x="64" y="106" class="subtitle">高风险动作不允许模型直接执行，必须先选医院、出预览、用户确认，再调用指定医院工具</text>
+
+  <rect x="90" y="210" width="220" height="104" rx="20" class="box"/>
+  <text x="122" y="250" class="h">预约意图识别</text>
+  <text x="122" y="282" class="p">用户想挂号 / 取消 / 改约</text>
+
+  <rect x="390" y="188" width="260" height="148" rx="22" class="guard"/>
+  <text x="422" y="236" class="h">医院选择策略</text>
+  <text x="422" y="268" class="p">明确医院：锁定</text>
+  <text x="422" y="296" class="p">仅一家医院：自动选择</text>
+  <text x="422" y="324" class="p">多家未说明：先澄清</text>
+
+  <rect x="740" y="126" width="250" height="104" rx="20" class="done"/>
+  <text x="772" y="166" class="h">锁定 hospital_code</text>
+  <text x="772" y="198" class="p">写入 appointment_context</text>
+
+  <rect x="740" y="298" width="250" height="104" rx="20" class="danger"/>
+  <text x="772" y="338" class="h">返回澄清</text>
+  <text x="772" y="370" class="p">不查号，不调用 MCP</text>
+
+  <rect x="1080" y="126" width="250" height="104" rx="20" class="box"/>
+  <text x="1112" y="166" class="h">查询医生 / 排班</text>
+  <text x="1112" y="198" class="p">仅使用已锁定医院工具</text>
+
+  <rect x="1080" y="298" width="250" height="104" rx="20" class="box"/>
+  <text x="1112" y="338" class="h">预约预览</text>
+  <text x="1112" y="370" class="p">展示医院、科室、医生、时间</text>
+
+  <rect x="740" y="520" width="250" height="126" rx="22" class="guard"/>
+  <text x="772" y="566" class="h">用户确认？</text>
+  <text x="772" y="598" class="p">否：停止执行</text>
+  <text x="772" y="626" class="p">是：进入安全拦截层</text>
+
+  <rect x="1080" y="530" width="250" height="104" rx="20" class="guard"/>
+  <text x="1112" y="570" class="h">安全拦截层</text>
+  <text x="1112" y="602" class="p">校验 action / payload / 医院</text>
+
+  <rect x="1080" y="704" width="250" height="104" rx="20" class="done"/>
+  <text x="1112" y="744" class="h">调用 MCP 工具</text>
+  <text x="1112" y="776" class="p">只在指定医院 namespace 下匹配</text>
+
+  <path d="M310 262 L390 262" class="line"/>
+  <path d="M650 230 L740 178" class="line"/>
+  <path d="M650 294 L740 350" class="stopline"/>
+  <path d="M990 178 L1080 178" class="line"/>
+  <path d="M1205 230 L1205 298" class="line"/>
+  <path d="M1080 350 C946 388 872 438 865 520" class="line"/>
+  <path d="M990 582 L1080 582" class="line"/>
+  <path d="M1205 634 L1205 704" class="line"/>
+  <path d="M865 646 C690 714 524 674 520 336" class="stopline"/>
+
+  <text x="730" y="430" class="tag">关键原则：多医院未明确时，宁可澄清，也不默认选择第一家</text>
+  <rect x="120" y="724" width="560" height="82" rx="20" fill="#ffffff" stroke="#fecaca"/>
+  <text x="152" y="758" class="h">面试表达重点</text>
+  <text x="152" y="790" class="p">模型可以参与理解和组织信息，但真正挂号必须经过医院锁定、预约预览和用户确认。</text>
+</svg>
