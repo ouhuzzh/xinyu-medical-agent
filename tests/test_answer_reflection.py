@@ -156,6 +156,82 @@ class TestGraphWiring(unittest.TestCase):
         self.assertIn("ENABLE_ANSWER_REFLECTION", src)
 
 
+class TestCompiledGroundingLoop(unittest.TestCase):
+    """Verify the answer_grounding_check -> route_after_grounding -> revise_answer -> answer_grounding_check
+    handoff survives LangGraph's real state machinery (MessagesState append reducer + state fields)."""
+
+    def _build_graph(self, llm):
+        from langgraph.graph import StateGraph, START, END
+        from project.rag_agent.graph_state import State
+        from project.rag_agent.rag_nodes import answer_grounding_check, revise_answer
+        from project.rag_agent.edges import route_after_grounding
+        from functools import partial
+
+        builder = StateGraph(State)
+        builder.add_node("answer_grounding_check", partial(answer_grounding_check, llm=llm))
+        builder.add_node("revise_answer", partial(revise_answer, llm=llm))
+        sink = {"hit": None}
+
+        def _sink_end(state):
+            sink["hit"] = "__end__"
+            return {}
+
+        builder.add_node("__end_sink", _sink_end)
+        builder.add_edge(START, "answer_grounding_check")
+        builder.add_conditional_edges(
+            "answer_grounding_check",
+            route_after_grounding,
+            {"__end__": "__end_sink", "revise_answer": "revise_answer"},
+        )
+        builder.add_edge("revise_answer", "answer_grounding_check")
+        builder.add_edge("__end_sink", END)
+        return builder.compile(), sink
+
+    def test_rewrite_succeeds_then_terminates(self):
+        """Un-grounded answer -> revise_answer -> re-check grounded -> END.
+
+        ground_answer side effects (in call order):
+          1. answer_grounding_check iter1  -> grounded=False (append disclaimer)
+          2. revise_answer fallback        -> unused (LLM succeeds)
+          3. answer_grounding_check iter2  -> grounded=True (revised==current, no append)
+        """
+        from project.rag_agent.schemas import GroundingCritique
+        ground_results = [
+            {"grounded": False, "revised_answer": "超证据【声明】", "note": "low_confidence_guardrail"},
+            {"grounded": False, "revised_answer": "fallback", "note": "low"},
+            {"grounded": True, "revised_answer": "收窄版回答", "note": "grounded"},
+        ]
+        parser = MagicMock()
+        parser.invoke.return_value = GroundingCritique(critique="超证据", revised_answer="收窄版回答")
+        with patch("project.rag_agent.rag_nodes.ground_answer", side_effect=ground_results), \
+             patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser):
+            graph, sink = self._build_graph(MagicMock())
+            state = _make_main_state(
+                [AIMessage(content="超证据")],
+                agent_answers=[{"answer": "证据", "evidence_score": 0.5, "source": "src", "confidence_bucket": "low"}],
+                grounding_evidence_score=0.5,
+            )
+            graph.invoke(state, {"recursion_limit": 20})
+        self.assertEqual(sink["hit"], "__end__")
+
+    def test_budget_exhausted_terminates_at_end(self):
+        """Rewrite still not grounded + rounds exhausted -> END (disclaimer degrade)."""
+        from project.rag_agent.schemas import GroundingCritique
+        ground_result = {"grounded": False, "revised_answer": "答【声明】", "note": "low_confidence_guardrail"}
+        parser = MagicMock()
+        parser.invoke.return_value = GroundingCritique(critique="仍超证据", revised_answer="重写版")
+        with patch("project.rag_agent.rag_nodes.ground_answer", return_value=ground_result), \
+             patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser):
+            graph, sink = self._build_graph(MagicMock())
+            state = _make_main_state(
+                [AIMessage(content="超证据")],
+                agent_answers=[{"answer": "证据", "evidence_score": 0.5, "source": "src", "confidence_bucket": "low"}],
+                grounding_evidence_score=0.5,
+            )
+            graph.invoke(state, {"recursion_limit": 20})
+        self.assertEqual(sink["hit"], "__end__")
+
+
 def _make_main_state(messages, **extra):
     base = {
         "messages": messages,
