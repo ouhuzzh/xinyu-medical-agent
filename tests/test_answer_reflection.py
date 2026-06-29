@@ -87,6 +87,46 @@ class TestAnswerGroundingCheck(unittest.TestCase):
         self.assertIn("【声明】", result["messages"][0].content)
 
 
+class TestReviseAnswer(unittest.TestCase):
+    def test_llm_rewrite_appends_and_increments_round(self):
+        """LLM returns a valid critique+rewrite → rewrite appended, critique recorded, rounds+1."""
+        from project.rag_agent.rag_nodes import revise_answer
+        from project.rag_agent.schemas import GroundingCritique
+        state = _make_main_state(
+            [AIMessage(content="超证据回答")],
+            agent_answers=[{"answer": "证据文本", "evidence_score": 0.5, "source": "src"}],
+            grounding_rounds=0,
+        )
+        parser = MagicMock()
+        parser.invoke.return_value = GroundingCritique(critique="第三句剂量推荐超证据", revised_answer="收窄版回答")
+        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser), \
+             patch("project.rag_agent.rag_nodes.ground_answer",
+                   return_value={"grounded": False, "revised_answer": "fallback声明版", "note": "low_confidence_guardrail"}):
+            result = revise_answer(state, MagicMock())
+        self.assertEqual(result["messages"][0].content, "收窄版回答")
+        self.assertEqual(result["grounding_critique"], "第三句剂量推荐超证据")
+        self.assertEqual(result["grounding_rounds"], 1)
+
+    def test_empty_llm_result_falls_back_to_ground_answer(self):
+        """LLM returns empty (default-on-failure shape) → use ground_answer.revised_answer + note."""
+        from project.rag_agent.rag_nodes import revise_answer
+        from project.rag_agent.schemas import GroundingCritique
+        state = _make_main_state(
+            [AIMessage(content="超证据回答")],
+            agent_answers=[{"answer": "证据", "evidence_score": 0.5, "source": "src"}],
+            grounding_rounds=0,
+        )
+        parser = MagicMock()
+        parser.invoke.return_value = GroundingCritique(critique="", revised_answer="")
+        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser), \
+             patch("project.rag_agent.rag_nodes.ground_answer",
+                   return_value={"grounded": False, "revised_answer": "fallback声明版", "note": "low_confidence_guardrail"}):
+            result = revise_answer(state, MagicMock())
+        self.assertEqual(result["messages"][0].content, "fallback声明版")
+        self.assertEqual(result["grounding_critique"], "low_confidence_guardrail")
+        self.assertEqual(result["grounding_rounds"], 1)
+
+
 def _make_main_state(messages, **extra):
     base = {
         "messages": messages,
