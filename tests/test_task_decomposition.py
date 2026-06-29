@@ -204,6 +204,84 @@ class TestGraphWiring(unittest.TestCase):
         self.assertNotIn('add_node("plan_retrieval_queries"', src)
 
 
+class TestCompiledDecompositionFanOut(unittest.TestCase):
+    """Verify decompose_tasks -> route_after_query_plan fan-out survives LangGraph's real
+    state machinery: N sub-questions produce N parallel agent invocations whose
+    agent_answers entries (index 0..N-1) are merged by the accumulate_or_reset reducer."""
+
+    def _build_graph(self, llm):
+        from langgraph.graph import StateGraph, START, END
+        from project.rag_agent.graph_state import State
+        from project.rag_agent.rag_nodes import decompose_tasks
+        from project.rag_agent.edges import route_after_query_plan
+        from functools import partial
+
+        builder = StateGraph(State)
+        builder.add_node("decompose_tasks", partial(decompose_tasks, llm=llm))
+
+        # Sink records every Send the edge dispatched (one per sub-question).
+        dispatched = {"sends": []}
+
+        def _agent_sink(state):
+            # Mimic collect_answer: append an agent_answers entry tagged by question_index.
+            idx = state.get("question_index", 0)
+            q = state.get("question", "")
+            dispatched["sends"].append({"index": idx, "question": q})
+            return {"agent_answers": [{
+                "index": idx,
+                "question": q,
+                "answer": f"answer-{idx}",
+                "query_plan": [q],
+                "confidence_bucket": "high",
+                "evidence_score": 0.9,
+                "sources": [],
+            }]}
+
+        builder.add_node("agent", _agent_sink)
+        builder.add_edge(START, "decompose_tasks")
+        builder.add_conditional_edges("decompose_tasks", route_after_query_plan)
+        builder.add_edge("agent", END)
+        return builder.compile(), dispatched
+
+    def test_two_sub_questions_dispatch_two_parallel_agents(self):
+        """Compound question → 2 Sends → 2 agent_sink invocations → 2 agent_answers (index 0,1)."""
+        from project.rag_agent.schemas import TaskDecomposition
+        parser = MagicMock()
+        parser.invoke.return_value = TaskDecomposition(
+            needs_decomposition=True,
+            sub_questions=["高血压合并痛风吃什么药安全", "高血压患者如何在家监测血压"],
+            reason="复合",
+        )
+        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser):
+            graph, dispatched = self._build_graph(MagicMock())
+            state = _make_main_state()
+            final = graph.invoke(state, {"recursion_limit": 20})
+        # Two parallel agent invocations happened.
+        self.assertEqual(len(dispatched["sends"]), 2)
+        indices = sorted(s["index"] for s in dispatched["sends"])
+        self.assertEqual(indices, [0, 1])
+        # fan-in: agent_answers merged with both indices.
+        answer_indices = sorted(a["index"] for a in final["agent_answers"])
+        self.assertEqual(answer_indices, [0, 1])
+
+    def test_single_sub_question_dispatches_one_agent(self):
+        """Simple question → 1 Send → 1 agent_sink → 1 agent_answer (today's path)."""
+        from project.rag_agent.schemas import TaskDecomposition
+        parser = MagicMock()
+        parser.invoke.return_value = TaskDecomposition(
+            needs_decomposition=False,
+            sub_questions=["高血压应该注意什么"],
+            reason="单一 facet",
+        )
+        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser):
+            graph, dispatched = self._build_graph(MagicMock())
+            state = _make_main_state(rewrittenQuestions=["高血压应该注意什么"])
+            final = graph.invoke(state, {"recursion_limit": 20})
+        self.assertEqual(len(dispatched["sends"]), 1)
+        self.assertEqual(len(final["agent_answers"]), 1)
+        self.assertEqual(final["agent_answers"][0]["index"], 0)
+
+
 def _make_main_state(**extra):
     base = {
         "messages": [],
