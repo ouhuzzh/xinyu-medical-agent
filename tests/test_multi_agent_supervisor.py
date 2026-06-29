@@ -247,6 +247,14 @@ class TestRouteAfterGroundingSupervisor(unittest.TestCase):
             self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)),
                              "__end__")
 
+    def test_budget_exhausted_routes_to_end_when_disabled(self):
+        import config
+        import project.rag_agent.edges as edges
+        from project.rag_agent.edges import route_after_grounding
+        state = _make_main_state(grounding_passed=False, grounding_rounds=config.MAX_GROUNDING_ROUNDS)
+        with unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False):
+            self.assertEqual(route_after_grounding(state), "__end__")
+
 
 if __name__ == "__main__":
     unittest.main()

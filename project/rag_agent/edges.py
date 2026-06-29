@@ -279,7 +279,7 @@ def route_after_evidence(state: AgentState) -> Literal["should_compress_context"
     return "should_compress_context"
 
 
-def route_after_grounding(state: State) -> str:
+def route_after_grounding(state: State) -> Literal["__end__", "revise_answer", "supervise"]:
     """P2/P4: route after the answer grounding check.
 
     - grounded (grounding_passed=True) → supervise (P4) when supervisor enabled, else END
