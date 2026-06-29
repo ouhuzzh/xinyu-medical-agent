@@ -28,6 +28,21 @@ class TestStateFields(unittest.TestCase):
             self.assertIn(field, defaults, f"State missing field: {field}")
 
 
+class TestGroundingCritiqueSchema(unittest.TestCase):
+    def test_schema_fields(self):
+        from project.rag_agent.schemas import GroundingCritique
+        inst = GroundingCritique(critique="c", revised_answer="r")
+        self.assertEqual(inst.critique, "c")
+        self.assertEqual(inst.revised_answer, "r")
+
+    def test_prompt_function_exists_and_mentions_json(self):
+        from project.rag_agent.prompts import get_grounding_critique_prompt
+        text = get_grounding_critique_prompt()
+        self.assertIn("critique", text)
+        self.assertIn("revised_answer", text)
+        self.assertIn("JSON", text)
+
+
 def _make_main_state(messages, **extra):
     base = {
         "messages": messages,
