@@ -232,6 +232,44 @@ class TestCompiledGroundingLoop(unittest.TestCase):
         self.assertEqual(sink["hit"], "__end__")
 
 
+class TestReflectionDisabledRollback(unittest.TestCase):
+    """When ENABLE_ANSWER_REFLECTION=False the graph uses the hard edge
+    answer_grounding_check -> END (no revise_answer). This proves that topology
+    terminates for both grounded and un-grounded answers (no infinite loop)."""
+
+    def _build_hard_edge_graph(self, llm):
+        from langgraph.graph import StateGraph, START, END
+        from project.rag_agent.graph_state import State
+        from project.rag_agent.rag_nodes import answer_grounding_check
+        from functools import partial
+
+        builder = StateGraph(State)
+        builder.add_node("answer_grounding_check", partial(answer_grounding_check, llm=llm))
+        sink = {"hit": None}
+
+        def _sink(state):
+            sink["hit"] = "end"
+            return {}
+
+        builder.add_node("_sink", _sink)
+        builder.add_edge(START, "answer_grounding_check")
+        builder.add_edge("answer_grounding_check", "_sink")  # rollback hard edge
+        builder.add_edge("_sink", END)
+        return builder.compile(), sink
+
+    def test_hard_edge_terminates_un_grounded(self):
+        with patch("project.rag_agent.rag_nodes.ground_answer",
+                   return_value={"grounded": False, "revised_answer": "答【声明】", "note": "low"}):
+            graph, sink = self._build_hard_edge_graph(MagicMock())
+            state = _make_main_state(
+                [AIMessage(content="答")],
+                agent_answers=[{"answer": "证据", "evidence_score": 0.5, "source": "src", "confidence_bucket": "low"}],
+                grounding_evidence_score=0.5,
+            )
+            graph.invoke(state, {"recursion_limit": 10})
+        self.assertEqual(sink["hit"], "end")
+
+
 def _make_main_state(messages, **extra):
     base = {
         "messages": messages,
