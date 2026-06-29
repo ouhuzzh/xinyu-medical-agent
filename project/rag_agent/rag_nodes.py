@@ -337,17 +337,17 @@ def supervise(state: State, llm):
     sys_msg = SystemMessage(content=get_supervisor_prompt())
     user_payload = (
         f"用户原始问题：{original_query}\n"
-        f"医疗 agent 给出的答案：{last_answer}\n"
+        f"最近 agent 给出的答案：{last_answer}\n"
         f"规则检测的第二意图：{secondary_intent or '（无）'}\n"
         f"规则检测的延迟问题：{deferred or '（无）'}\n"
         f"对话摘要：{state.get('conversation_summary', '') or '（无）'}\n"
     )
 
-    parser = _structured_output_llm(llm, SupervisorDecision, max_tokens=config.LLM_STRUCTURED_MAX_TOKENS)
     try:
+        parser = _structured_output_llm(llm, SupervisorDecision, max_tokens=config.LLM_STRUCTURED_MAX_TOKENS)
         verdict = parser.invoke([sys_msg, HumanMessage(content=user_payload)])
-    except Exception:
-        logger.warning("supervise structured output failed; degrading to FINISH.")
+    except Exception as exc:
+        logger.warning("supervise structured output failed; degrading to FINISH: %s", exc)
         return {"supervisor_active": False, "supervisor_rounds": 0, "supervisor_next": "FINISH"}
 
     next_agent = str(getattr(verdict, "next_agent", "") or "").strip()

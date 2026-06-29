@@ -120,23 +120,28 @@ class _FakeStructuredLLM:
 class TestSuperviseNode(unittest.TestCase):
     def test_disabled_short_circuits_to_finish_no_llm(self):
         import project.rag_agent.rag_nodes as mod
-        with unittest.mock.patch.object(mod.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False):
-            llm = MagicMock()
-            result = mod.supervise(_make_main_state(), llm)
+        # If the guard fires, _structured_output_llm is never called.
+        # side_effect=AssertionError proves the guard short-circuited (a missing
+        # guard would call _structured_output_llm and fail this test loudly).
+        with unittest.mock.patch.object(mod, "_structured_output_llm",
+                                        side_effect=AssertionError("guard should have short-circuited")):
+            with unittest.mock.patch.object(mod.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False):
+                result = mod.supervise(_make_main_state(), MagicMock())
         self.assertEqual(result["supervisor_next"], "FINISH")
         self.assertFalse(result["supervisor_active"])
         self.assertEqual(result["supervisor_rounds"], 0)
-        llm.invoke.assert_not_called()
 
     def test_budget_exhausted_short_circuits_to_finish_no_llm(self):
         import project.rag_agent.rag_nodes as mod
         import config
-        llm = MagicMock()
-        result = mod.supervise(
-            _make_main_state(supervisor_rounds=config.MAX_SUPERVISOR_ROUNDS), llm
-        )
+        with unittest.mock.patch.object(mod, "_structured_output_llm",
+                                        side_effect=AssertionError("guard should have short-circuited")):
+            result = mod.supervise(
+                _make_main_state(supervisor_rounds=config.MAX_SUPERVISOR_ROUNDS), MagicMock()
+            )
         self.assertEqual(result["supervisor_next"], "FINISH")
-        llm.invoke.assert_not_called()
+        self.assertFalse(result["supervisor_active"])
+        self.assertEqual(result["supervisor_rounds"], 0)
 
     def test_dispatch_appointment_sets_flags_and_clears_secondary(self):
         import project.rag_agent.rag_nodes as mod
