@@ -36,6 +36,10 @@ class State(MessagesState):
     secondary_user_query: str = ""
     planned_queries: List[str] = []
     sub_questions: List[str] = []
+    # P4: multi-agent supervisor — loop flags at medical_rag exit
+    supervisor_active: bool = False
+    supervisor_rounds: int = 0
+    supervisor_next: str = "FINISH"
     decision_source: str = ""
     route_reason: str = ""
     last_route_reason: str = ""
