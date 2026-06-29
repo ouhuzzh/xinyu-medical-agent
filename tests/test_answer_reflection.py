@@ -211,8 +211,13 @@ class TestCompiledGroundingLoop(unittest.TestCase):
                 agent_answers=[{"answer": "证据", "evidence_score": 0.5, "source": "src", "confidence_bucket": "low"}],
                 grounding_evidence_score=0.5,
             )
-            graph.invoke(state, {"recursion_limit": 20})
+            final = graph.invoke(state, {"recursion_limit": 20})
         self.assertEqual(sink["hit"], "__end__")
+        # Spec §9: the evidence-bounded rewrite must be the final output (not the disclaimer).
+        self.assertEqual(final["messages"][-1].content, "收窄版回答")
+        # revise_answer ran exactly once before re-check grounded.
+        self.assertEqual(final["grounding_rounds"], 1)
+        self.assertTrue(final["grounding_passed"])
 
     def test_budget_exhausted_terminates_at_end(self):
         """Rewrite still not grounded + rounds exhausted -> END (disclaimer degrade)."""
@@ -228,14 +233,19 @@ class TestCompiledGroundingLoop(unittest.TestCase):
                 agent_answers=[{"answer": "证据", "evidence_score": 0.5, "source": "src", "confidence_bucket": "low"}],
                 grounding_evidence_score=0.5,
             )
-            graph.invoke(state, {"recursion_limit": 20})
+            final = graph.invoke(state, {"recursion_limit": 20})
         self.assertEqual(sink["hit"], "__end__")
+        # Spec §9: budget exhausted → final output is the passive-disclaimer degrade.
+        self.assertIn("【声明】", final["messages"][-1].content)
+        self.assertEqual(final["grounding_rounds"], 1)
+        self.assertFalse(final["grounding_passed"])
 
 
 class TestReflectionDisabledRollback(unittest.TestCase):
     """When ENABLE_ANSWER_REFLECTION=False the graph uses the hard edge
     answer_grounding_check -> END (no revise_answer). This proves that topology
-    terminates for both grounded and un-grounded answers (no infinite loop)."""
+    terminates on an un-grounded answer — the only case that could loop under
+    reflection (the grounded case trivially terminates)."""
 
     def _build_hard_edge_graph(self, llm):
         from langgraph.graph import StateGraph, START, END
