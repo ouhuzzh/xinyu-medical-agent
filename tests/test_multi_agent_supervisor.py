@@ -334,7 +334,6 @@ class TestCompiledSupervisorLoop(unittest.TestCase):
         from langgraph.graph import StateGraph, START, END
         from project.rag_agent.graph_state import State
         from project.rag_agent.edges import route_after_supervisor, route_after_action
-        from project.rag_agent.rag_nodes import supervise
 
         call_log = {"supervise": 0, "specialist": 0}
 
@@ -403,8 +402,10 @@ class TestCompiledSupervisorLoop(unittest.TestCase):
         self.assertEqual(call_log["specialist"], 0)
         self.assertEqual(final["supervisor_next"], "FINISH")
 
-    def test_budget_guard_terminates_loop(self):
-        """If supervise keeps dispatching past MAX_SUPERVISOR_ROUNDS, the loop must terminate."""
+    def test_long_loop_terminates(self):
+        """Verify the compiled loop converges (does not hang) when FINISH is returned after
+        MAX_SUPERVISOR_ROUNDS dispatches. The budget guard itself is unit-tested in
+        TestSuperviseNode.test_budget_exhausted_short_circuits_to_finish_no_llm."""
         import config
         from project.rag_agent.schemas import SupervisorDecision
         verdicts = [SupervisorDecision(next_agent="appointment", reason="x")
