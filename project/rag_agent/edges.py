@@ -2,7 +2,7 @@ from typing import Literal
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.types import Send
 from .graph_state import State, AgentState
-from config import MAX_ITERATIONS, MAX_TOOL_CALLS, MAX_EVIDENCE_ROUNDS, MAX_GROUNDING_ROUNDS
+from config import MAX_ITERATIONS, MAX_TOOL_CALLS, MAX_EVIDENCE_ROUNDS, MAX_GROUNDING_ROUNDS, MAX_SUB_QUESTIONS
 
 
 def route_after_analyze_turn(state: State) -> Literal["rewrite_query", "intent_router"]:
@@ -92,37 +92,45 @@ def route_after_rewrite(state: State) -> str:
 
 
 def route_after_query_plan(state: State):
+    """P3: fan out one Send per sub-question; LangGraph runs them in parallel.
+
+    Each sub-question enters the agent subgraph independently and runs the P1
+    retrieval loop. collect_answer writes agent_answers with question_index=i;
+    the accumulate_or_reset reducer merges them; grounded_answer_generation
+    sorts by index and synthesizes. With a single sub-question this is exactly
+    today's single-Send path.
+    """
     summary = state.get("conversation_summary", "")
     recent_context = state.get("recent_context", "")
     topic_focus = state.get("topic_focus", "")
-    planned_queries = state.get("planned_queries") or state.get("rewrittenQuestions") or []
-    if isinstance(planned_queries, str):
-        planned_queries = [planned_queries]
-    primary_query = next((query for query in planned_queries if str(query).strip()), "") or state.get("originalQuery") or state.get("primary_user_query") or ""
-    deduped_plan = []
-    seen = set()
-    for item in planned_queries or [primary_query]:
-        text = str(item or "").strip()
-        key = text.lower()
-        if not text or key in seen:
-            continue
-        seen.add(key)
-        deduped_plan.append(text)
+    user_memories = state.get("user_memories", "")
 
+    rewritten = [str(q).strip() for q in (state.get("rewrittenQuestions") or []) if str(q).strip()]
+    primary = (rewritten[0] if rewritten else "") or state.get("originalQuery", "") or state.get("primary_user_query", "")
+
+    subs = [str(s).strip() for s in (state.get("sub_questions") or []) if str(s).strip()]
+    if not subs:
+        subs = [primary] if primary else []
+    subs = subs[:MAX_SUB_QUESTIONS]
+
+    payload_base = {
+        "messages": [],
+        "context_summary": summary,
+        "recent_context": recent_context,
+        "topic_focus": topic_focus,
+        "user_memories": user_memories,
+    }
     return [
         Send(
             "agent",
             {
-                "question": primary_query,
-                "question_index": 0,
-                "query_plan": deduped_plan or ([primary_query] if primary_query else []),
-                "messages": [],
-                "context_summary": summary,
-                "recent_context": recent_context,
-                "topic_focus": topic_focus,
-                "user_memories": state.get("user_memories", ""),
+                **payload_base,
+                "question": q,
+                "question_index": i,
+                "query_plan": [q],
             },
         )
+        for i, q in enumerate(subs)
     ]
 
 

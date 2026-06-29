@@ -113,6 +113,63 @@ class TestDecomposeTasks(unittest.TestCase):
         self.assertEqual(result["sub_questions"], ["高血压合并痛风吃什么药安全"])
 
 
+class TestRouteAfterQueryPlanFanOut(unittest.TestCase):
+    def test_fan_out_one_send_per_sub_question(self):
+        """N sub-questions → N Sends, question_index 0..N-1, query_plan=[q] each."""
+        from project.rag_agent.edges import route_after_query_plan
+        state = _make_main_state(
+            rewrittenQuestions=["高血压合并痛风吃什么药安全"],
+            sub_questions=["高血压合并痛风吃什么药安全", "高血压患者如何在家监测血压"],
+        )
+        sends = route_after_query_plan(state)
+        self.assertEqual(len(sends), 2)
+        self.assertTrue(all(isinstance(s, Send) for s in sends))
+        self.assertEqual(sends[0].arg["question"], "高血压合并痛风吃什么药安全")
+        self.assertEqual(sends[0].arg["question_index"], 0)
+        self.assertEqual(sends[0].arg["query_plan"], ["高血压合并痛风吃什么药安全"])
+        self.assertEqual(sends[1].arg["question"], "高血压患者如何在家监测血压")
+        self.assertEqual(sends[1].arg["question_index"], 1)
+        self.assertEqual(sends[1].arg["query_plan"], ["高血压患者如何在家监测血压"])
+
+    def test_single_sub_question_returns_one_send(self):
+        """One sub-question → one Send (today's single-path behavior)."""
+        from project.rag_agent.edges import route_after_query_plan
+        state = _make_main_state(
+            rewrittenQuestions=["高血压应该注意什么"],
+            sub_questions=["高血压应该注意什么"],
+        )
+        sends = route_after_query_plan(state)
+        self.assertEqual(len(sends), 1)
+        self.assertEqual(sends[0].arg["question_index"], 0)
+
+    def test_no_sub_questions_falls_back_to_primary(self):
+        """Empty sub_questions → single Send with primary from rewrittenQuestions."""
+        from project.rag_agent.edges import route_after_query_plan
+        state = _make_main_state(rewrittenQuestions=["高血压应该注意什么"], sub_questions=[])
+        sends = route_after_query_plan(state)
+        self.assertEqual(len(sends), 1)
+        self.assertEqual(sends[0].arg["question"], "高血压应该注意什么")
+        self.assertEqual(sends[0].arg["query_plan"], ["高血压应该注意什么"])
+
+    def test_context_fields_propagated_to_each_send(self):
+        """Each Send carries the shared context fields."""
+        from project.rag_agent.edges import route_after_query_plan
+        state = _make_main_state(
+            conversation_summary="摘要",
+            recent_context="近期",
+            topic_focus="焦点",
+            user_memories="记忆",
+            sub_questions=["q1", "q2"],
+        )
+        sends = route_after_query_plan(state)
+        for s in sends:
+            self.assertEqual(s.arg["context_summary"], "摘要")
+            self.assertEqual(s.arg["recent_context"], "近期")
+            self.assertEqual(s.arg["topic_focus"], "焦点")
+            self.assertEqual(s.arg["user_memories"], "记忆")
+            self.assertEqual(s.arg["messages"], [])
+
+
 def _make_main_state(**extra):
     base = {
         "messages": [],
