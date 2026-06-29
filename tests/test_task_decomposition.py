@@ -151,6 +151,19 @@ class TestRouteAfterQueryPlanFanOut(unittest.TestCase):
         self.assertEqual(sends[0].arg["question"], "高血压应该注意什么")
         self.assertEqual(sends[0].arg["query_plan"], ["高血压应该注意什么"])
 
+    def test_empty_primary_still_emits_one_send(self):
+        """Degenerate: no sub_questions AND no primary → still one Send (question=''), not [].
+
+        Restores the old always-emit-one-Send contract so the graph produces an
+        answer rather than silently terminating.
+        """
+        from project.rag_agent.edges import route_after_query_plan
+        state = _make_main_state(rewrittenQuestions=[], originalQuery="", sub_questions=[])
+        sends = route_after_query_plan(state)
+        self.assertEqual(len(sends), 1)
+        self.assertEqual(sends[0].arg["question"], "")
+        self.assertEqual(sends[0].arg["question_index"], 0)
+
     def test_context_fields_propagated_to_each_send(self):
         """Each Send carries the shared context fields."""
         from project.rag_agent.edges import route_after_query_plan

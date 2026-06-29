@@ -110,7 +110,10 @@ def route_after_query_plan(state: State):
 
     subs = [str(s).strip() for s in (state.get("sub_questions") or []) if str(s).strip()]
     if not subs:
-        subs = [primary] if primary else []
+        # Always emit at least one Send (even with an empty primary) so the graph
+        # still flows through collect_answer → grounded_answer_generation and
+        # produces an answer, rather than silently terminating with no output.
+        subs = [primary]
     subs = subs[:MAX_SUB_QUESTIONS]
 
     payload_base = {
