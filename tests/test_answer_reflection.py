@@ -20,6 +20,14 @@ class TestConfigFields(unittest.TestCase):
         self.assertTrue(config.ENABLE_ANSWER_REFLECTION)
 
 
+class TestStateFields(unittest.TestCase):
+    def test_grounding_reflection_fields_exist(self):
+        from project.rag_agent.graph_state import State
+        defaults = State.__annotations__
+        for field in ("grounding_passed", "grounding_critique", "grounding_rounds"):
+            self.assertIn(field, defaults, f"State missing field: {field}")
+
+
 def _make_main_state(messages, **extra):
     base = {
         "messages": messages,
