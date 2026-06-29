@@ -3,6 +3,7 @@ cross-turn reset + route_after_action/route_after_grounding wiring."""
 import os
 import sys
 import unittest
+from typing import get_args
 from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "project"))
@@ -60,13 +61,23 @@ class TestStateFields(unittest.TestCase):
 class TestSupervisorDecisionSchema(unittest.TestCase):
     def test_schema_fields(self):
         from project.rag_agent.schemas import SupervisorDecision
-        from typing import get_args
         fields = SupervisorDecision.model_fields
         self.assertIn("next_agent", fields)
         self.assertIn("reason", fields)
         # next_agent must be a Literal of appointment/triage/FINISH
         annot = fields["next_agent"].annotation
         self.assertEqual(set(get_args(annot)), {"appointment", "triage", "FINISH"})
+
+    def test_schema_rejects_invalid_next_agent(self):
+        from project.rag_agent.schemas import SupervisorDecision
+        from pydantic import ValidationError
+        # Valid construction succeeds
+        SupervisorDecision(next_agent="appointment", reason="x")
+        SupervisorDecision(next_agent="triage", reason="x")
+        SupervisorDecision(next_agent="FINISH", reason="x")
+        # Invalid value rejected
+        with self.assertRaises(ValidationError):
+            SupervisorDecision(next_agent="medical_rag", reason="x")
 
 
 class TestSupervisorPrompt(unittest.TestCase):
@@ -76,6 +87,11 @@ class TestSupervisorPrompt(unittest.TestCase):
         self.assertIn("appointment", p)
         self.assertIn("triage", p)
         self.assertIn("FINISH", p)
+        # JSON field names must match the schema (catches prompt/schema drift)
+        self.assertIn("next_agent", p)
+        self.assertIn("reason", p)
+        # Strict-JSON marker present
+        self.assertIn("JSON", p)
 
 
 if __name__ == "__main__":

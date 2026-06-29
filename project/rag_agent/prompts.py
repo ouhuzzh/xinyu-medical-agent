@@ -465,7 +465,7 @@ def get_supervisor_prompt() -> str:
         "- FINISH：纯医学知识问答、闲聊、或动作需求已被满足/不明确时，结束本轮。\n\n"
         "判定原则：\n"
         "- 仅当用户原始查询明确暗示了挂号或分诊需求时才派发对应 agent。\n"
-        "- 不要为已经回答完的医学问题重复派发医疗 agent。\n"
+        "- 医疗答案已经充分回答了用户问题时，不要再派发 appointment/triage。\n"
         "- 不确定时选 FINISH。\n\n"
         "严格输出 JSON，不要输出多余文字：\n"
         '{"next_agent": "appointment|triage|FINISH", "reason": "简短依据"}'
