@@ -26,6 +26,22 @@ class TestStateFields(unittest.TestCase):
         self.assertIn("sub_questions", State.__annotations__)
 
 
+class TestTaskDecompositionSchema(unittest.TestCase):
+    def test_schema_fields(self):
+        from project.rag_agent.schemas import TaskDecomposition
+        inst = TaskDecomposition(needs_decomposition=True, sub_questions=["a", "b"], reason="复合")
+        self.assertTrue(inst.needs_decomposition)
+        self.assertEqual(inst.sub_questions, ["a", "b"])
+        self.assertEqual(inst.reason, "复合")
+
+    def test_prompt_function_exists_and_mentions_json(self):
+        from project.rag_agent.prompts import get_task_decomposition_prompt
+        text = get_task_decomposition_prompt()
+        self.assertIn("needs_decomposition", text)
+        self.assertIn("sub_questions", text)
+        self.assertIn("JSON", text)
+
+
 def _make_main_state(**extra):
     base = {
         "messages": [],

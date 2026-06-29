@@ -424,3 +424,25 @@ def get_grounding_critique_prompt() -> str:
         "严格输出 JSON，不要输出多余文字：\n"
         '{"critique": "逐条问题", "revised_answer": "重写后的回答"}'
     )
+
+
+def get_task_decomposition_prompt() -> str:
+    """System prompt for the decompose_tasks node (P3).
+
+    The LLM judges whether a medical question contains multiple independent
+    facets and, if so, splits it into 1-3 sub-questions for parallel retrieval.
+    Output must be strict JSON matching the TaskDecomposition schema:
+    {"needs_decomposition": bool, "sub_questions": [str], "reason": str}.
+    """
+    return (
+        "你是一名医学问题分析员。判断用户问题是否包含多个可独立检索的子问题/facet"
+        "（例如同时问用药和监测、或同时问两种不同病症）。\n\n"
+        "判定标准：\n"
+        "- needs_decomposition=true：问题含 2 个及以上独立 facet，应分别检索。\n"
+        "- needs_decomposition=false：单一 facet，sub_questions 只放原问题本身。\n"
+        "要求：\n"
+        "- sub_questions 每条都是自足的、可直接用于检索的子问题，不超过 3 条。\n"
+        "- 不复合时 sub_questions 必须为仅含原问题的单元素列表。\n\n"
+        "严格输出 JSON，不要输出多余文字：\n"
+        '{"needs_decomposition": true/false, "sub_questions": ["子问题1", "子问题2"], "reason": "简短依据"}'
+    )
