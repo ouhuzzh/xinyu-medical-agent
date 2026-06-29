@@ -2,7 +2,7 @@ from typing import Literal
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.types import Send
 from .graph_state import State, AgentState
-from config import MAX_ITERATIONS, MAX_TOOL_CALLS, MAX_EVIDENCE_ROUNDS
+from config import MAX_ITERATIONS, MAX_TOOL_CALLS, MAX_EVIDENCE_ROUNDS, MAX_GROUNDING_ROUNDS
 
 
 def route_after_analyze_turn(state: State) -> Literal["rewrite_query", "intent_router"]:
@@ -265,3 +265,18 @@ def route_after_evidence(state: AgentState) -> Literal["should_compress_context"
         return "fallback_response"
 
     return "should_compress_context"
+
+
+def route_after_grounding(state: State) -> Literal["__end__", "revise_answer"]:
+    """P2: route after the answer grounding check.
+
+    - grounded (grounding_passed=True) → END
+    - not grounded + budget remaining (grounding_rounds < MAX_GROUNDING_ROUNDS) → revise_answer
+    - not grounded + budget exhausted → END (passive-disclaimer degrade already appended)
+    """
+    if bool(state.get("grounding_passed", False)):
+        return "__end__"
+    rounds = int(state.get("grounding_rounds", 0) or 0)
+    if rounds < MAX_GROUNDING_ROUNDS:
+        return "revise_answer"
+    return "__end__"

@@ -127,6 +127,24 @@ class TestReviseAnswer(unittest.TestCase):
         self.assertEqual(result["grounding_rounds"], 1)
 
 
+class TestRouteAfterGrounding(unittest.TestCase):
+    def test_grounded_routes_to_end(self):
+        from project.rag_agent.edges import route_after_grounding
+        state = _make_main_state([], grounding_passed=True)
+        self.assertEqual(route_after_grounding(state), "__end__")
+
+    def test_not_grounded_with_budget_routes_to_revise(self):
+        from project.rag_agent.edges import route_after_grounding
+        state = _make_main_state([], grounding_passed=False, grounding_rounds=0)
+        self.assertEqual(route_after_grounding(state), "revise_answer")
+
+    def test_not_grounded_budget_exhausted_routes_to_end(self):
+        import config
+        from project.rag_agent.edges import route_after_grounding
+        state = _make_main_state([], grounding_passed=False, grounding_rounds=config.MAX_GROUNDING_ROUNDS)
+        self.assertEqual(route_after_grounding(state), "__end__")
+
+
 def _make_main_state(messages, **extra):
     base = {
         "messages": messages,
