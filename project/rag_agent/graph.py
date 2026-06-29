@@ -18,6 +18,7 @@ from .rag_nodes import (
     grounded_answer_generation,
     orchestrator,
     plan_retrieval_queries,
+    revise_answer,
     rewrite_query,
     should_compress_context,
 )
@@ -187,7 +188,18 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
         "recommend_department": "recommend_department",
     })
     graph_builder.add_edge("grounded_answer_generation", "answer_grounding_check")
-    graph_builder.add_edge("answer_grounding_check", END)
+    if config.ENABLE_ANSWER_REFLECTION:
+        # P2: answer reflection loop — critique + evidence-bounded rewrite, re-checked.
+        # revise_answer is a LIGHT-tier task (critique/rewrite-class, like evaluate_evidence).
+        graph_builder.add_node("revise_answer", partial(revise_answer, llm=_light_llm))
+        graph_builder.add_conditional_edges(
+            "answer_grounding_check",
+            route_after_grounding,
+            {"__end__": END, "revise_answer": "revise_answer"},
+        )
+        graph_builder.add_edge("revise_answer", "answer_grounding_check")
+    else:
+        graph_builder.add_edge("answer_grounding_check", END)
 
     agent_graph = graph_builder.compile(checkpointer=checkpointer, interrupt_before=["request_clarification"])
 

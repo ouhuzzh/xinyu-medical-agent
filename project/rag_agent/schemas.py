@@ -182,3 +182,8 @@ class GroundedAnswerCheck(BaseModel):
     grounded: bool = Field(description="Whether the answer stays within the provided evidence.")
     revised_answer: str = Field(description="A conservative revised answer if the original answer was not grounded.")
     note: str = Field(description="Short note describing the grounding decision.")
+
+
+class GroundingCritique(BaseModel):
+    critique: str = Field(description="哪些回答内容超出检索证据、缺证据或与证据矛盾。")
+    revised_answer: str = Field(description="基于现有证据重写后的回答，收窄到证据范围内，不加免责声明。")

@@ -59,6 +59,9 @@ class State(MessagesState):
     pending_stale_count: int = 0  # consecutive irrelevant turns while pending — auto-clear at 2
     rewrittenQuestions: List[str] = []
     grounding_evidence_score: float | None = None
+    grounding_passed: bool = False
+    grounding_critique: str = ""
+    grounding_rounds: int = 0
     agent_answers: Annotated[List[dict], accumulate_or_reset] = []
     skill_data: Dict[str, Any] = {}
     user_memories: str = ""

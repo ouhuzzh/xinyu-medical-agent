@@ -20,6 +20,7 @@ from .schemas import (
     RetrievalQueryPlan,
     GroundedAnswerCheck,
     EvidenceSufficiency,
+    GroundingCritique,
 )
 from .prompts import (
     get_rewrite_query_prompt,
@@ -29,6 +30,7 @@ from .prompts import (
     get_context_compression_prompt,
     get_aggregation_prompt,
     get_evidence_sufficiency_prompt,
+    get_grounding_critique_prompt,
 )
 from utils import estimate_context_tokens
 import config
@@ -696,8 +698,7 @@ def answer_grounding_check(state: State, llm):
     has_low = any(c in ("low", "no_evidence") for c in confidence_levels)
     evidence_score = state.get("grounding_evidence_score")
     if not has_low and evidence_score is not None and evidence_score >= config.RAG_HIGH_CONFIDENCE_SCORE:
-        return {}
-    evidence_score = state.get("grounding_evidence_score")
+        return {"grounding_passed": True}
     # Build evidence docs from agent_answers (each answer carries its retrieval
     # evidence metadata — score, source citation).  If agent_answers is empty,
     # fall back to the legacy numerical score.
@@ -733,9 +734,86 @@ def answer_grounding_check(state: State, llm):
         high_risk=_needs_strict_medical_safety(original_query, risk_level),
     )
     final_answer = _strip_leading_query_plan_blob(grounded.get("revised_answer", current_answer))
-    if final_answer == current_answer:
-        return {}
-    return {"messages": [AIMessage(content=final_answer)]}
+    is_grounded = bool(grounded.get("grounded"))
+    delta: dict = {"grounding_passed": is_grounded}
+    # Append the (passive disclaimer) revised answer only when it differs —
+    # this is the termination-branch safe degrade; if revise_answer runs next
+    # it appends an evidence-bounded rewrite that becomes the latest message.
+    if final_answer != current_answer:
+        delta["messages"] = [AIMessage(content=final_answer)]
+    return delta
+
+
+def revise_answer(state: State, llm):
+    """P2: critique an un-grounded answer and rewrite it within evidence bounds.
+
+    Reads the current (un-grounded) answer from the last message, the evidence
+    from agent_answers, and asks the light LLM (via GroundingCritique schema)
+    for a structured critique + an evidence-bounded rewrite. The rewrite is
+    appended as the latest message; control returns to answer_grounding_check
+    for a re-check. LLM failure (empty revised_answer) falls back to
+    ground_answer's passive-disclaimer revised_answer so the node never breaks.
+    """
+    latest_message = state["messages"][-1] if state.get("messages") else None
+    current_answer = str(getattr(latest_message, "content", "") or "").strip()
+
+    # Evidence block from agent_answers (same shape answer_grounding_check builds).
+    evidence_docs = []
+    for item in (state.get("agent_answers") or []):
+        if isinstance(item, dict):
+            content = item.get("answer", "") or item.get("content", "") or ""
+            score = item.get("score", item.get("evidence_score", None))
+            source = item.get("source", "") or item.get("citation", "") or ""
+            if not source and score is not None:
+                source = f"evidence_score={score}"
+            if source:
+                evidence_docs.append(Document(page_content=str(content), metadata={"score": float(score) if score else 0.0, "source": str(source)}))
+    evidence_text = "\n\n".join(
+        f"[证据{i}] {getattr(d, 'page_content', '')}".strip()
+        for i, d in enumerate(evidence_docs, start=1)
+    ) or "（无结构化证据）"
+
+    original_query = str(state.get("originalQuery", "") or "").strip()
+    rounds = int(state.get("grounding_rounds", 0) or 0)
+    risk_level = _infer_risk_level(original_query, state.get("risk_level", "normal"))
+
+    # Passive-disclaimer fallback (used if the LLM critique yields no rewrite).
+    fallback = ground_answer(
+        current_answer,
+        evidence_docs,
+        question=original_query,
+        medical_mode=_looks_like_medical_request(
+            original_query,
+            conversation_summary=state.get("conversation_summary", ""),
+            recent_context=state.get("recent_context", ""),
+            topic_focus=state.get("topic_focus", ""),
+        ),
+        high_risk=_needs_strict_medical_safety(original_query, risk_level),
+    )
+    fallback_revised = _strip_leading_query_plan_blob(fallback.get("revised_answer", current_answer))
+
+    sys_msg = SystemMessage(content=get_grounding_critique_prompt())
+    user_payload = (
+        f"用户问题：{original_query}\n"
+        f"检索证据：\n{evidence_text[:2000]}\n"
+        f"待评审回答：\n{current_answer}"
+    )
+    parser = _structured_output_llm(llm, GroundingCritique, max_tokens=config.LLM_STRUCTURED_MAX_TOKENS)
+    verdict = parser.invoke([sys_msg, HumanMessage(content=user_payload)])
+
+    critique = (getattr(verdict, "critique", "") or "").strip()
+    revised = (getattr(verdict, "revised_answer", "") or "").strip()
+
+    if not revised:
+        revised = fallback_revised
+        if not critique:
+            critique = (fallback.get("note", "") or "").strip()
+
+    return {
+        "messages": [AIMessage(content=revised)],
+        "grounding_critique": critique,
+        "grounding_rounds": rounds + 1,
+    }
 
 
 def aggregate_answers(state: State, llm):
@@ -752,6 +830,7 @@ __all__ = [
     "grounded_answer_generation",
     "orchestrator",
     "plan_retrieval_queries",
+    "revise_answer",
     "rewrite_query",
     "should_compress_context",
 ]

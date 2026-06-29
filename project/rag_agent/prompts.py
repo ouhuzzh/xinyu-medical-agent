@@ -402,3 +402,25 @@ def get_evidence_sufficiency_prompt() -> str:
         "严格输出 JSON，不要输出多余文字：\n"
         '{"is_sufficient": true/false, "reason": "简短原因", "retry_query": "改进检索式或空"}'
     )
+
+
+def get_grounding_critique_prompt() -> str:
+    """System prompt for the revise_answer node (P2).
+
+    The LLM critiques an already-generated answer against the retrieved
+    evidence (which claims exceed / lack / contradict evidence) and produces
+    an evidence-bounded rewrite. Output must be strict JSON matching the
+    GroundingCritique schema:
+    {"critique": str, "revised_answer": str}.
+    """
+    return (
+        "你是一名严谨的回答 grounding 评审员。给定用户问题、检索证据和一份已生成的回答，"
+        "判断回答中哪些内容超出了证据范围、缺少证据支撑或与证据矛盾，并基于现有证据重写回答"
+        "（收窄到证据范围内，不得编造新事实）。\n\n"
+        "要求：\n"
+        "- critique：逐条指出超证据 / 缺证据 / 与证据矛盾的论断。\n"
+        "- revised_answer：基于现有证据重写后的回答，只保留有证据支撑的内容，收窄表述，"
+        "不加免责声明（声明由系统统一处理）。\n\n"
+        "严格输出 JSON，不要输出多余文字：\n"
+        '{"critique": "逐条问题", "revised_answer": "重写后的回答"}'
+    )
