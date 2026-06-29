@@ -193,3 +193,10 @@ class TaskDecomposition(BaseModel):
     needs_decomposition: bool = Field(description="用户问题是否包含多个可独立检索的子问题/facet。")
     sub_questions: List[str] = Field(description="分解后的独立子问题；不复合时为仅含原问题的单元素列表。")
     reason: str = Field(description="简短说明是否复合的判断依据。")
+
+
+class SupervisorDecision(BaseModel):
+    next_agent: Literal["appointment", "triage", "FINISH"] = Field(
+        description="下一步派发的专家 agent；无需后续动作时为 FINISH。"
+    )
+    reason: str = Field(description="简短说明为何派发该 agent 或 FINISH。")

@@ -446,3 +446,27 @@ def get_task_decomposition_prompt() -> str:
         "严格输出 JSON，不要输出多余文字：\n"
         '{"needs_decomposition": true/false, "sub_questions": ["子问题1", "子问题2"], "reason": "简短依据"}'
     )
+
+
+def get_supervisor_prompt() -> str:
+    """System prompt for the supervise node (P4).
+
+    The supervisor observes the medical agent's answer + the user's original
+    query and decides whether to dispatch a peer action-agent in the same turn.
+    Output must be strict JSON matching SupervisorDecision:
+    {"next_agent": "appointment|triage|FINISH", "reason": str}.
+    """
+    return (
+        "你是一名医疗助手的 supervisor。医疗问答 agent 刚给出答案，你需要判断是否"
+        "在同轮内派发一个后续动作 agent。\n\n"
+        "可选 agent：\n"
+        "- appointment：用户明确表达挂号/预约/改号需求，且医疗答案未覆盖该动作。\n"
+        "- triage：用户明确表达需要推荐就诊科室，且医疗答案未覆盖该建议。\n"
+        "- FINISH：纯医学知识问答、闲聊、或动作需求已被满足/不明确时，结束本轮。\n\n"
+        "判定原则：\n"
+        "- 仅当用户原始查询明确暗示了挂号或分诊需求时才派发对应 agent。\n"
+        "- 不要为已经回答完的医学问题重复派发医疗 agent。\n"
+        "- 不确定时选 FINISH。\n\n"
+        "严格输出 JSON，不要输出多余文字：\n"
+        '{"next_agent": "appointment|triage|FINISH", "reason": "简短依据"}'
+    )

@@ -57,5 +57,26 @@ class TestStateFields(unittest.TestCase):
         self.assertEqual(State.supervisor_next, "FINISH")
 
 
+class TestSupervisorDecisionSchema(unittest.TestCase):
+    def test_schema_fields(self):
+        from project.rag_agent.schemas import SupervisorDecision
+        from typing import get_args
+        fields = SupervisorDecision.model_fields
+        self.assertIn("next_agent", fields)
+        self.assertIn("reason", fields)
+        # next_agent must be a Literal of appointment/triage/FINISH
+        annot = fields["next_agent"].annotation
+        self.assertEqual(set(get_args(annot)), {"appointment", "triage", "FINISH"})
+
+
+class TestSupervisorPrompt(unittest.TestCase):
+    def test_prompt_exists(self):
+        from project.rag_agent.prompts import get_supervisor_prompt
+        p = get_supervisor_prompt()
+        self.assertIn("appointment", p)
+        self.assertIn("triage", p)
+        self.assertIn("FINISH", p)
+
+
 if __name__ == "__main__":
     unittest.main()
