@@ -256,5 +256,43 @@ class TestRouteAfterGroundingSupervisor(unittest.TestCase):
             self.assertEqual(route_after_grounding(state), "__end__")
 
 
+class TestRouteAfterActionSupervisorBranch(unittest.TestCase):
+    def test_supervisor_active_loops_back_to_supervise(self):
+        from project.rag_agent.edges import route_after_action
+        state = _make_main_state(supervisor_active=True)
+        # Strip any pending/secondary signals so only supervisor_active remains.
+        state.update({"pending_clarification": "", "clarification_target": "",
+                      "secondary_intent": "", "deferred_user_question": "",
+                      "pending_action_type": "", "pending_candidates": [],
+                      "deferred_confirmation_action": ""})
+        self.assertEqual(route_after_action(state), "supervise")
+
+    def test_pending_clarification_beats_supervisor(self):
+        from project.rag_agent.edges import route_after_action
+        state = _make_main_state(supervisor_active=True,
+                                 pending_clarification="选哪个医生?",
+                                 clarification_target="handle_appointment_skill")
+        self.assertEqual(route_after_action(state), "request_clarification")
+
+    def test_secondary_turn_beats_supervisor(self):
+        from project.rag_agent.edges import route_after_action
+        state = _make_main_state(supervisor_active=True,
+                                 secondary_intent="appointment",
+                                 deferred_user_question="挂号",
+                                 pending_action_type="",
+                                 pending_candidates=[],
+                                 deferred_confirmation_action="")
+        self.assertEqual(route_after_action(state), "prepare_secondary_turn")
+
+    def test_no_supervisor_no_pending_goes_to_end(self):
+        from project.rag_agent.edges import route_after_action
+        state = _make_main_state(supervisor_active=False)
+        state.update({"pending_clarification": "", "clarification_target": "",
+                      "secondary_intent": "", "deferred_user_question": "",
+                      "pending_action_type": "", "pending_candidates": [],
+                      "deferred_confirmation_action": ""})
+        self.assertEqual(route_after_action(state), "__end__")
+
+
 if __name__ == "__main__":
     unittest.main()

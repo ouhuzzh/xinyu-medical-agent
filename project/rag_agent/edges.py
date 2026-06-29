@@ -172,7 +172,13 @@ def route_after_orchestrator_call(state: AgentState) -> Literal["tools", "fallba
     return "tools"
 
 
-def route_after_action(state: State) -> Literal["request_clarification", "prepare_secondary_turn", "__end__"]:
+def route_after_action(state: State) -> str:
+    """Route after an action specialist (appointment/triage) finishes.
+
+    Priority: pending clarification > secondary turn > supervisor loop > END.
+    The supervisor_active branch (P4) is lowest priority so that explicit
+    pending/secondary signals (stronger closure intents) win.
+    """
     if state.get("pending_clarification") and state.get("clarification_target"):
         return "request_clarification"
     if (
@@ -184,6 +190,8 @@ def route_after_action(state: State) -> Literal["request_clarification", "prepar
         and not state.get("deferred_confirmation_action")
     ):
         return "prepare_secondary_turn"
+    if bool(state.get("supervisor_active", False)):
+        return "supervise"
     return "__end__"
 
 
