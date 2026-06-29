@@ -187,3 +187,9 @@ class GroundedAnswerCheck(BaseModel):
 class GroundingCritique(BaseModel):
     critique: str = Field(description="哪些回答内容超出检索证据、缺证据或与证据矛盾。")
     revised_answer: str = Field(description="基于现有证据重写后的回答，收窄到证据范围内，不加免责声明。")
+
+
+class TaskDecomposition(BaseModel):
+    needs_decomposition: bool = Field(description="用户问题是否包含多个可独立检索的子问题/facet。")
+    sub_questions: List[str] = Field(description="分解后的独立子问题；不复合时为仅含原问题的单元素列表。")
+    reason: str = Field(description="简短说明是否复合的判断依据。")

@@ -21,6 +21,7 @@ from .schemas import (
     GroundedAnswerCheck,
     EvidenceSufficiency,
     GroundingCritique,
+    TaskDecomposition,
 )
 from .prompts import (
     get_rewrite_query_prompt,
@@ -31,6 +32,7 @@ from .prompts import (
     get_aggregation_prompt,
     get_evidence_sufficiency_prompt,
     get_grounding_critique_prompt,
+    get_task_decomposition_prompt,
 )
 from utils import estimate_context_tokens
 import config
@@ -289,6 +291,45 @@ def plan_retrieval_queries(state: State, llm):
     base_query = rewritten[0] if rewritten else original_query
     planned = plan_queries(base_query, topic_focus=state.get("topic_focus", ""), recent_context=state.get("recent_context", ""))
     return {"planned_queries": planned}
+
+
+def decompose_tasks(state: State, llm):
+    """P3: judge whether a medical question is compound and split into sub-questions.
+
+    A light LLM (via TaskDecomposition schema) decides whether the question
+    contains multiple independent facets. If compound, it produces 1-N
+    self-contained sub-questions (N <= MAX_SUB_QUESTIONS); if not, the result
+    is a single-element list holding the primary query — which makes the
+    downstream route_after_query_plan fall back to today's single-Send path.
+    LLM failure (empty sub_questions) falls back to [primary] so the node never
+    breaks. When ENABLE_TASK_DECOMPOSITION is False the LLM is skipped and
+    [primary] is returned directly (rollback).
+    """
+    rewritten = [str(q).strip() for q in (state.get("rewrittenQuestions") or []) if str(q).strip()]
+    original_query = str(state.get("originalQuery") or state.get("primary_user_query") or "").strip()
+    primary = rewritten[0] if rewritten else original_query
+
+    if not config.ENABLE_TASK_DECOMPOSITION or not primary:
+        return {"sub_questions": [primary] if primary else []}
+
+    sys_msg = SystemMessage(content=get_task_decomposition_prompt())
+    user_payload = (
+        f"用户原始问题：{original_query}\n"
+        f"重写后问题：{rewritten}\n"
+        f"上下文摘要：{state.get('conversation_summary', '')}\n"
+        f"近期对话：{state.get('recent_context', '')}\n"
+        f"话题焦点：{state.get('topic_focus', '')}"
+    )
+    parser = _structured_output_llm(llm, TaskDecomposition, max_tokens=config.LLM_STRUCTURED_MAX_TOKENS)
+    verdict = parser.invoke([sys_msg, HumanMessage(content=user_payload)])
+
+    subs = [str(s).strip() for s in (getattr(verdict, "sub_questions", []) or []) if str(s).strip()]
+
+    # Fallback: LLM gave no usable sub-questions → single primary path.
+    if not subs:
+        return {"sub_questions": [primary] if primary else []}
+
+    return {"sub_questions": subs[: config.MAX_SUB_QUESTIONS]}
 
 
 def _latest_tool_message(state: AgentState):
@@ -825,6 +866,7 @@ __all__ = [
     "answer_grounding_check",
     "collect_answer",
     "compress_context",
+    "decompose_tasks",
     "evaluate_evidence",
     "fallback_response",
     "grounded_answer_generation",

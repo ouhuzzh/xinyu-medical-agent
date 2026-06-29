@@ -35,6 +35,7 @@ class State(MessagesState):
     primary_user_query: str = ""
     secondary_user_query: str = ""
     planned_queries: List[str] = []
+    sub_questions: List[str] = []
     decision_source: str = ""
     route_reason: str = ""
     last_route_reason: str = ""

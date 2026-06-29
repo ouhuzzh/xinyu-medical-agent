@@ -96,7 +96,7 @@ class RoutingEdgeTests(unittest.TestCase):
                     "rewrittenQuestions": ["高血压应该注意什么"],
                 }
             ),
-            "plan_retrieval_queries",
+            "decompose_tasks",
         )
 
         sends = route_after_query_plan(
@@ -125,7 +125,7 @@ class RoutingEdgeTests(unittest.TestCase):
                     "rewrittenQuestions": ["高血压日常注意事项"],
                 }
             ),
-            "plan_retrieval_queries",
+            "decompose_tasks",
         )
 
     def test_route_after_action_prepares_secondary_turn_when_primary_is_done(self):

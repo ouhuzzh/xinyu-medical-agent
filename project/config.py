@@ -89,6 +89,10 @@ ENABLE_AGENTIC_RETRIEVAL = os.environ.get("ENABLE_AGENTIC_RETRIEVAL", "true").lo
 MAX_GROUNDING_ROUNDS = int(os.environ.get("MAX_GROUNDING_ROUNDS", "1"))
 ENABLE_ANSWER_REFLECTION = os.environ.get("ENABLE_ANSWER_REFLECTION", "true").lower() == "true"
 
+# P3: task decomposition — parallel sub-question fan-out
+MAX_SUB_QUESTIONS = int(os.environ.get("MAX_SUB_QUESTIONS", "3"))
+ENABLE_TASK_DECOMPOSITION = os.environ.get("ENABLE_TASK_DECOMPOSITION", "true").lower() == "true"
+
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "")
 OPENAI_ENABLE_THINKING = os.environ.get("OPENAI_ENABLE_THINKING", "false").lower() == "true"

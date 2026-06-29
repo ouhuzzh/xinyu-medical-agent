@@ -189,7 +189,7 @@ class ChatInterfaceTests(unittest.TestCase):
     def test_final_answer_nodes_are_silent_in_streaming_ui(self):
         self.assertIn("grounded_answer_generation", SILENT_NODES)
         self.assertIn("answer_grounding_check", SILENT_NODES)
-        self.assertIn("plan_retrieval_queries", SILENT_NODES)
+        self.assertIn("decompose_tasks", SILENT_NODES)
 
     def test_reset_retrieval_context_tolerates_cross_context_token(self):
         ctx = contextvars.Context()
