@@ -43,6 +43,50 @@ class TestGroundingCritiqueSchema(unittest.TestCase):
         self.assertIn("JSON", text)
 
 
+class TestAnswerGroundingCheck(unittest.TestCase):
+    def test_fast_path_writes_grounding_passed_true(self):
+        """Strong evidence fast-path → skip ground_answer, write grounding_passed=True."""
+        from project.rag_agent.rag_nodes import answer_grounding_check
+        state = _make_main_state(
+            [AIMessage(content="某回答")],
+            agent_answers=[{"confidence_bucket": "high", "evidence_score": 0.9, "answer": "证据", "source": "src"}],
+            grounding_evidence_score=0.9,
+        )
+        with patch("project.rag_agent.rag_nodes.ground_answer") as mock_g:
+            result = answer_grounding_check(state, MagicMock())
+            mock_g.assert_not_called()
+        self.assertEqual(result, {"grounding_passed": True})
+
+    def test_grounded_true_returns_passed_true_no_overwrite(self):
+        """ground_answer says grounded=True (revised==current) → grounding_passed=True, no message append."""
+        from project.rag_agent.rag_nodes import answer_grounding_check
+        state = _make_main_state(
+            [AIMessage(content="有证据的回答")],
+            agent_answers=[{"confidence_bucket": "low", "evidence_score": 0.5, "answer": "证据文本", "source": "src"}],
+            grounding_evidence_score=0.5,
+        )
+        with patch("project.rag_agent.rag_nodes.ground_answer",
+                   return_value={"grounded": True, "revised_answer": "有证据的回答", "note": "grounded"}):
+            result = answer_grounding_check(state, MagicMock())
+        self.assertTrue(result["grounding_passed"])
+        self.assertNotIn("messages", result)
+
+    def test_not_grounded_appends_disclaimer_and_marks_false(self):
+        """ground_answer says grounded=False → append disclaimer version, grounding_passed=False."""
+        from project.rag_agent.rag_nodes import answer_grounding_check
+        state = _make_main_state(
+            [AIMessage(content="超证据回答")],
+            agent_answers=[{"confidence_bucket": "low", "evidence_score": 0.5, "answer": "证据", "source": "src"}],
+            grounding_evidence_score=0.5,
+        )
+        with patch("project.rag_agent.rag_nodes.ground_answer",
+                   return_value={"grounded": False, "revised_answer": "超证据回答【声明】", "note": "low_confidence_guardrail"}):
+            result = answer_grounding_check(state, MagicMock())
+        self.assertFalse(result["grounding_passed"])
+        self.assertEqual(len(result["messages"]), 1)
+        self.assertIn("【声明】", result["messages"][0].content)
+
+
 def _make_main_state(messages, **extra):
     base = {
         "messages": messages,

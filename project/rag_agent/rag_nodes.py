@@ -696,8 +696,7 @@ def answer_grounding_check(state: State, llm):
     has_low = any(c in ("low", "no_evidence") for c in confidence_levels)
     evidence_score = state.get("grounding_evidence_score")
     if not has_low and evidence_score is not None and evidence_score >= config.RAG_HIGH_CONFIDENCE_SCORE:
-        return {}
-    evidence_score = state.get("grounding_evidence_score")
+        return {"grounding_passed": True}
     # Build evidence docs from agent_answers (each answer carries its retrieval
     # evidence metadata — score, source citation).  If agent_answers is empty,
     # fall back to the legacy numerical score.
@@ -733,9 +732,14 @@ def answer_grounding_check(state: State, llm):
         high_risk=_needs_strict_medical_safety(original_query, risk_level),
     )
     final_answer = _strip_leading_query_plan_blob(grounded.get("revised_answer", current_answer))
-    if final_answer == current_answer:
-        return {}
-    return {"messages": [AIMessage(content=final_answer)]}
+    is_grounded = bool(grounded.get("grounded"))
+    delta: dict = {"grounding_passed": is_grounded}
+    # Append the (passive disclaimer) revised answer only when it differs —
+    # this is the termination-branch safe degrade; if revise_answer runs next
+    # it appends an evidence-bounded rewrite that becomes the latest message.
+    if final_answer != current_answer:
+        delta["messages"] = [AIMessage(content=final_answer)]
+    return delta
 
 
 def aggregate_answers(state: State, llm):
