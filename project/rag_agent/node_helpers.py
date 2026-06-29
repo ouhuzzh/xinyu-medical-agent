@@ -154,16 +154,24 @@ def _structured_output_llm(llm, schema, *, temperature: float = 0.1, max_tokens:
             return self(messages)
 
     def _default():
-        """Return a safe default based on the schema."""
+        """Return a safe default based on the schema.
+
+        Order matters: check container types (list) before scalar str, because
+        a `List[str]` annotation string contains "str" and would otherwise
+        default to "" — which Pydantic rejects for list fields, raising
+        ValidationError and breaking the never-raise invariant.
+        """
         vals = {}
         for fn, fi in schema.model_fields.items():
-            t = str(fi.annotation)
-            if "str" in t:
-                vals[fn] = ""
+            t = str(fi.annotation).lower()
+            if "list" in t:
+                vals[fn] = []
             elif "bool" in t:
                 vals[fn] = False
             elif "int" in t:
                 vals[fn] = 0
+            elif "str" in t:
+                vals[fn] = ""
             else:
                 vals[fn] = ""
         return schema(**vals)

@@ -85,6 +85,21 @@ class TestDecomposeTasks(unittest.TestCase):
             result = decompose_tasks(state, MagicMock())
         self.assertEqual(result["sub_questions"], ["高血压合并痛风吃什么药安全"])
 
+    def test_real_llm_failure_exercises_default_fallback(self):
+        """Real _structured_output_llm path (NOT mocked) with a garbage LLM response
+        exercises _default() → must fall back to [primary], never raise.
+
+        Regression guard for C1: _default() must produce a valid TaskDecomposition
+        (sub_questions=[]) for the List[str] field, not crash with ValidationError.
+        """
+        from project.rag_agent.rag_nodes import decompose_tasks
+        state = _make_main_state()
+        # A MagicMock LLM: .invoke(...).content returns a non-JSON MagicMock repr,
+        # so _StructureParser's JSON parse fails → _default() is called.
+        llm = MagicMock()
+        result = decompose_tasks(state, llm)
+        self.assertEqual(result["sub_questions"], ["高血压合并痛风吃什么药安全"])
+
     def test_max_sub_questions_truncation(self):
         """LLM returns 5 sub-questions → truncated to MAX_SUB_QUESTIONS (3)."""
         import config
