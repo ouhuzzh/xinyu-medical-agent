@@ -28,6 +28,8 @@ SILENT_NODES = {
     "decompose_tasks",
     "grounded_answer_generation",
     "answer_grounding_check",
+    "supervise",
+    "reset_supervisor_state",
 }
 SYSTEM_NODES = {"summarize_history", "rewrite_query"}
 # Classification hints — canonical definitions live in skill modules.
