@@ -33,6 +33,7 @@ from .prompts import (
     get_aggregation_prompt,
     get_evidence_sufficiency_prompt,
     get_grounding_critique_prompt,
+    get_supervisor_prompt,
     get_task_decomposition_prompt,
 )
 from utils import estimate_context_tokens
@@ -304,6 +305,68 @@ def reset_supervisor_state(state: State):
     analyze_turn, with zero invasion of analyze_turn's return paths.
     """
     return {"supervisor_active": False, "supervisor_rounds": 0}
+
+
+def supervise(state: State, llm):
+    """P4: multi-agent supervisor at the medical_rag exit.
+
+    Observes the medical agent's answer + the user's original query and decides
+    whether to dispatch a peer action-agent (appointment/triage) in the same
+    turn, looping up to MAX_SUPERVISOR_ROUNDS. Never raises: on any LLM/parse
+    failure it degrades to FINISH (the _structured_output_llm helper returns a
+    schema default; an illegal next_agent is explicitly coerced to FINISH).
+    """
+    rounds = int(state.get("supervisor_rounds", 0) or 0)
+
+    # Budget / disable guard: no LLM call.
+    if not config.ENABLE_MULTI_AGENT_SUPERVISOR or rounds >= config.MAX_SUPERVISOR_ROUNDS:
+        return {"supervisor_active": False, "supervisor_rounds": 0, "supervisor_next": "FINISH"}
+
+    original_query = str(state.get("originalQuery") or state.get("primary_user_query") or "").strip()
+    secondary_intent = str(state.get("secondary_intent", "") or "").strip()
+    deferred = str(state.get("deferred_user_question", "") or "").strip()
+
+    # Surface the medical answer just produced (last agent_answer entry).
+    agent_answers = state.get("agent_answers") or []
+    last_answer = ""
+    if agent_answers:
+        last_entry = agent_answers[-1]
+        if isinstance(last_entry, dict):
+            last_answer = str(last_entry.get("answer", "") or "").strip()
+
+    sys_msg = SystemMessage(content=get_supervisor_prompt())
+    user_payload = (
+        f"用户原始问题：{original_query}\n"
+        f"医疗 agent 给出的答案：{last_answer}\n"
+        f"规则检测的第二意图：{secondary_intent or '（无）'}\n"
+        f"规则检测的延迟问题：{deferred or '（无）'}\n"
+        f"对话摘要：{state.get('conversation_summary', '') or '（无）'}\n"
+    )
+
+    parser = _structured_output_llm(llm, SupervisorDecision, max_tokens=config.LLM_STRUCTURED_MAX_TOKENS)
+    try:
+        verdict = parser.invoke([sys_msg, HumanMessage(content=user_payload)])
+    except Exception:
+        logger.warning("supervise structured output failed; degrading to FINISH.")
+        return {"supervisor_active": False, "supervisor_rounds": 0, "supervisor_next": "FINISH"}
+
+    next_agent = str(getattr(verdict, "next_agent", "") or "").strip()
+    if next_agent not in ("appointment", "triage", "FINISH"):
+        # Illegal/empty (e.g. _default() fallback for a Literal field) → safe FINISH.
+        next_agent = "FINISH"
+
+    if next_agent == "FINISH":
+        return {"supervisor_active": False, "supervisor_rounds": 0, "supervisor_next": "FINISH"}
+
+    # Dispatch: consume the secondary-intent handoff signal so route_after_action's
+    # prepare_secondary_turn branch cannot re-fire it (double-dispatch guard).
+    return {
+        "supervisor_active": True,
+        "supervisor_rounds": rounds + 1,
+        "supervisor_next": next_agent,
+        "secondary_intent": "",
+        "deferred_user_question": "",
+    }
 
 
 def decompose_tasks(state: State, llm):
@@ -887,6 +950,7 @@ __all__ = [
     "plan_retrieval_queries",
     "revise_answer",
     "reset_supervisor_state",
+    "supervise",
     "rewrite_query",
     "should_compress_context",
 ]

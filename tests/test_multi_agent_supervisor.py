@@ -109,5 +109,92 @@ class TestResetSupervisorState(unittest.TestCase):
         self.assertEqual(set(result.keys()), {"supervisor_active", "supervisor_rounds"})
 
 
+class _FakeStructuredLLM:
+    """Mimics _structured_output_llm.invoke returning a schema instance."""
+    def __init__(self, verdict):
+        self._verdict = verdict
+    def invoke(self, messages):
+        return self._verdict
+
+
+class TestSuperviseNode(unittest.TestCase):
+    def test_disabled_short_circuits_to_finish_no_llm(self):
+        import project.rag_agent.rag_nodes as mod
+        with unittest.mock.patch.object(mod.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False):
+            llm = MagicMock()
+            result = mod.supervise(_make_main_state(), llm)
+        self.assertEqual(result["supervisor_next"], "FINISH")
+        self.assertFalse(result["supervisor_active"])
+        self.assertEqual(result["supervisor_rounds"], 0)
+        llm.invoke.assert_not_called()
+
+    def test_budget_exhausted_short_circuits_to_finish_no_llm(self):
+        import project.rag_agent.rag_nodes as mod
+        import config
+        llm = MagicMock()
+        result = mod.supervise(
+            _make_main_state(supervisor_rounds=config.MAX_SUPERVISOR_ROUNDS), llm
+        )
+        self.assertEqual(result["supervisor_next"], "FINISH")
+        llm.invoke.assert_not_called()
+
+    def test_dispatch_appointment_sets_flags_and_clears_secondary(self):
+        import project.rag_agent.rag_nodes as mod
+        from project.rag_agent.schemas import SupervisorDecision
+        verdict = SupervisorDecision(next_agent="appointment", reason="用户要挂号")
+        with unittest.mock.patch.object(mod, "_structured_output_llm",
+                                        return_value=_FakeStructuredLLM(verdict)):
+            result = mod.supervise(
+                _make_main_state(secondary_intent="appointment",
+                                 deferred_user_question="挂心内科"), MagicMock()
+            )
+        self.assertTrue(result["supervisor_active"])
+        self.assertEqual(result["supervisor_rounds"], 1)
+        self.assertEqual(result["supervisor_next"], "appointment")
+        self.assertEqual(result["secondary_intent"], "")
+        self.assertEqual(result["deferred_user_question"], "")
+
+    def test_dispatch_triage_increments_rounds(self):
+        import project.rag_agent.rag_nodes as mod
+        from project.rag_agent.schemas import SupervisorDecision
+        verdict = SupervisorDecision(next_agent="triage", reason="要推荐科室")
+        with unittest.mock.patch.object(mod, "_structured_output_llm",
+                                        return_value=_FakeStructuredLLM(verdict)):
+            result = mod.supervise(_make_main_state(supervisor_rounds=1), MagicMock())
+        self.assertTrue(result["supervisor_active"])
+        self.assertEqual(result["supervisor_rounds"], 2)
+        self.assertEqual(result["supervisor_next"], "triage")
+
+    def test_finish_resets_flags(self):
+        import project.rag_agent.rag_nodes as mod
+        from project.rag_agent.schemas import SupervisorDecision
+        verdict = SupervisorDecision(next_agent="FINISH", reason="无需动作")
+        with unittest.mock.patch.object(mod, "_structured_output_llm",
+                                        return_value=_FakeStructuredLLM(verdict)):
+            result = mod.supervise(_make_main_state(supervisor_rounds=1), MagicMock())
+        self.assertFalse(result["supervisor_active"])
+        self.assertEqual(result["supervisor_rounds"], 0)
+        self.assertEqual(result["supervisor_next"], "FINISH")
+
+    def test_illegal_next_agent_treated_as_finish(self):
+        """LLM returns next_agent that _default() produces (empty str for Literal) → FINISH, no raise."""
+        import project.rag_agent.rag_nodes as mod
+        class _BogusVerdict:
+            next_agent = ""
+            reason = ""
+        with unittest.mock.patch.object(mod, "_structured_output_llm",
+                                        return_value=_FakeStructuredLLM(_BogusVerdict())):
+            result = mod.supervise(_make_main_state(), MagicMock())
+        self.assertEqual(result["supervisor_next"], "FINISH")
+        self.assertFalse(result["supervisor_active"])
+
+    def test_real_llm_failure_exercises_default_fallback(self):
+        """Bare MagicMock LLM (no patch of _structured_output_llm) → _default() path → FINISH, no raise."""
+        import project.rag_agent.rag_nodes as mod
+        result = mod.supervise(_make_main_state(), MagicMock())
+        self.assertEqual(result["supervisor_next"], "FINISH")
+        self.assertFalse(result["supervisor_active"])
+
+
 if __name__ == "__main__":
     unittest.main()
