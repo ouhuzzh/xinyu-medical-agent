@@ -94,5 +94,20 @@ class TestSupervisorPrompt(unittest.TestCase):
         self.assertIn("JSON", p)
 
 
+class TestResetSupervisorState(unittest.TestCase):
+    def test_resets_flags_regardless_of_input(self):
+        from project.rag_agent.rag_nodes import reset_supervisor_state
+        state = _make_main_state(supervisor_active=True, supervisor_rounds=2, supervisor_next="appointment")
+        result = reset_supervisor_state(state)
+        self.assertEqual(result, {"supervisor_active": False, "supervisor_rounds": 0})
+
+    def test_does_not_touch_other_fields(self):
+        from project.rag_agent.rag_nodes import reset_supervisor_state
+        state = _make_main_state(originalQuery="keep me")
+        result = reset_supervisor_state(state)
+        self.assertNotIn("originalQuery", result)
+        self.assertEqual(set(result.keys()), {"supervisor_active", "supervisor_rounds"})
+
+
 if __name__ == "__main__":
     unittest.main()

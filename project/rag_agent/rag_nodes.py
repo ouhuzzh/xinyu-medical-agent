@@ -21,6 +21,7 @@ from .schemas import (
     GroundedAnswerCheck,
     EvidenceSufficiency,
     GroundingCritique,
+    SupervisorDecision,
     TaskDecomposition,
 )
 from .prompts import (
@@ -291,6 +292,18 @@ def plan_retrieval_queries(state: State, llm):
     base_query = rewritten[0] if rewritten else original_query
     planned = plan_queries(base_query, topic_focus=state.get("topic_focus", ""), recent_context=state.get("recent_context", ""))
     return {"planned_queries": planned}
+
+
+def reset_supervisor_state(state: State):
+    """P4: clear supervisor loop flags at turn start.
+
+    LangGraph's checkpointer persists State across turns. If a supervisor-
+    dispatched specialist interrupted (e.g. appointment needs clarification),
+    the leftover supervisor_active=True would mis-route the resumed specialist
+    back to supervise. This node resets those flags every turn, before
+    analyze_turn, with zero invasion of analyze_turn's return paths.
+    """
+    return {"supervisor_active": False, "supervisor_rounds": 0}
 
 
 def decompose_tasks(state: State, llm):
@@ -873,6 +886,7 @@ __all__ = [
     "orchestrator",
     "plan_retrieval_queries",
     "revise_answer",
+    "reset_supervisor_state",
     "rewrite_query",
     "should_compress_context",
 ]
