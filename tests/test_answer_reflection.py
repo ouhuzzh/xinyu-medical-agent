@@ -145,6 +145,17 @@ class TestRouteAfterGrounding(unittest.TestCase):
         self.assertEqual(route_after_grounding(state), "__end__")
 
 
+class TestGraphWiring(unittest.TestCase):
+    def test_graph_source_references_reflection_wiring(self):
+        """graph.py must wire the conditional edge + revise_answer node under ENABLE_ANSWER_REFLECTION."""
+        import inspect
+        import project.rag_agent.graph as graph_mod
+        src = inspect.getsource(graph_mod)
+        self.assertIn("revise_answer", src)
+        self.assertIn("route_after_grounding", src)
+        self.assertIn("ENABLE_ANSWER_REFLECTION", src)
+
+
 def _make_main_state(messages, **extra):
     base = {
         "messages": messages,
