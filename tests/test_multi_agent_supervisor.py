@@ -325,5 +325,97 @@ class TestGraphWiring(unittest.TestCase):
         self.assertIn('"recommend_department": "recommend_department"', src)
 
 
+class TestCompiledSupervisorLoop(unittest.TestCase):
+    """Verify the supervise → specialist → route_after_action → supervise loop
+    survives LangGraph's real state machinery, and that FINISH terminates."""
+
+    def _build_graph(self, supervise_verdicts):
+        """supervise_verdicts: list of SupervisorDecision returned in call order."""
+        from langgraph.graph import StateGraph, START, END
+        from project.rag_agent.graph_state import State
+        from project.rag_agent.edges import route_after_supervisor, route_after_action
+        from project.rag_agent.rag_nodes import supervise
+
+        call_log = {"supervise": 0, "specialist": 0}
+
+        # Fake supervise: returns verdicts in order, writes the node's state delta.
+        verdicts = list(supervise_verdicts)
+
+        def _fake_supervise(state):
+            call_log["supervise"] += 1
+            if not verdicts:
+                nxt = "FINISH"
+            else:
+                v = verdicts.pop(0)
+                nxt = getattr(v, "next_agent", "FINISH")
+            rounds = int(state.get("supervisor_rounds", 0) or 0)
+            if nxt == "FINISH":
+                return {"supervisor_active": False, "supervisor_rounds": 0, "supervisor_next": "FINISH",
+                        "secondary_intent": "", "deferred_user_question": ""}
+            return {"supervisor_active": True, "supervisor_rounds": rounds + 1, "supervisor_next": nxt,
+                    "secondary_intent": "", "deferred_user_question": ""}
+
+        def _specialist(state):
+            call_log["specialist"] += 1
+            return {"pending_clarification": "", "clarification_target": "",
+                    "secondary_intent": "", "deferred_user_question": "",
+                    "pending_action_type": "", "pending_candidates": [],
+                    "deferred_confirmation_action": "",
+                    "messages": []}
+
+        builder = StateGraph(State)
+        builder.add_node("supervise", _fake_supervise)
+        builder.add_node("specialist", _specialist)
+        builder.add_edge(START, "supervise")
+        builder.add_conditional_edges("supervise", route_after_supervisor, {
+            "handle_appointment_skill": "specialist",
+            "recommend_department": "specialist",
+            "__end__": END,
+        })
+        builder.add_conditional_edges("specialist", route_after_action, {
+            "request_clarification": END,
+            "prepare_secondary_turn": END,
+            "supervise": "supervise",
+            "__end__": END,
+        })
+        return builder.compile(), call_log
+
+    def test_multistep_handoff_appointment_then_finish(self):
+        from project.rag_agent.schemas import SupervisorDecision
+        graph, call_log = self._build_graph([
+            SupervisorDecision(next_agent="appointment", reason="挂号"),
+            SupervisorDecision(next_agent="FINISH", reason="完成"),
+        ])
+        final = graph.invoke(_make_main_state(grounding_passed=True, supervisor_rounds=0))
+        self.assertEqual(call_log["supervise"], 2)
+        self.assertEqual(call_log["specialist"], 1)
+        self.assertFalse(final["supervisor_active"])
+        self.assertEqual(final["supervisor_rounds"], 0)
+        self.assertEqual(final["supervisor_next"], "FINISH")
+
+    def test_simple_finish_no_specialist(self):
+        from project.rag_agent.schemas import SupervisorDecision
+        graph, call_log = self._build_graph([
+            SupervisorDecision(next_agent="FINISH", reason="纯问答"),
+        ])
+        final = graph.invoke(_make_main_state(grounding_passed=True, supervisor_rounds=0))
+        self.assertEqual(call_log["supervise"], 1)
+        self.assertEqual(call_log["specialist"], 0)
+        self.assertEqual(final["supervisor_next"], "FINISH")
+
+    def test_budget_guard_terminates_loop(self):
+        """If supervise keeps dispatching past MAX_SUPERVISOR_ROUNDS, the loop must terminate."""
+        import config
+        from project.rag_agent.schemas import SupervisorDecision
+        verdicts = [SupervisorDecision(next_agent="appointment", reason="x")
+                    for _ in range(config.MAX_SUPERVISOR_ROUNDS)]
+        verdicts.append(SupervisorDecision(next_agent="FINISH", reason="done"))
+        graph, call_log = self._build_graph(verdicts)
+        final = graph.invoke(_make_main_state(grounding_passed=True, supervisor_rounds=0))
+        # Loop ran MAX_SUPERVISOR_ROUNDS dispatches then FINISH — did not hang.
+        self.assertEqual(call_log["supervise"], config.MAX_SUPERVISOR_ROUNDS + 1)
+        self.assertEqual(final["supervisor_next"], "FINISH")
+
+
 if __name__ == "__main__":
     unittest.main()
