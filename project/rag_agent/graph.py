@@ -13,6 +13,7 @@ from .rag_nodes import (
     answer_grounding_check,
     collect_answer,
     compress_context,
+    decompose_tasks,
     evaluate_evidence,
     fallback_response,
     grounded_answer_generation,
@@ -89,7 +90,7 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     graph_builder.add_node("analyze_turn", analyze_turn)
     graph_builder.add_node("intent_router", partial(intent_router, llm=_light_llm))
     graph_builder.add_node("rewrite_query", partial(rewrite_query, llm=_light_llm))
-    graph_builder.add_node("plan_retrieval_queries", partial(plan_retrieval_queries, llm=_light_llm))
+    graph_builder.add_node("decompose_tasks", partial(decompose_tasks, llm=_light_llm))
     # strong tier: answer generation, department recommendation
     graph_builder.add_node("recommend_department", partial(recommend_department, llm=_strong_llm))
     graph_builder.add_node("handle_appointment_skill", partial(handle_appointment_skill, llm=_strong_llm, appointment_service=appointment_service, mcp_pool=mcp_pool))
@@ -158,16 +159,16 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
             graph_builder.add_edge(node_name, END)
     graph_builder.add_conditional_edges("rewrite_query", route_after_rewrite, {
         "request_clarification": "request_clarification",
-        "plan_retrieval_queries": "plan_retrieval_queries",
+        "decompose_tasks": "decompose_tasks",
         "handle_appointment_skill": "handle_appointment_skill",
         "recommend_department": "recommend_department",
         "__end__": END,
         **{node_name: node_name for node_name in _skill_route_targets.values()
-           if node_name not in ("request_clarification", "plan_retrieval_queries",
+           if node_name not in ("request_clarification", "decompose_tasks",
                                 "handle_appointment_skill", "recommend_department",
                                 "rewrite_query")},
     })
-    graph_builder.add_conditional_edges("plan_retrieval_queries", route_after_query_plan)
+    graph_builder.add_conditional_edges("decompose_tasks", route_after_query_plan)
     graph_builder.add_conditional_edges("request_clarification", route_after_clarification, {
         "intent_router": "intent_router",
         "rewrite_query": "rewrite_query",

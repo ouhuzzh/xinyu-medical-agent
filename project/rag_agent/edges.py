@@ -87,8 +87,8 @@ def route_after_rewrite(state: State) -> str:
     if intent in _LEGACY_ROUTES:
         return _LEGACY_ROUTES[intent]
 
-    # Default: medical RAG pipeline
-    return "plan_retrieval_queries"
+    # Default: medical RAG pipeline (P3: decompose into sub-questions first)
+    return "decompose_tasks"
 
 
 def route_after_query_plan(state: State):

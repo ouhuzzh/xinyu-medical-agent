@@ -183,6 +183,27 @@ class TestRouteAfterQueryPlanFanOut(unittest.TestCase):
             self.assertEqual(s.arg["messages"], [])
 
 
+class TestGraphWiring(unittest.TestCase):
+    def test_route_after_rewrite_targets_decompose_tasks(self):
+        """medical_rag default route target is now decompose_tasks."""
+        from project.rag_agent.edges import route_after_rewrite
+        self.assertEqual(
+            route_after_rewrite({"questionIsClear": True, "intent": "medical_rag",
+                                 "rewrittenQuestions": ["高血压日常注意事项"]}),
+            "decompose_tasks",
+        )
+
+    def test_graph_source_references_decomposition_wiring(self):
+        """graph.py must register decompose_tasks and wire it into the rewrite edge."""
+        import inspect
+        import project.rag_agent.graph as graph_mod
+        src = inspect.getsource(graph_mod)
+        self.assertIn("decompose_tasks", src)
+        self.assertIn("route_after_query_plan", src)
+        # plan_retrieval_queries should no longer be wired as a node (kept as symbol only).
+        self.assertNotIn('add_node("plan_retrieval_queries"', src)
+
+
 def _make_main_state(**extra):
     base = {
         "messages": [],
