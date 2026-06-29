@@ -418,5 +418,18 @@ class TestCompiledSupervisorLoop(unittest.TestCase):
         self.assertEqual(final["supervisor_next"], "FINISH")
 
 
+class TestRequestClarificationClearsSupervisor(unittest.TestCase):
+    def test_request_clarification_clears_supervisor_flags(self):
+        """P4: on clarification-resume, request_clarification must clear supervisor
+        flags so the resumed specialist routes to END, not back to supervise."""
+        from project.rag_agent.routing_nodes import request_clarification
+        state = _make_main_state(supervisor_active=True, supervisor_rounds=2, supervisor_next="appointment")
+        result = request_clarification(state)
+        self.assertFalse(result["supervisor_active"])
+        self.assertEqual(result["supervisor_rounds"], 0)
+        # Only clears supervisor flags — no other state touched.
+        self.assertEqual(set(result.keys()), {"supervisor_active", "supervisor_rounds"})
+
+
 if __name__ == "__main__":
     unittest.main()
