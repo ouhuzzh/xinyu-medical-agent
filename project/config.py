@@ -97,6 +97,10 @@ ENABLE_TASK_DECOMPOSITION = os.environ.get("ENABLE_TASK_DECOMPOSITION", "true").
 MAX_SUPERVISOR_ROUNDS = int(os.environ.get("MAX_SUPERVISOR_ROUNDS", "3"))
 ENABLE_MULTI_AGENT_SUPERVISOR = os.environ.get("ENABLE_MULTI_AGENT_SUPERVISOR", "true").lower() == "true"
 
+# P5: online self-eval — LLM-as-judge answer scoring + soft-degrade caveat
+ENABLE_SELF_EVAL = os.environ.get("ENABLE_SELF_EVAL", "true").lower() == "true"
+SELF_EVAL_DEGRADE_THRESHOLD = float(os.environ.get("SELF_EVAL_DEGRADE_THRESHOLD", "0.6"))
+
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "")
 OPENAI_ENABLE_THINKING = os.environ.get("OPENAI_ENABLE_THINKING", "false").lower() == "true"
