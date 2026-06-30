@@ -291,5 +291,60 @@ class TestSelfEvalPersistence(unittest.TestCase):
         self.assertEqual(captured.get("self_eval_details"), {"safety": 3, "degraded": False})
 
 
+class TestCompiledSelfEval(unittest.TestCase):
+    """Verify self_eval slots into a real compiled graph between grounding-check
+    and the supervisor sink, without breaking the P4 chain."""
+
+    def _build_graph(self, fake_eval_returns_caveat):
+        from langgraph.graph import StateGraph, START, END
+        from project.rag_agent.graph_state import State
+        from project.rag_agent.edges import route_after_self_eval
+
+        log = {"self_eval": 0, "supervise": 0}
+
+        def _fake_self_eval(state):
+            log["self_eval"] += 1
+            if fake_eval_returns_caveat:
+                from langchain_core.messages import AIMessage
+                return {
+                    "self_eval_score": 0.4,
+                    "self_eval_details": {"caveat_appended": True},
+                    "messages": [AIMessage(content="⚠️ 自评提示：低分")],
+                }
+            return {"self_eval_score": 0.9, "self_eval_details": {"caveat_appended": False}}
+
+        def _fake_supervise(state):
+            log["supervise"] += 1
+            return {"supervisor_active": False, "supervisor_rounds": 0, "supervisor_next": "FINISH"}
+
+        def _sink(state):
+            return {}
+
+        builder = StateGraph(State)
+        builder.add_node("self_eval", _fake_self_eval)
+        builder.add_node("supervise", _fake_supervise)
+        builder.add_node("end_sink", _sink)
+        builder.add_edge(START, "self_eval")
+        builder.add_conditional_edges("self_eval", route_after_self_eval, {
+            "supervise": "supervise", "__end__": "end_sink",
+        })
+        builder.add_conditional_edges("supervise", lambda s: "__end__", {"__end__": "end_sink"})
+        builder.add_edge("end_sink", END)
+        return builder.compile(), log
+
+    def test_self_eval_then_supervise_then_end(self):
+        graph, log = self._build_graph(fake_eval_returns_caveat=False)
+        final = graph.invoke(_make_main_state())
+        self.assertEqual(log["self_eval"], 1)
+        self.assertEqual(log["supervise"], 1)
+        self.assertAlmostEqual(final["self_eval_score"], 0.9)
+
+    def test_caveat_message_appended(self):
+        graph, log = self._build_graph(fake_eval_returns_caveat=True)
+        final = graph.invoke(_make_main_state())
+        self.assertEqual(log["self_eval"], 1)
+        self.assertTrue(any("自评提示" in str(getattr(m, "content", "")) for m in final["messages"]))
+
+
 if __name__ == "__main__":
     unittest.main()
