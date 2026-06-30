@@ -224,45 +224,47 @@ class TestRouteAfterSupervisor(unittest.TestCase):
 
 
 class TestRouteAfterGroundingSupervisor(unittest.TestCase):
-    def test_grounded_routes_to_supervise_when_enabled(self):
+    def test_grounded_routes_to_self_eval_when_enabled(self):
         from project.rag_agent.edges import route_after_grounding
         state = _make_main_state(grounding_passed=True)
-        self.assertEqual(route_after_grounding(state), "supervise")
+        self.assertEqual(route_after_grounding(state), "self_eval")
 
-    def test_budget_exhausted_routes_to_supervise_when_enabled(self):
+    def test_budget_exhausted_routes_to_self_eval_when_enabled(self):
         import config
         from project.rag_agent.edges import route_after_grounding
         state = _make_main_state(grounding_passed=False, grounding_rounds=config.MAX_GROUNDING_ROUNDS)
-        self.assertEqual(route_after_grounding(state), "supervise")
+        self.assertEqual(route_after_grounding(state), "self_eval")
 
     def test_not_grounded_with_budget_routes_to_revise(self):
         from project.rag_agent.edges import route_after_grounding
         state = _make_main_state(grounding_passed=False, grounding_rounds=0)
         self.assertEqual(route_after_grounding(state), "revise_answer")
 
-    def test_grounded_routes_to_end_when_disabled(self):
+    def test_grounded_routes_to_end_when_both_disabled(self):
         import project.rag_agent.edges as edges
-        with unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False):
-            from project.rag_agent.edges import route_after_grounding
-            self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)),
-                             "__end__")
+        from project.rag_agent.edges import route_after_grounding
+        with unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False), \
+             unittest.mock.patch.object(edges.config, "ENABLE_SELF_EVAL", False):
+            self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)), "__end__")
 
-    def test_budget_exhausted_routes_to_end_when_disabled(self):
+    def test_budget_exhausted_routes_to_end_when_both_disabled(self):
         import config
         import project.rag_agent.edges as edges
         from project.rag_agent.edges import route_after_grounding
         state = _make_main_state(grounding_passed=False, grounding_rounds=config.MAX_GROUNDING_ROUNDS)
-        with unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False):
+        with unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False), \
+             unittest.mock.patch.object(edges.config, "ENABLE_SELF_EVAL", False):
             self.assertEqual(route_after_grounding(state), "__end__")
 
-    def test_not_grounded_with_budget_routes_to_supervise_when_reflection_off(self):
+    def test_not_grounded_with_budget_routes_to_self_eval_when_reflection_off(self):
         """Regression: reflection-off + supervisor-on must not return revise_answer
-        (the revise_answer node isn't registered in that branch). Falls through to supervise."""
+        (the revise_answer node isn't registered in that branch). With self_eval on,
+        falls through to self_eval (not supervise)."""
         import project.rag_agent.edges as edges
         from project.rag_agent.edges import route_after_grounding
         state = _make_main_state(grounding_passed=False, grounding_rounds=0)
         with unittest.mock.patch.object(edges.config, "ENABLE_ANSWER_REFLECTION", False):
-            self.assertEqual(route_after_grounding(state), "supervise")
+            self.assertEqual(route_after_grounding(state), "self_eval")
 
 
 class TestRouteAfterActionSupervisorBranch(unittest.TestCase):
