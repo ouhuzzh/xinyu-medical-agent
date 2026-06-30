@@ -509,6 +509,20 @@ class SchemaManager:
                 """,
             ],
         ),
+        (
+            "017_route_logs_self_eval",
+            "Persist online self-eval score + details per turn.",
+            [
+                """
+                ALTER TABLE route_logs
+                ADD COLUMN IF NOT EXISTS self_eval_score FLOAT
+                """,
+                """
+                ALTER TABLE route_logs
+                ADD COLUMN IF NOT EXISTS self_eval_details JSONB NOT NULL DEFAULT '{}'::jsonb
+                """,
+            ],
+        ),
     ]
 
     def __init__(self, conninfo: str):

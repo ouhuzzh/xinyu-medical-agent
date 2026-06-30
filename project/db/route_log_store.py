@@ -34,9 +34,11 @@ class RouteLogStore:
                         decision_source,
                         route_reason,
                         had_pending_state,
-                        extra_metadata
+                        extra_metadata,
+                        self_eval_score,
+                        self_eval_details
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s::jsonb)
                     """,
                     (
                         item.get("request_id") or None,
@@ -48,6 +50,8 @@ class RouteLogStore:
                         item.get("route_reason") or "",
                         bool(item.get("had_pending_state")),
                         json.dumps(item.get("extra_metadata") or {}, ensure_ascii=False),
+                        item.get("self_eval_score"),
+                        json.dumps(item.get("self_eval_details") or {}, ensure_ascii=False),
                     ),
                 )
             conn.commit()

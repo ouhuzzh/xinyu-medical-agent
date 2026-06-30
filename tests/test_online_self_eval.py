@@ -256,5 +256,40 @@ class TestGraphWiring(unittest.TestCase):
         self.assertIn("ENABLE_SELF_EVAL", src)
 
 
+class TestSelfEvalPersistence(unittest.TestCase):
+    def test_route_log_payload_includes_self_eval_fields(self):
+        """_persist_route_log must pass self_eval_score + self_eval_details to the store."""
+        from project.core.chat_turn_service import ChatTurnService, TurnArtifacts
+        captured = {}
+
+        class _FakeStore:
+            def save_log(self, payload):
+                captured.update(payload)
+
+        svc = ChatTurnService.__new__(ChatTurnService)
+        svc.route_log_store = _FakeStore()
+        artifacts = TurnArtifacts(
+            response_messages=[],
+            latest_values={"primary_intent": "medical_rag", "decision_source": "rule",
+                           "self_eval_score": 0.42,
+                           "self_eval_details": {"safety": 3, "degraded": False}},
+            final_assistant="回答",
+            combined_assistant_text="回答",
+            clarification_text="",
+            updated_state={"secondary_intent": "", "topic_focus": "",
+                           "deferred_user_question": "", "pending_action_type": ""},
+            had_pending_state=False,
+            route_reason="rule_match",
+            secondary_turn_executed=False,
+            response_messages_changed=False,
+        )
+        svc._persist_route_log(
+            active_thread_id="t1", request_id="r1", user_message="hi",
+            session_state={}, checkpoint_resumed=False, artifacts=artifacts,
+        )
+        self.assertEqual(captured.get("self_eval_score"), 0.42)
+        self.assertEqual(captured.get("self_eval_details"), {"safety": 3, "degraded": False})
+
+
 if __name__ == "__main__":
     unittest.main()

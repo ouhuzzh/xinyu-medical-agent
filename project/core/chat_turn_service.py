@@ -243,6 +243,8 @@ class ChatTurnService:
                     "decision_source": artifacts.latest_values.get("decision_source", "") or "",
                     "route_reason": artifacts.route_reason,
                     "had_pending_state": artifacts.had_pending_state,
+                    "self_eval_score": artifacts.latest_values.get("self_eval_score"),
+                    "self_eval_details": artifacts.latest_values.get("self_eval_details") or {},
                     "extra_metadata": {
                         "topic_focus": artifacts.updated_state.get("topic_focus") or "",
                         "deferred_user_question": artifacts.updated_state.get("deferred_user_question") or "",
