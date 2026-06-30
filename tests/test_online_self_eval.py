@@ -177,5 +177,30 @@ class TestSelfEvalNode(unittest.TestCase):
         self.assertTrue(result["self_eval_details"].get("degraded"))
 
 
+class TestExtractAnswerBody(unittest.TestCase):
+    def test_strips_citation_and_confidence_tail(self):
+        from project.rag_agent.rag_nodes import _extract_answer_body
+        answer = ("一般可以接种，但需先咨询医生。\n\n"
+                  "证据强度：`中等`。检索证据为中等强度。\n\n"
+                  "参考来源：\n[1] 来源A\n[2] 来源B")
+        body = _extract_answer_body(answer)
+        self.assertEqual(body, "一般可以接种，但需先咨询医生。")
+
+    def test_strips_version_reminder(self):
+        from project.rag_agent.rag_nodes import _extract_answer_body
+        answer = "答案是X。\n\n版本提醒：当前命中了较旧资料。"
+        self.assertEqual(_extract_answer_body(answer), "答案是X。")
+
+    def test_no_markers_returns_answer_unchanged(self):
+        from project.rag_agent.rag_nodes import _extract_answer_body
+        answer = "纯回答正文，没有任何附加块。"
+        self.assertEqual(_extract_answer_body(answer), answer)
+
+    def test_empty_or_none_returns_empty(self):
+        from project.rag_agent.rag_nodes import _extract_answer_body
+        self.assertEqual(_extract_answer_body(""), "")
+        self.assertEqual(_extract_answer_body(None), "")
+
+
 if __name__ == "__main__":
     unittest.main()
