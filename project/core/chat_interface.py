@@ -30,6 +30,7 @@ SILENT_NODES = {
     "answer_grounding_check",
     "supervise",
     "reset_supervisor_state",
+    "self_eval",
 }
 SYSTEM_NODES = {"summarize_history", "rewrite_query"}
 # Classification hints — canonical definitions live in skill modules.
