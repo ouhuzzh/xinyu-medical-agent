@@ -130,10 +130,12 @@ class TestReviseAnswer(unittest.TestCase):
 class TestRouteAfterGrounding(unittest.TestCase):
     # P4: supervisor is ON by default, so terminal cases route to "supervise"
     # (not "__end__") — the supervisor then decides FINISH vs dispatch.
+    # P5: self_eval is also ON by default, so terminal cases route to self_eval
+    # (which then proceeds to supervise), not directly to supervise.
     def test_grounded_routes_to_end(self):
         from project.rag_agent.edges import route_after_grounding
         state = _make_main_state([], grounding_passed=True)
-        self.assertEqual(route_after_grounding(state), "supervise")
+        self.assertEqual(route_after_grounding(state), "self_eval")
 
     def test_not_grounded_with_budget_routes_to_revise(self):
         from project.rag_agent.edges import route_after_grounding
@@ -144,7 +146,7 @@ class TestRouteAfterGrounding(unittest.TestCase):
         import config
         from project.rag_agent.edges import route_after_grounding
         state = _make_main_state([], grounding_passed=False, grounding_rounds=config.MAX_GROUNDING_ROUNDS)
-        self.assertEqual(route_after_grounding(state), "supervise")
+        self.assertEqual(route_after_grounding(state), "self_eval")
 
 
 class TestGraphWiring(unittest.TestCase):
@@ -183,7 +185,7 @@ class TestCompiledGroundingLoop(unittest.TestCase):
         builder.add_conditional_edges(
             "answer_grounding_check",
             route_after_grounding,
-            {"__end__": "__end_sink", "revise_answer": "revise_answer", "supervise": "__end_sink"},
+            {"__end__": "__end_sink", "revise_answer": "revise_answer", "supervise": "__end_sink", "self_eval": "__end_sink"},
         )
         builder.add_edge("revise_answer", "answer_grounding_check")
         builder.add_edge("__end_sink", END)

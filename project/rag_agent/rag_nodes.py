@@ -16,6 +16,7 @@ from langgraph.types import Command
 
 from .graph_state import State, AgentState
 from .schemas import (
+    AnswerSelfEval,
     QueryAnalysis,
     RetrievalQueryPlan,
     GroundedAnswerCheck,
@@ -33,6 +34,7 @@ from .prompts import (
     get_aggregation_prompt,
     get_evidence_sufficiency_prompt,
     get_grounding_critique_prompt,
+    get_self_eval_prompt,
     get_supervisor_prompt,
     get_task_decomposition_prompt,
 )
@@ -367,6 +369,95 @@ def supervise(state: State, llm):
         "secondary_intent": "",
         "deferred_user_question": "",
     }
+
+
+# P5 self-eval weights (safety weighted highest — medical domain)
+_SELF_EVAL_WEIGHTS = {"safety": 0.35, "accuracy": 0.30, "completeness": 0.20, "groundedness": 0.15}
+
+
+def _coerce_dim(value, default=3):
+    """Coerce a self-eval dimension to an int in [1, 5]; default on illegal/missing."""
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return default
+    if v < 1:
+        return 1
+    if v > 5:
+        return 5
+    return v
+
+
+def _extract_answer_body(content: str) -> str:
+    """Strip the trailing confidence_note + citation_block appended by
+    grounded_answer_generation, returning the pure answer body for judging."""
+    text = str(content or "")
+    for marker in ("\n\n参考来源：", "\n\n证据强度：", "\n\n版本提醒："):
+        idx = text.find(marker)
+        if idx != -1:
+            text = text[:idx]
+    return text.strip()
+
+
+def self_eval(state: State, llm):
+    """P5: online self-eval — LLM-as-judge on the final medical answer.
+
+    Scores safety/accuracy/completeness/groundedness (1-5 each) → weighted
+    0.0-1.0. Low score appends a soft-degrade caveat AIMessage. Never raises:
+    on any LLM/parse failure it degrades to a neutral score (0.5) with
+    degraded=True and NO caveat (a failed eval must not falsify a warning).
+    """
+    if not config.ENABLE_SELF_EVAL:
+        return {}
+
+    latest = state["messages"][-1] if state.get("messages") else None
+    raw_answer = str(getattr(latest, "content", "") or "")
+    answer_body = _extract_answer_body(raw_answer)
+    if not answer_body:
+        return {"self_eval_score": None,
+                "self_eval_details": {"degraded": True, "reason": "empty_answer"}}
+
+    original_query = str(state.get("originalQuery") or state.get("primary_user_query") or "").strip()
+    agent_answers = state.get("agent_answers") or []
+    evidence_ctx = ""
+    if agent_answers:
+        last = agent_answers[-1]
+        if isinstance(last, dict):
+            evidence_ctx = (f"检索置信度：{last.get('confidence_bucket', '')}；"
+                            f"证据分：{last.get('evidence_score', '')}")
+
+    sys_msg = SystemMessage(content=get_self_eval_prompt())
+    user_payload = (
+        f"用户原始问题：{original_query}\n"
+        f"{evidence_ctx}\n"
+        f"待评回答：\n{answer_body}\n"
+    )
+
+    try:
+        parser = _structured_output_llm(llm, AnswerSelfEval, max_tokens=config.LLM_STRUCTURED_MAX_TOKENS)
+        verdict = parser.invoke([sys_msg, HumanMessage(content=user_payload)])
+    except Exception as exc:
+        logger.warning("self_eval structured output failed; degrading to neutral: %s", exc)
+        return {"self_eval_score": 0.5,
+                "self_eval_details": {"degraded": True, "reason": "llm_failure"}}
+
+    dims = {name: _coerce_dim(getattr(verdict, name, None)) for name in _SELF_EVAL_WEIGHTS}
+    reason = str(getattr(verdict, "reason", "") or "")
+    score = sum(dims[n] * w for n, w in _SELF_EVAL_WEIGHTS.items()) / 5.0
+
+    details = {**dims, "reason": reason, "degraded": False, "caveat_appended": False}
+
+    if score < config.SELF_EVAL_DEGRADE_THRESHOLD:
+        caveat = (f"⚠️ 自评提示：本回答在准确性/完整性上置信度较低"
+                  f"（自评 {score:.2f}/1.0），建议结合线下医生意见或补充更多症状细节后再判断。")
+        details["caveat_appended"] = True
+        return {
+            "self_eval_score": score,
+            "self_eval_details": details,
+            "messages": [AIMessage(content=caveat, name="self_eval_caveat")],
+        }
+
+    return {"self_eval_score": score, "self_eval_details": details}
 
 
 def decompose_tasks(state: State, llm):
@@ -950,6 +1041,7 @@ __all__ = [
     "plan_retrieval_queries",
     "revise_answer",
     "reset_supervisor_state",
+    "self_eval",
     "supervise",
     "rewrite_query",
     "should_compress_context",

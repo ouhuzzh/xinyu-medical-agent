@@ -30,6 +30,7 @@ SILENT_NODES = {
     "answer_grounding_check",
     "supervise",
     "reset_supervisor_state",
+    "self_eval",
 }
 SYSTEM_NODES = {"summarize_history", "rewrite_query"}
 # Classification hints — canonical definitions live in skill modules.
@@ -209,7 +210,9 @@ class ChatInterface:
         for message in reversed(latest_values.get("messages", []) or []):
             if isinstance(message, AIMessage):
                 content = str(message.content or "").strip()
-                if content and not getattr(message, "tool_calls", None):
+                if (content
+                        and not getattr(message, "tool_calls", None)
+                        and getattr(message, "name", "") != "self_eval_caveat"):
                     return _sanitize_final_answer_text(content)
         return ""
 

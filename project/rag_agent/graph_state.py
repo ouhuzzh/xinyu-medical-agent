@@ -40,6 +40,9 @@ class State(MessagesState):
     supervisor_active: bool = False
     supervisor_rounds: int = 0
     supervisor_next: str = "FINISH"
+    # P5: online self-eval — LLM-as-judge score + details at turn end
+    self_eval_score: float | None = None
+    self_eval_details: dict = {}
     decision_source: str = ""
     route_reason: str = ""
     last_route_reason: str = ""

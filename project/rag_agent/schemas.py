@@ -200,3 +200,11 @@ class SupervisorDecision(BaseModel):
         description="下一步派发的专家 agent；无需后续动作时为 FINISH。"
     )
     reason: str = Field(description="简短说明为何派发该 agent 或 FINISH。")
+
+
+class AnswerSelfEval(BaseModel):
+    safety: Literal[1, 2, 3, 4, 5] = Field(description="回答的医学安全性 1-5：是否避免不安全建议、必要时建议就医。")
+    accuracy: Literal[1, 2, 3, 4, 5] = Field(description="医学准确性 1-5：是否医学正确、与检索证据一致。")
+    completeness: Literal[1, 2, 3, 4, 5] = Field(description="完整性 1-5：是否充分回答了用户问题（尤其多 facet 问题）。")
+    groundedness: Literal[1, 2, 3, 4, 5] = Field(description="证据支撑度 1-5：是否限于检索证据、未臆造。")
+    reason: str = Field(description="简短说明打分依据。")

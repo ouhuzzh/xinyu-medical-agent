@@ -470,3 +470,25 @@ def get_supervisor_prompt() -> str:
         "严格输出 JSON，不要输出多余文字：\n"
         '{"next_agent": "appointment|triage|FINISH", "reason": "简短依据"}'
     )
+
+
+def get_self_eval_prompt() -> str:
+    """System prompt for the self_eval node (P5).
+
+    LLM-as-judge: rates the final medical answer on 4 dimensions (1-5 each).
+    Output must be strict JSON matching AnswerSelfEval:
+    {"safety": 1-5, "accuracy": 1-5, "completeness": 1-5, "groundedness": 1-5, "reason": str}.
+    """
+    return (
+        "你是一名医学回答质量评审员。基于检索到的证据评判以下医学回答，不要求你引入新知识。\n\n"
+        "对 4 个维度各打 1-5 分：\n"
+        "- safety：是否避免不安全医学建议、必要时建议就医。\n"
+        "- accuracy：是否医学正确、与检索证据一致。\n"
+        "- completeness：是否充分回答了用户问题（尤其多 facet 问题）。\n"
+        "- groundedness：是否限于检索证据、未臆造。\n\n"
+        "判定原则：\n"
+        "- 5 分优秀，3 分及格，1 分很差。\n"
+        "- 仅基于给定证据与回答内容评判，不臆测未给出的信息。\n\n"
+        "严格输出 JSON，不要输出多余文字：\n"
+        '{"safety": 1-5, "accuracy": 1-5, "completeness": 1-5, "groundedness": 1-5, "reason": "简短依据"}'
+    )

@@ -287,21 +287,32 @@ def route_after_evidence(state: AgentState) -> Literal["should_compress_context"
     return "should_compress_context"
 
 
-def route_after_grounding(state: State) -> Literal["__end__", "revise_answer", "supervise"]:
-    """P2/P4: route after the answer grounding check.
+def route_after_grounding(state: State) -> Literal["__end__", "revise_answer", "supervise", "self_eval"]:
+    """P2/P4/P5: route after the answer grounding check.
 
-    - grounded (grounding_passed=True) → supervise (P4) when supervisor enabled, else END
-    - not grounded + budget remaining + reflection on → revise_answer
-    - not grounded + budget remaining + reflection off → supervise (P4) / END
-    - not grounded + budget exhausted → supervise (P4) when supervisor enabled, else END
+    - grounded → self_eval (P5) when on, else supervise (P4) / END
+    - not grounded + budget + reflection on → revise_answer
+    - not grounded + budget + reflection off → self_eval (P5) / supervise (P4) / END
+    - budget exhausted → self_eval (P5) / supervise (P4) / END
     """
-    _to_supervisor = "supervise" if config.ENABLE_MULTI_AGENT_SUPERVISOR else "__end__"
     if bool(state.get("grounding_passed", False)):
-        return _to_supervisor
+        return _next_after_grounding()
     rounds = int(state.get("grounding_rounds", 0) or 0)
     if rounds < MAX_GROUNDING_ROUNDS and config.ENABLE_ANSWER_REFLECTION:
         return "revise_answer"
-    return _to_supervisor
+    return _next_after_grounding()
+
+
+def _next_after_grounding() -> Literal["__end__", "supervise", "self_eval"]:
+    """P5/P4: terminal target after grounding. self_eval if on, else supervisor if on, else END."""
+    if config.ENABLE_SELF_EVAL:
+        return "self_eval"
+    return "supervise" if config.ENABLE_MULTI_AGENT_SUPERVISOR else "__end__"
+
+
+def route_after_self_eval(state: State) -> Literal["supervise", "__end__"]:
+    """P5: after self-eval, continue to the P4 supervisor (or END if disabled)."""
+    return "supervise" if config.ENABLE_MULTI_AGENT_SUPERVISOR else "__end__"
 
 
 def route_after_supervisor(state: State) -> str:
