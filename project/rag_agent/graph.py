@@ -19,9 +19,11 @@ from .rag_nodes import (
     grounded_answer_generation,
     orchestrator,
     plan_retrieval_queries,
+    reset_supervisor_state,
     revise_answer,
     rewrite_query,
     should_compress_context,
+    supervise,
 )
 from .routing_nodes import (
     analyze_turn,
@@ -91,6 +93,9 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     graph_builder.add_node("intent_router", partial(intent_router, llm=_light_llm))
     graph_builder.add_node("rewrite_query", partial(rewrite_query, llm=_light_llm))
     graph_builder.add_node("decompose_tasks", partial(decompose_tasks, llm=_light_llm))
+    # P4: multi-agent supervisor at medical_rag exit
+    graph_builder.add_node("supervise", partial(supervise, llm=_light_llm))
+    graph_builder.add_node(reset_supervisor_state)
     # strong tier: answer generation, department recommendation
     graph_builder.add_node("recommend_department", partial(recommend_department, llm=_strong_llm))
     graph_builder.add_node("handle_appointment_skill", partial(handle_appointment_skill, llm=_strong_llm, appointment_service=appointment_service, mcp_pool=mcp_pool))
@@ -125,7 +130,8 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     # previous turn is pre-loaded via update_state before graph invocation.
     # It now runs as post-chat cleanup in ChatInterface to avoid blocking the
     # user on the first token.
-    graph_builder.add_edge(START, "analyze_turn")
+    graph_builder.add_edge(START, "reset_supervisor_state")
+    graph_builder.add_edge("reset_supervisor_state", "analyze_turn")
     # Conditional: rules inconclusive → skip intent_router, go direct to rewrite_query.
     # Rules explicit (greeting/cancel/appt/triage/mcp) → intent_router for final routing.
     graph_builder.add_conditional_edges(
@@ -178,29 +184,45 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
         "handle_cancel_appointment": "handle_cancel_appointment",
     })
     graph_builder.add_edge(["agent"], "grounded_answer_generation")
-    graph_builder.add_conditional_edges("recommend_department", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "__end__": END})
-    graph_builder.add_conditional_edges("handle_appointment_skill", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "__end__": END})
-    graph_builder.add_conditional_edges("handle_appointment", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "__end__": END})
-    graph_builder.add_conditional_edges("handle_cancel_appointment", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "__end__": END})
+    graph_builder.add_conditional_edges("recommend_department", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "supervise": "supervise", "__end__": END})
+    graph_builder.add_conditional_edges("handle_appointment_skill", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "supervise": "supervise", "__end__": END})
+    graph_builder.add_conditional_edges("handle_appointment", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "supervise": "supervise", "__end__": END})
+    graph_builder.add_conditional_edges("handle_cancel_appointment", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "supervise": "supervise", "__end__": END})
     graph_builder.add_conditional_edges("prepare_secondary_turn", route_after_prepare_secondary_turn, {
         "rewrite_query": "rewrite_query",
         "handle_appointment": "handle_appointment",
         "handle_cancel_appointment": "handle_cancel_appointment",
         "recommend_department": "recommend_department",
     })
+    # P4: supervisor dispatches a peer agent (appointment/triage) or finishes.
+    graph_builder.add_conditional_edges("supervise", route_after_supervisor, {
+        "handle_appointment_skill": "handle_appointment_skill",
+        "recommend_department": "recommend_department",
+        "__end__": END,
+    })
     graph_builder.add_edge("grounded_answer_generation", "answer_grounding_check")
     if config.ENABLE_ANSWER_REFLECTION:
         # P2: answer reflection loop — critique + evidence-bounded rewrite, re-checked.
         # revise_answer is a LIGHT-tier task (critique/rewrite-class, like evaluate_evidence).
         graph_builder.add_node("revise_answer", partial(revise_answer, llm=_light_llm))
+        _grounding_map = {"__end__": END, "revise_answer": "revise_answer"}
+        if config.ENABLE_MULTI_AGENT_SUPERVISOR:
+            _grounding_map["supervise"] = "supervise"
         graph_builder.add_conditional_edges(
             "answer_grounding_check",
             route_after_grounding,
-            {"__end__": END, "revise_answer": "revise_answer"},
+            _grounding_map,
         )
         graph_builder.add_edge("revise_answer", "answer_grounding_check")
     else:
-        graph_builder.add_edge("answer_grounding_check", END)
+        if config.ENABLE_MULTI_AGENT_SUPERVISOR:
+            graph_builder.add_conditional_edges(
+                "answer_grounding_check",
+                route_after_grounding,
+                {"__end__": END, "supervise": "supervise"},
+            )
+        else:
+            graph_builder.add_edge("answer_grounding_check", END)
 
     agent_graph = graph_builder.compile(checkpointer=checkpointer, interrupt_before=["request_clarification"])
 

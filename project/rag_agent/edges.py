@@ -2,6 +2,7 @@ from typing import Literal
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.types import Send
 from .graph_state import State, AgentState
+import config
 from config import MAX_ITERATIONS, MAX_TOOL_CALLS, MAX_EVIDENCE_ROUNDS, MAX_GROUNDING_ROUNDS, MAX_SUB_QUESTIONS
 
 
@@ -171,7 +172,13 @@ def route_after_orchestrator_call(state: AgentState) -> Literal["tools", "fallba
     return "tools"
 
 
-def route_after_action(state: State) -> Literal["request_clarification", "prepare_secondary_turn", "__end__"]:
+def route_after_action(state: State) -> Literal["request_clarification", "prepare_secondary_turn", "supervise", "__end__"]:
+    """Route after an action specialist (appointment/triage) finishes.
+
+    Priority: pending clarification > secondary turn > supervisor loop > END.
+    The supervisor_active branch (P4) is lowest priority so that explicit
+    pending/secondary signals (stronger closure intents) win.
+    """
     if state.get("pending_clarification") and state.get("clarification_target"):
         return "request_clarification"
     if (
@@ -183,6 +190,8 @@ def route_after_action(state: State) -> Literal["request_clarification", "prepar
         and not state.get("deferred_confirmation_action")
     ):
         return "prepare_secondary_turn"
+    if bool(state.get("supervisor_active", False)):
+        return "supervise"
     return "__end__"
 
 
@@ -278,16 +287,28 @@ def route_after_evidence(state: AgentState) -> Literal["should_compress_context"
     return "should_compress_context"
 
 
-def route_after_grounding(state: State) -> Literal["__end__", "revise_answer"]:
-    """P2: route after the answer grounding check.
+def route_after_grounding(state: State) -> Literal["__end__", "revise_answer", "supervise"]:
+    """P2/P4: route after the answer grounding check.
 
-    - grounded (grounding_passed=True) → END
-    - not grounded + budget remaining (grounding_rounds < MAX_GROUNDING_ROUNDS) → revise_answer
-    - not grounded + budget exhausted → END (passive-disclaimer degrade already appended)
+    - grounded (grounding_passed=True) → supervise (P4) when supervisor enabled, else END
+    - not grounded + budget remaining + reflection on → revise_answer
+    - not grounded + budget remaining + reflection off → supervise (P4) / END
+    - not grounded + budget exhausted → supervise (P4) when supervisor enabled, else END
     """
+    _to_supervisor = "supervise" if config.ENABLE_MULTI_AGENT_SUPERVISOR else "__end__"
     if bool(state.get("grounding_passed", False)):
-        return "__end__"
+        return _to_supervisor
     rounds = int(state.get("grounding_rounds", 0) or 0)
-    if rounds < MAX_GROUNDING_ROUNDS:
+    if rounds < MAX_GROUNDING_ROUNDS and config.ENABLE_ANSWER_REFLECTION:
         return "revise_answer"
+    return _to_supervisor
+
+
+def route_after_supervisor(state: State) -> str:
+    """P4: dispatch the supervisor's chosen agent, or finish."""
+    nxt = str(state.get("supervisor_next", "FINISH") or "FINISH").strip()
+    if nxt == "appointment":
+        return "handle_appointment_skill"
+    if nxt == "triage":
+        return "recommend_department"
     return "__end__"

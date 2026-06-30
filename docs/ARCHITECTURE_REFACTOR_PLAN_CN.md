@@ -1,6 +1,19 @@
-# 架构改造计划
+# 架构改造路线图
+
+更新时间：2026-06-29
+
+本文档是当前仍有参考价值的架构路线图，不是逐条待办清单。已经完成的阶段用于说明系统为什么变成现在的结构；未完成的阶段用于指导后续演进。
 
 本文档记录从“单机可运行 demo”走向“可演进、可部署产品原型”的改造路线。目标不是一次性大重构，而是用小步、可验证的切片逐步收紧边界。
+
+## 当前状态摘要
+
+- 已完成运行态边界外置的第一批工作：Redis-backed session lock、Redis-backed auth/runtime guard、运行态 backend 状态暴露。
+- 已完成聊天主链路拆分：`ChatTurnInputService` 和 `ChatTurnService` 已从 `ChatInterface` 中抽出。
+- 已完成 `RAGSystem` 瘦身第一步：服务启动、图编译、知识库监督和 skill 注册已经开始拆分。
+- 已完成 embedding schema guard：启动期检查 `VECTOR_DIMENSION` 与 pgvector 列定义。
+- 已完成多医院 MCP 挂号选择闭环：多医院未明确时澄清，确认阶段锁定 `hospital_code`。
+- 当前正在推进 P4 多智能体监督/任务分解方向，详细设计记录放在 `docs/superpowers/`。
 
 ## 当前主要问题
 

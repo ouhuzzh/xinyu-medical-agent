@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">核心请求时序图</title>
+  <desc id="desc">展示用户消息从前端进入 FastAPI、装配上下文、进入 LangGraph、调用 RAG 或 MCP、最后流式返回并持久化的过程。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="100%" stop-color="#ecfeff"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto">
+      <path d="M2 2 L10 6 L2 10 Z" fill="#0f766e"/>
+    </marker>
+    <style>
+      .title { font: 700 36px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 18px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #475569; }
+      .head { fill: #ffffff; stroke: #99f6e4; stroke-width: 1.4; }
+      .head-text { font: 700 16px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #0f172a; }
+      .life { stroke: #cbd5e1; stroke-width: 2; stroke-dasharray: 8 8; }
+      .msg { stroke: #0f766e; stroke-width: 2.2; marker-end: url(#arrow); }
+      .msg2 { stroke: #64748b; stroke-width: 2; marker-end: url(#arrow); }
+      .label { font: 600 15px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #334155; }
+      .group { fill: rgba(255,255,255,0.68); stroke: #bfdbfe; stroke-width: 1.2; }
+      .group-title { font: 700 18px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #1d4ed8; }
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <text x="64" y="68" class="title">核心请求链路：从用户消息到流式回答</text>
+  <text x="64" y="104" class="subtitle">重点展示会话锁、上下文装配、LangGraph 路由、RAG/MCP 分支和消息持久化</text>
+
+  <g transform="translate(44,145)">
+    <rect x="0" y="0" width="130" height="48" rx="14" class="head"/><text x="34" y="31" class="head-text">User</text>
+    <rect x="170" y="0" width="150" height="48" rx="14" class="head"/><text x="202" y="31" class="head-text">React</text>
+    <rect x="360" y="0" width="170" height="48" rx="14" class="head"/><text x="389" y="31" class="head-text">Chat API</text>
+    <rect x="570" y="0" width="180" height="48" rx="14" class="head"/><text x="600" y="31" class="head-text">Input Service</text>
+    <rect x="790" y="0" width="190" height="48" rx="14" class="head"/><text x="825" y="31" class="head-text">LangGraph</text>
+    <rect x="1020" y="0" width="140" height="48" rx="14" class="head"/><text x="1068" y="31" class="head-text">RAG</text>
+    <rect x="1200" y="0" width="140" height="48" rx="14" class="head"/><text x="1242" y="31" class="head-text">MCP</text>
+    <rect x="1380" y="0" width="130" height="48" rx="14" class="head"/><text x="1411" y="31" class="head-text">DB/Redis</text>
+
+    <line x1="65" y1="58" x2="65" y2="680" class="life"/>
+    <line x1="245" y1="58" x2="245" y2="680" class="life"/>
+    <line x1="445" y1="58" x2="445" y2="680" class="life"/>
+    <line x1="660" y1="58" x2="660" y2="680" class="life"/>
+    <line x1="885" y1="58" x2="885" y2="680" class="life"/>
+    <line x1="1090" y1="58" x2="1090" y2="680" class="life"/>
+    <line x1="1270" y1="58" x2="1270" y2="680" class="life"/>
+    <line x1="1445" y1="58" x2="1445" y2="680" class="life"/>
+
+    <line x1="65" y1="96" x2="245" y2="96" class="msg"/><text x="84" y="86" class="label">输入医疗问题或挂号需求</text>
+    <line x1="245" y1="144" x2="445" y2="144" class="msg"/><text x="273" y="134" class="label">POST /api/chat/stream</text>
+    <line x1="445" y1="192" x2="1445" y2="192" class="msg2"/><text x="474" y="182" class="label">获取 session lock，避免同一会话并发写状态</text>
+    <line x1="445" y1="240" x2="660" y2="240" class="msg"/><text x="474" y="230" class="label">解析 thread_id / user_id / request context</text>
+    <line x1="660" y1="288" x2="1445" y2="288" class="msg2"/><text x="690" y="278" class="label">读取会话、长期记忆、医院绑定、checkpoint</text>
+    <line x1="660" y1="336" x2="885" y2="336" class="msg"/><text x="691" y="326" class="label">构造 StateGraph 输入</text>
+
+    <rect x="778" y="370" width="600" height="178" rx="18" class="group"/>
+    <text x="805" y="400" class="group-title">LangGraph 分支执行</text>
+    <line x1="885" y1="432" x2="1090" y2="432" class="msg"/><text x="914" y="422" class="label">医疗问答：planning + retrieval</text>
+    <line x1="1090" y1="480" x2="1445" y2="480" class="msg2"/><text x="1120" y="470" class="label">pgvector 检索证据</text>
+    <line x1="885" y1="528" x2="1270" y2="528" class="msg"/><text x="914" y="518" class="label">预约挂号：选择医院后调用 MCP</text>
+
+    <line x1="885" y1="600" x2="445" y2="600" class="msg"/><text x="568" y="590" class="label">SSE token / events</text>
+    <line x1="445" y1="648" x2="1445" y2="648" class="msg2"/><text x="474" y="638" class="label">保存消息、状态和释放 session lock</text>
+    <line x1="445" y1="696" x2="245" y2="696" class="msg"/><text x="292" y="686" class="label">流式返回回答</text>
+  </g>
+</svg>

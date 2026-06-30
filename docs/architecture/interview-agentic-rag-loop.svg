@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Agentic RAG 证据闭环</title>
+  <desc id="desc">展示 query planning、工具化检索、证据强度评估、答案生成、grounding 检查和回答修正闭环。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f0fdfa"/>
+      <stop offset="100%" stop-color="#f8fafc"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto">
+      <path d="M2 2 L10 6 L2 10 Z" fill="#0f766e"/>
+    </marker>
+    <style>
+      .title { font: 700 36px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #0f172a; }
+      .subtitle { font: 500 18px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #475569; }
+      .box { fill: #ffffff; stroke: #99f6e4; stroke-width: 1.4; filter: url(#shadow); }
+      .check { fill: #fff7ed; stroke: #fdba74; stroke-width: 1.6; filter: url(#shadow); }
+      .final { fill: #ecfdf5; stroke: #34d399; stroke-width: 1.6; filter: url(#shadow); }
+      .h { font: 700 21px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #0f172a; }
+      .p { font: 500 15px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #475569; }
+      .tag { font: 700 14px "Microsoft YaHei", "PingFang SC", Arial, sans-serif; fill: #0f766e; }
+      .line { stroke: #0f766e; stroke-width: 2.4; fill: none; marker-end: url(#arrow); }
+      .loop { stroke: #f97316; stroke-width: 2.4; fill: none; marker-end: url(#arrow); stroke-dasharray: 9 7; }
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <text x="64" y="70" class="title">Agentic RAG：不是“一次检索后直接回答”</text>
+  <text x="64" y="106" class="subtitle">通过证据充分性评估和 grounding 反思，把回答限制在可支持证据内</text>
+
+  <rect x="90" y="210" width="210" height="104" rx="20" class="box"/>
+  <text x="122" y="250" class="h">用户问题</text>
+  <text x="122" y="282" class="p">医疗咨询 / 症状问题</text>
+
+  <rect x="370" y="210" width="240" height="104" rx="20" class="box"/>
+  <text x="402" y="250" class="h">Query Planning</text>
+  <text x="402" y="282" class="p">拆解意图，生成检索目标</text>
+
+  <rect x="680" y="210" width="260" height="104" rx="20" class="box"/>
+  <text x="712" y="250" class="h">Tool Retrieval</text>
+  <text x="712" y="282" class="p">pgvector / 文档片段召回</text>
+
+  <rect x="1010" y="196" width="250" height="132" rx="22" class="check"/>
+  <text x="1042" y="242" class="h">Evidence Check</text>
+  <text x="1042" y="274" class="p">判断证据是否足够</text>
+  <text x="1042" y="302" class="p">不足则改写查询</text>
+
+  <rect x="1010" y="500" width="250" height="104" rx="20" class="box"/>
+  <text x="1042" y="540" class="h">Answer Generation</text>
+  <text x="1042" y="572" class="p">只基于证据组织回答</text>
+
+  <rect x="680" y="486" width="260" height="132" rx="22" class="check"/>
+  <text x="712" y="532" class="h">Grounding Check</text>
+  <text x="712" y="564" class="p">检查答案是否被证据支持</text>
+  <text x="712" y="592" class="p">不通过则生成 critique</text>
+
+  <rect x="370" y="500" width="240" height="104" rx="20" class="box"/>
+  <text x="402" y="540" class="h">Revise Answer</text>
+  <text x="402" y="572" class="p">根据 critique 修正回答</text>
+
+  <rect x="90" y="500" width="210" height="104" rx="20" class="final"/>
+  <text x="122" y="540" class="h">最终回答</text>
+  <text x="122" y="572" class="p">有证据约束和安全提醒</text>
+
+  <path d="M300 262 L370 262" class="line"/>
+  <path d="M610 262 L680 262" class="line"/>
+  <path d="M940 262 L1010 262" class="line"/>
+  <path d="M1135 328 L1135 500" class="line"/>
+  <path d="M1010 552 L940 552" class="line"/>
+  <path d="M680 552 L610 552" class="loop"/>
+  <path d="M370 552 L300 552" class="line"/>
+
+  <path d="M1010 218 C870 84 600 86 490 210" class="loop"/>
+  <text x="705" y="136" class="tag">证据不足：Refine Query，再检索</text>
+
+  <path d="M810 486 C810 420 560 424 490 500" class="loop"/>
+  <text x="556" y="440" class="tag">Grounding 不通过：修正回答</text>
+
+  <rect x="184" y="690" width="1232" height="86" rx="22" fill="#ffffff" stroke="#ccfbf1"/>
+  <text x="222" y="726" class="h">面试表达重点</text>
+  <text x="222" y="758" class="p">传统 RAG 是检索一次后回答；这个链路会评估证据、必要时重新检索，并在回答后做 grounding 校验，降低医疗幻觉风险。</text>
+</svg>
