@@ -22,6 +22,7 @@ from .rag_nodes import (
     reset_supervisor_state,
     revise_answer,
     rewrite_query,
+    self_eval,
     should_compress_context,
     supervise,
 )
@@ -96,6 +97,8 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     # P4: multi-agent supervisor at medical_rag exit
     graph_builder.add_node("supervise", partial(supervise, llm=_light_llm))
     graph_builder.add_node(reset_supervisor_state)
+    # P5: online self-eval between grounding and supervisor
+    graph_builder.add_node("self_eval", partial(self_eval, llm=_light_llm))
     # strong tier: answer generation, department recommendation
     graph_builder.add_node("recommend_department", partial(recommend_department, llm=_strong_llm))
     graph_builder.add_node("handle_appointment_skill", partial(handle_appointment_skill, llm=_strong_llm, appointment_service=appointment_service, mcp_pool=mcp_pool))
@@ -200,12 +203,19 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
         "recommend_department": "recommend_department",
         "__end__": END,
     })
+    # P5: after self-eval, continue to the supervisor (or END).
+    graph_builder.add_conditional_edges("self_eval", route_after_self_eval, {
+        "supervise": "supervise",
+        "__end__": END,
+    })
     graph_builder.add_edge("grounded_answer_generation", "answer_grounding_check")
     if config.ENABLE_ANSWER_REFLECTION:
         # P2: answer reflection loop — critique + evidence-bounded rewrite, re-checked.
         # revise_answer is a LIGHT-tier task (critique/rewrite-class, like evaluate_evidence).
         graph_builder.add_node("revise_answer", partial(revise_answer, llm=_light_llm))
         _grounding_map = {"__end__": END, "revise_answer": "revise_answer"}
+        if config.ENABLE_SELF_EVAL:
+            _grounding_map["self_eval"] = "self_eval"
         if config.ENABLE_MULTI_AGENT_SUPERVISOR:
             _grounding_map["supervise"] = "supervise"
         graph_builder.add_conditional_edges(
@@ -215,11 +225,16 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
         )
         graph_builder.add_edge("revise_answer", "answer_grounding_check")
     else:
+        _grounding_map = {"__end__": END}
+        if config.ENABLE_SELF_EVAL:
+            _grounding_map["self_eval"] = "self_eval"
         if config.ENABLE_MULTI_AGENT_SUPERVISOR:
+            _grounding_map["supervise"] = "supervise"
+        if config.ENABLE_SELF_EVAL or config.ENABLE_MULTI_AGENT_SUPERVISOR:
             graph_builder.add_conditional_edges(
                 "answer_grounding_check",
                 route_after_grounding,
-                {"__end__": END, "supervise": "supervise"},
+                _grounding_map,
             )
         else:
             graph_builder.add_edge("answer_grounding_check", END)

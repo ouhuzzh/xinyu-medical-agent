@@ -246,5 +246,15 @@ class TestRouteAfterGroundingSelfEval(unittest.TestCase):
             self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)), "__end__")
 
 
+class TestGraphWiring(unittest.TestCase):
+    def test_graph_source_references_self_eval_wiring(self):
+        import inspect
+        import project.rag_agent.graph as graph_mod
+        src = inspect.getsource(graph_mod)
+        self.assertIn("self_eval", src)
+        self.assertIn("route_after_self_eval", src)
+        self.assertIn("ENABLE_SELF_EVAL", src)
+
+
 if __name__ == "__main__":
     unittest.main()
