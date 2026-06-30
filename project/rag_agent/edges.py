@@ -310,7 +310,7 @@ def _next_after_grounding() -> Literal["__end__", "supervise", "self_eval"]:
     return "supervise" if config.ENABLE_MULTI_AGENT_SUPERVISOR else "__end__"
 
 
-def route_after_self_eval(state: State) -> str:
+def route_after_self_eval(state: State) -> Literal["supervise", "__end__"]:
     """P5: after self-eval, continue to the P4 supervisor (or END if disabled)."""
     return "supervise" if config.ENABLE_MULTI_AGENT_SUPERVISOR else "__end__"
 
