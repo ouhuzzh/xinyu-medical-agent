@@ -202,5 +202,49 @@ class TestExtractAnswerBody(unittest.TestCase):
         self.assertEqual(_extract_answer_body(None), "")
 
 
+class TestRouteAfterSelfEval(unittest.TestCase):
+    def test_to_supervise_when_supervisor_enabled(self):
+        import project.rag_agent.edges as edges
+        from project.rag_agent.edges import route_after_self_eval
+        with unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", True):
+            self.assertEqual(route_after_self_eval(_make_main_state()), "supervise")
+
+    def test_to_end_when_supervisor_disabled(self):
+        import project.rag_agent.edges as edges
+        from project.rag_agent.edges import route_after_self_eval
+        with unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False):
+            self.assertEqual(route_after_self_eval(_make_main_state()), "__end__")
+
+
+class TestRouteAfterGroundingSelfEval(unittest.TestCase):
+    def test_grounded_routes_to_self_eval_when_enabled(self):
+        from project.rag_agent.edges import route_after_grounding
+        self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)), "self_eval")
+
+    def test_budget_exhausted_routes_to_self_eval_when_enabled(self):
+        import config
+        from project.rag_agent.edges import route_after_grounding
+        state = _make_main_state(grounding_passed=False, grounding_rounds=config.MAX_GROUNDING_ROUNDS)
+        self.assertEqual(route_after_grounding(state), "self_eval")
+
+    def test_not_grounded_with_budget_routes_to_revise(self):
+        from project.rag_agent.edges import route_after_grounding
+        state = _make_main_state(grounding_passed=False, grounding_rounds=0)
+        self.assertEqual(route_after_grounding(state), "revise_answer")
+
+    def test_grounded_routes_to_supervise_when_self_eval_disabled(self):
+        import project.rag_agent.edges as edges
+        from project.rag_agent.edges import route_after_grounding
+        with unittest.mock.patch.object(edges.config, "ENABLE_SELF_EVAL", False):
+            self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)), "supervise")
+
+    def test_grounded_routes_to_end_when_both_disabled(self):
+        import project.rag_agent.edges as edges
+        from project.rag_agent.edges import route_after_grounding
+        with unittest.mock.patch.object(edges.config, "ENABLE_SELF_EVAL", False), \
+             unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False):
+            self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)), "__end__")
+
+
 if __name__ == "__main__":
     unittest.main()
