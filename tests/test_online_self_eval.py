@@ -77,5 +77,105 @@ class TestSelfEvalPrompt(unittest.TestCase):
             self.assertIn(token, p)
 
 
+class _FakeStructuredLLM:
+    """Mimics _structured_output_llm.invoke returning a schema instance."""
+    def __init__(self, verdict):
+        self._verdict = verdict
+    def invoke(self, messages):
+        return self._verdict
+
+
+class TestSelfEvalNode(unittest.TestCase):
+    def _state_with_answer(self, answer="一般可以接种，但需先咨询医生。", **extra):
+        from langchain_core.messages import AIMessage
+        return _make_main_state(messages=[AIMessage(content=answer)], **extra)
+
+    def test_disabled_returns_empty(self):
+        import project.rag_agent.rag_nodes as mod
+        with unittest.mock.patch.object(mod.config, "ENABLE_SELF_EVAL", False):
+            result = mod.self_eval(self._state_with_answer(), MagicMock())
+        self.assertEqual(result, {})
+
+    def test_four_dims_produce_weighted_score(self):
+        """safety*0.35 + accuracy*0.30 + completeness*0.20 + groundedness*0.15, /5."""
+        import project.rag_agent.rag_nodes as mod
+        from project.rag_agent.schemas import AnswerSelfEval
+        verdict = AnswerSelfEval(safety=5, accuracy=5, completeness=5, groundedness=5, reason="perfect")
+        with unittest.mock.patch.object(mod, "_structured_output_llm",
+                                        return_value=_FakeStructuredLLM(verdict)):
+            result = mod.self_eval(self._state_with_answer(), MagicMock())
+        self.assertAlmostEqual(result["self_eval_score"], 1.0)
+        self.assertFalse(result["self_eval_details"].get("caveat_appended", False))
+
+    def test_low_score_appends_caveat(self):
+        """score < threshold → caveat AIMessage appended, caveat_appended=True."""
+        import project.rag_agent.rag_nodes as mod
+        from project.rag_agent.schemas import AnswerSelfEval
+        # safety=4, accuracy=2, completeness=3, groundedness=2 → 0.58 < 0.6
+        verdict = AnswerSelfEval(safety=4, accuracy=2, completeness=3, groundedness=2, reason="weak")
+        with unittest.mock.patch.object(mod, "_structured_output_llm",
+                                        return_value=_FakeStructuredLLM(verdict)):
+            result = mod.self_eval(self._state_with_answer(), MagicMock())
+        self.assertLess(result["self_eval_score"], 0.6)
+        self.assertTrue(result["self_eval_details"].get("caveat_appended"))
+        self.assertTrue(any("自评提示" in str(getattr(m, "content", "")) for m in result.get("messages", [])))
+
+    def test_high_score_no_caveat(self):
+        import project.rag_agent.rag_nodes as mod
+        from project.rag_agent.schemas import AnswerSelfEval
+        verdict = AnswerSelfEval(safety=4, accuracy=4, completeness=4, groundedness=4, reason="good")
+        with unittest.mock.patch.object(mod, "_structured_output_llm",
+                                        return_value=_FakeStructuredLLM(verdict)):
+            result = mod.self_eval(self._state_with_answer(), MagicMock())
+        self.assertGreaterEqual(result["self_eval_score"], 0.6)
+        self.assertFalse(result["self_eval_details"].get("caveat_appended"))
+        self.assertNotIn("messages", result)
+
+    def test_llm_failure_degrades_neutral_no_caveat(self):
+        """patch _structured_output_llm to raise → neutral 0.5, degraded=True, no caveat, no raise."""
+        import project.rag_agent.rag_nodes as mod
+        with unittest.mock.patch.object(mod, "_structured_output_llm",
+                                        side_effect=Exception("boom")):
+            result = mod.self_eval(self._state_with_answer(), MagicMock())
+        self.assertEqual(result["self_eval_score"], 0.5)
+        self.assertTrue(result["self_eval_details"].get("degraded"))
+        self.assertFalse(result["self_eval_details"].get("caveat_appended"))
+
+    def test_real_llm_failure_exercises_default_fallback(self):
+        """Bare MagicMock LLM (no patch of _structured_output_llm) → _default() path.
+        AnswerSelfEval dims are Literal[1-5], so _default() sets "" → Pydantic rejects
+        → _default() raises → self_eval's try/except → degraded path: score 0.5,
+        degraded=True, NO caveat, never raises. (Mirrors P4 supervise's never-raise test.)"""
+        import project.rag_agent.rag_nodes as mod
+        result = mod.self_eval(self._state_with_answer(), MagicMock())
+        self.assertEqual(result["self_eval_score"], 0.5)
+        self.assertTrue(result["self_eval_details"].get("degraded"))
+        self.assertFalse(result["self_eval_details"].get("caveat_appended"))
+
+    def test_illegal_dims_coerced(self):
+        """dims out of [1,5] coerced into range (defense-in-depth for non-Pydantic verdicts)."""
+        import project.rag_agent.rag_nodes as mod
+        class _Bogus:
+            safety = 9
+            accuracy = 0
+            completeness = -1
+            groundedness = 6
+            reason = "bogus"
+        with unittest.mock.patch.object(mod, "_structured_output_llm",
+                                        return_value=_FakeStructuredLLM(_Bogus())):
+            result = mod.self_eval(self._state_with_answer(), MagicMock())
+        d = result["self_eval_details"]
+        self.assertTrue(1 <= d["safety"] <= 5)
+        self.assertTrue(1 <= d["accuracy"] <= 5)
+        self.assertTrue(1 <= d["completeness"] <= 5)
+        self.assertTrue(1 <= d["groundedness"] <= 5)
+
+    def test_empty_answer_degrades(self):
+        import project.rag_agent.rag_nodes as mod
+        result = mod.self_eval(_make_main_state(messages=[]), MagicMock())
+        self.assertIsNone(result["self_eval_score"])
+        self.assertTrue(result["self_eval_details"].get("degraded"))
+
+
 if __name__ == "__main__":
     unittest.main()
