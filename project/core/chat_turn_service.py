@@ -12,6 +12,8 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
+from langchain_core.messages import AIMessage
+
 import config
 from db.route_log_store import RouteLogStore
 
@@ -91,6 +93,20 @@ class ChatTurnService:
             response_messages.append(self._make_message(final_assistant))
             response_messages_changed = True
 
+        # P5: surface the self_eval soft-degrade caveat as a final visible
+        # assistant message. self_eval is a SILENT_NODE and returns the caveat
+        # as a plain AIMessage (not AIMessageChunk), so the streaming loop never
+        # appends it. Surface it here so the user sees it after the answer.
+        # final_assistant (the answer) is already resolved above and is unchanged.
+        for msg in reversed(latest_values.get("messages", []) or []):
+            if isinstance(msg, AIMessage) and getattr(msg, "name", "") == "self_eval_caveat":
+                caveat_text = str(msg.content or "").strip()
+                if caveat_text:
+                    response_messages.append(self._make_message(caveat_text))
+                    response_messages_changed = True
+                break
+
+        all_visible_assistant_texts = self._extract_all_visible_assistant_texts(response_messages)
         combined_assistant_text = "\n\n".join(all_visible_assistant_texts) if all_visible_assistant_texts else final_assistant
         updated_state = self._resolved_session_state(latest_values, session_state, user_message, clarification_text)
         route_reason = latest_values.get("route_reason", updated_state.get("last_route_reason") or "") or ""

@@ -454,7 +454,7 @@ def self_eval(state: State, llm):
         return {
             "self_eval_score": score,
             "self_eval_details": details,
-            "messages": [AIMessage(content=caveat)],
+            "messages": [AIMessage(content=caveat, name="self_eval_caveat")],
         }
 
     return {"self_eval_score": score, "self_eval_details": details}

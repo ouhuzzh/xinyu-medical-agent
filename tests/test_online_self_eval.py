@@ -346,5 +346,95 @@ class TestCompiledSelfEval(unittest.TestCase):
         self.assertTrue(any("自评提示" in str(getattr(m, "content", "")) for m in final["messages"]))
 
 
+class TestCaveatSurfacing(unittest.TestCase):
+    """P5: the soft-degrade caveat must surface in response_messages (it can't
+    stream because self_eval is a SILENT_NODE returning a plain AIMessage)."""
+
+    def _make_service(self, latest_values):
+        from project.core.chat_turn_service import ChatTurnService
+        from project.core.chat_interface import ChatInterface
+
+        class _FakeGraph:
+            def get_state(self, config):
+                class _S:
+                    values = latest_values
+                return _S()
+
+        class _FakeRag:
+            agent_graph = _FakeGraph()
+
+        svc = ChatTurnService.__new__(ChatTurnService)
+        svc.rag_system = _FakeRag()
+        svc.route_log_store = None
+        svc._extract_final_assistant_text = ChatInterface._extract_final_assistant_text
+        svc._extract_all_visible_assistant_texts = ChatInterface._extract_all_visible_assistant_texts
+        svc._extract_clarification_text = ChatInterface._extract_clarification_text
+        svc._extract_latest_state_assistant = ChatInterface._extract_latest_state_assistant
+        svc._build_chat_failure_fallback = lambda user_message: "fallback"
+        svc._resolved_session_state = lambda lv, ss, um, ct: {}
+        svc._invalidate_memory_cache = lambda *a, **k: None
+        return svc
+
+    def test_caveat_appended_to_response_messages(self):
+        from langchain_core.messages import AIMessage
+        from project.core.chat_turn_service import TurnArtifacts
+        # State: answer present (grounded_answer_generation output), then caveat.
+        latest_values = {
+            "messages": [
+                AIMessage(content="最终答案+引用", name="grounded_answer_generation"),
+                AIMessage(content="⚠️ 自评提示：低分", name="self_eval_caveat"),
+            ],
+            "self_eval_details": {"caveat_appended": True},
+            "route_reason": "rule_match",
+        }
+        svc = self._make_service(latest_values)
+        # response_messages already has the streamed answer
+        response_messages = [{"role": "assistant", "content": "最终答案+引用"}]
+        artifacts = svc.prepare_turn_artifacts(
+            active_thread_id="t1", graph_config={},
+            response_messages=response_messages, user_message="q",
+            session_state={},
+        )
+        # The caveat was appended
+        contents = [m["content"] for m in artifacts.response_messages]
+        self.assertIn("⚠️ 自评提示：低分", contents)
+        self.assertTrue(artifacts.response_messages_changed)
+        # final_assistant remains the ANSWER (not the caveat)
+        self.assertEqual(artifacts.final_assistant, "最终答案+引用")
+
+    def test_no_caveat_leaves_response_messages_unchanged(self):
+        from langchain_core.messages import AIMessage
+        latest_values = {
+            "messages": [AIMessage(content="最终答案", name="grounded_answer_generation")],
+            "route_reason": "rule_match",
+        }
+        svc = self._make_service(latest_values)
+        response_messages = [{"role": "assistant", "content": "最终答案"}]
+        artifacts = svc.prepare_turn_artifacts(
+            active_thread_id="t1", graph_config={},
+            response_messages=response_messages, user_message="q",
+            session_state={},
+        )
+        contents = [m["content"] for m in artifacts.response_messages]
+        self.assertFalse(any("自评提示" in c for c in contents))
+        # No caveat → no change from the caveat-surfacing block
+        self.assertEqual(len(artifacts.response_messages), 1)
+
+    def test_state_fallback_returns_answer_not_caveat(self):
+        """When final_assistant is empty (no streamed answer), the state-fallback
+        must return the ANSWER, not the caveat (which is last in state)."""
+        from langchain_core.messages import AIMessage
+        from project.core.chat_interface import ChatInterface
+        latest_values = {
+            "messages": [
+                AIMessage(content="最终答案+引用", name="grounded_answer_generation"),
+                AIMessage(content="⚠️ 自评提示：低分", name="self_eval_caveat"),
+            ],
+        }
+        # Directly test the static helper
+        result = ChatInterface._extract_latest_state_assistant(latest_values)
+        self.assertEqual(result, "最终答案+引用")
+
+
 if __name__ == "__main__":
     unittest.main()
