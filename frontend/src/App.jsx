@@ -140,6 +140,19 @@ function AppInner() {
         currentUser={system.currentUser}
         canManageDocuments={system.isAdmin}
         onLogout={handleLogout}
+        sessions={chat.sessions}
+        activeThreadId={chat.threadId}
+        isChatStreaming={chat.isStreaming}
+        onNewSession={async () => {
+          const threadId = await chat.newSession();
+          if (threadId) navigate("chat");
+        }}
+        onSelectSession={(threadId) => {
+          chat.selectSession(threadId);
+          navigate("chat");
+        }}
+        onRenameSession={chat.renameSession}
+        onDeleteSession={chat.deleteSession}
       />
 
       <Suspense fallback={<PageLoader />}>

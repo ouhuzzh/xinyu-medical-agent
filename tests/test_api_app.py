@@ -244,15 +244,45 @@ class FakeChatSessionStore:
     def __init__(self):
         self.counter = 0
         self.sessions = {}
+        self.touched = []
 
     def create_session(self, owner_user_id):
         self.counter += 1
         thread_id = f"thread-{self.counter}"
-        self.sessions[thread_id] = {"thread_id": thread_id, "owner_user_id": owner_user_id, "status": "active"}
+        self.sessions[thread_id] = {"thread_id": thread_id, "owner_user_id": owner_user_id, "status": "active", "title": ""}
         return thread_id
 
     def get_session(self, thread_id):
         return self.sessions.get(thread_id)
+
+    def list_sessions(self, owner_user_id, limit=30):
+        rows = [
+            session
+            for session in self.sessions.values()
+            if session.get("owner_user_id") == owner_user_id and session.get("status") == "active"
+        ]
+        return sorted(
+            rows,
+            key=lambda item: item.get("updated_at", ""),
+            reverse=True,
+        )[:limit]
+
+    def touch_session(self, thread_id):
+        self.touched.append(thread_id)
+
+    def update_session_title(self, thread_id, owner_user_id, title):
+        session = self.sessions.get(thread_id)
+        if not session or session.get("owner_user_id") != owner_user_id:
+            return False
+        session["title"] = title
+        return True
+
+    def archive_session(self, thread_id, owner_user_id):
+        session = self.sessions.get(thread_id)
+        if not session or session.get("owner_user_id") != owner_user_id:
+            return False
+        session["status"] = "archived"
+        return True
 
     def assign_owner_if_missing(self, thread_id, owner_user_id):
         session = self.sessions.get(thread_id)
@@ -295,15 +325,30 @@ class ApiAppTests(unittest.TestCase):
             HumanMessage(content="hi"),
             AIMessage(content="owned thread"),
         ]
+        self.container.rag_system.session_memory.messages["thread-empty"] = []
         self.container.chat_sessions.sessions["thread-existing"] = {
             "thread_id": "thread-existing",
             "owner_user_id": "demo-user",
             "status": "active",
+            "title": "",
+            "created_at": "2026-06-15T10:00:00",
+            "updated_at": "2026-06-15T10:30:00",
+        }
+        self.container.chat_sessions.sessions["thread-empty"] = {
+            "thread_id": "thread-empty",
+            "owner_user_id": "demo-user",
+            "status": "active",
+            "title": "",
+            "created_at": "2026-06-15T09:00:00",
+            "updated_at": "2026-06-15T09:00:00",
         }
         self.container.chat_sessions.sessions["thread-other"] = {
             "thread_id": "thread-other",
             "owner_user_id": "other-user",
             "status": "active",
+            "title": "",
+            "created_at": "2026-06-15T11:00:00",
+            "updated_at": "2026-06-15T11:00:00",
         }
         set_container_for_tests(self.container)
         self.client = TestClient(create_app())
@@ -355,6 +400,50 @@ class ApiAppTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertNotEqual(response.json()["thread_id"], "thread-other")
+
+    def test_create_session_reuses_owned_empty_session(self):
+        response = self.client.post("/api/chat/session", json={}, headers=USER_HEADERS)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["thread_id"], "thread-empty")
+        self.assertEqual(self.container.chat_sessions.counter, 0)
+
+    def test_list_sessions_returns_only_current_users_threads_with_titles(self):
+        response = self.client.get("/api/chat/sessions", headers=USER_HEADERS)
+
+        self.assertEqual(response.status_code, 200)
+        sessions = response.json()["sessions"]
+        self.assertEqual([item["thread_id"] for item in sessions], ["thread-existing", "thread-empty"])
+        self.assertEqual(sessions[0]["title"], "hi")
+        self.assertEqual(sessions[1]["title"], "新会话")
+
+    def test_rename_session_uses_custom_title_in_list(self):
+        rename = self.client.post(
+            "/api/chat/session/rename",
+            json={"thread_id": "thread-empty", "title": "血压复诊问题"},
+            headers=USER_HEADERS,
+        )
+        response = self.client.get("/api/chat/sessions", headers=USER_HEADERS)
+
+        self.assertEqual(rename.status_code, 200)
+        sessions = response.json()["sessions"]
+        renamed = next(item for item in sessions if item["thread_id"] == "thread-empty")
+        self.assertEqual(renamed["title"], "血压复诊问题")
+
+    def test_delete_session_archives_and_hides_it_from_list(self):
+        delete_response = self.client.post(
+            "/api/chat/session/delete",
+            json={"thread_id": "thread-empty"},
+            headers=USER_HEADERS,
+        )
+        list_response = self.client.get("/api/chat/sessions", headers=USER_HEADERS)
+
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertEqual(self.container.chat_sessions.sessions["thread-empty"]["status"], "archived")
+        self.assertNotIn(
+            "thread-empty",
+            [item["thread_id"] for item in list_response.json()["sessions"]],
+        )
 
     def test_system_status_includes_current_user_and_knowledge_base_status(self):
         response = self.client.get("/api/system/status", headers=ADMIN_HEADERS)
@@ -422,6 +511,7 @@ class ApiAppTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.container.rag_system.cleared, ["thread-existing"])
+        self.assertEqual(self.container.chat_sessions.touched, ["thread-existing"])
 
     def test_chat_stream_emits_session_message_and_final_events(self):
         with self.client.stream(
@@ -439,6 +529,7 @@ class ApiAppTests(unittest.TestCase):
         self.assertNotIn("event: error", body)
         self.assertIn("thread-existing", body)
         self.assertEqual(self.container.chat_interface.calls[0]["thread_id"], "thread-existing")
+        self.assertEqual(self.container.chat_sessions.touched, ["thread-existing"])
 
     def test_chat_stream_blocks_other_users_thread(self):
         response = self.client.post(

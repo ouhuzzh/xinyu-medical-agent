@@ -162,6 +162,23 @@
   border-color: rgba(20, 184, 166, 0.22);
 }
 
+[data-theme="dark"] .sidebar-session {
+  color: var(--slate-500);
+}
+
+[data-theme="dark"] .sidebar-session:hover,
+[data-theme="dark"] .sidebar-session--active {
+  background: var(--slate-100);
+  border-color: rgba(20, 184, 166, 0.22);
+  color: var(--teal-500);
+}
+
+[data-theme="dark"] .sidebar-session__input {
+  background: rgba(15, 23, 42, 0.70);
+  border-color: rgba(20, 184, 166, 0.22);
+  color: #f1f5f9;
+}
+
 [data-theme="dark"] .bubble--assistant {
   background: #1a2744;
   border: 1px solid rgba(148, 163, 184, 0.15);

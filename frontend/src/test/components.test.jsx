@@ -1,10 +1,11 @@
-import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import TypingDots from "../components/TypingDots";
 import SkeletonLoader from "../components/SkeletonLoader";
 import Composer from "../components/Composer";
 import ClearConfirmDialog from "../components/ClearConfirmDialog";
 import ActionButtons from "../components/ActionButtons";
+import Sidebar from "../components/Sidebar";
 
 describe("TypingDots", () => {
   it("renders without crashing", () => {
@@ -87,6 +88,50 @@ describe("ClearConfirmDialog", () => {
       />,
     );
     expect(screen.getByText("清空会话")).toBeInTheDocument();
+  });
+});
+
+describe("Sidebar", () => {
+  it("uses an in-app confirmation dialog when deleting a session", () => {
+    HTMLDialogElement.prototype.showModal = function showModal() {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close = function close() {
+      this.open = false;
+    };
+    const browserConfirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onDeleteSession = vi.fn();
+
+    render(
+      <Sidebar
+        status={{ state: "ready", knowledge_base: { status: "ready", stats: {} } }}
+        activeView="chat"
+        onNavigate={() => {}}
+        onClear={() => {}}
+        onRefresh={() => {}}
+        mobileOpen={false}
+        onMobileClose={() => {}}
+        theme="light"
+        onToggleTheme={() => {}}
+        currentUser={{ username: "demo" }}
+        canManageDocuments={false}
+        onLogout={() => {}}
+        sessions={[{ thread_id: "thread-1", title: "问诊记录" }]}
+        activeThreadId="thread-1"
+        onDeleteSession={onDeleteSession}
+      />,
+    );
+
+    fireEvent.click(screen.getByLabelText("删除会话"));
+
+    expect(browserConfirm).not.toHaveBeenCalled();
+    expect(screen.getByText("删除会话")).toBeInTheDocument();
+    expect(screen.getByText("确定要删除“问诊记录”吗？删除后不会再显示在最近会话中。")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("确认删除"));
+
+    expect(onDeleteSession).toHaveBeenCalledWith("thread-1");
+    browserConfirm.mockRestore();
   });
 });
 

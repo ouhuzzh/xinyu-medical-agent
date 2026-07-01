@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
     owner_user_id   VARCHAR(128),
     patient_id      BIGINT REFERENCES patients(id),
     status          VARCHAR(32) NOT NULL DEFAULT 'active',
+    title           VARCHAR(128) NOT NULL DEFAULT '',
     current_intent  VARCHAR(64),
     risk_level      VARCHAR(32),
     created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
