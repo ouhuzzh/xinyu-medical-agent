@@ -18,6 +18,18 @@ class CreateSessionResponse(BaseModel):
     thread_id: str
 
 
+class ChatSessionItem(BaseModel):
+    thread_id: str
+    title: str = ""
+    status: str = "active"
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class ChatSessionListResponse(BaseModel):
+    sessions: list[ChatSessionItem] = Field(default_factory=list)
+
+
 class ChatHistoryResponse(BaseModel):
     thread_id: str
     messages: list[ChatMessage] = Field(default_factory=list)
@@ -30,6 +42,25 @@ class ClearSessionRequest(BaseModel):
 class ClearSessionResponse(BaseModel):
     thread_id: str
     cleared: bool = True
+
+
+class RenameSessionRequest(BaseModel):
+    thread_id: str
+    title: str = Field(..., min_length=1, max_length=80)
+
+
+class RenameSessionResponse(BaseModel):
+    thread_id: str
+    title: str
+
+
+class DeleteSessionRequest(BaseModel):
+    thread_id: str
+
+
+class DeleteSessionResponse(BaseModel):
+    thread_id: str
+    deleted: bool = True
 
 
 class ChatStreamRequest(BaseModel):

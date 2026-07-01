@@ -89,6 +89,38 @@ export function fetchChatHistory(apiBaseUrl, onFallback, authToken, threadId) {
   );
 }
 
+export function fetchChatSessions(apiBaseUrl, onFallback, authToken) {
+  return apiFetchJson("/api/chat/sessions", undefined, apiBaseUrl, onFallback, authToken);
+}
+
+export function renameChatSession(apiBaseUrl, onFallback, authToken, threadId, title) {
+  return apiFetchJson(
+    "/api/chat/session/rename",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: threadId, title }),
+    },
+    apiBaseUrl,
+    onFallback,
+    authToken,
+  );
+}
+
+export function deleteChatSession(apiBaseUrl, onFallback, authToken, threadId) {
+  return apiFetchJson(
+    "/api/chat/session/delete",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: threadId }),
+    },
+    apiBaseUrl,
+    onFallback,
+    authToken,
+  );
+}
+
 export function clearChatSession(apiBaseUrl, onFallback, authToken, threadId) {
   return apiFetchJson(
     "/api/chat/clear",

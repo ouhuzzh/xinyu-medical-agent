@@ -523,6 +523,16 @@ class SchemaManager:
                 """,
             ],
         ),
+        (
+            "018_chat_session_titles",
+            "Add editable chat session titles for multi-session navigation.",
+            [
+                """
+                ALTER TABLE chat_sessions
+                ADD COLUMN IF NOT EXISTS title VARCHAR(128) NOT NULL DEFAULT ''
+                """,
+            ],
+        ),
     ]
 
     def __init__(self, conninfo: str):
