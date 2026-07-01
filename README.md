@@ -14,7 +14,7 @@
 
 **Medical QA · Hybrid Retrieval · Cross-session Memory · Multi-hospital MCP Booking · PII Encryption**
 
-[Quick Start](#quick-start) · [Architecture](#architecture) · [Key Metrics](#key-metrics) · [API](#api-surface) · [Docs](#documentation)
+[Quick Start](#quick-start) · [Architecture](#architecture) · [Agentic Pipeline](#agentic-pipeline-p1p5-from-rag-to-agent) · [Key Metrics](#key-metrics) · [API](#api-surface) · [Docs](#documentation)
 
 </div>
 
@@ -92,6 +92,54 @@ flowchart LR
 - **Gradio** remains an internal admin console for advanced diagnostics and manual operations.
 - **PostgreSQL + pgvector** is the source of truth for documents, chunks, appointments, logs, and summaries.
 - **Redis** stores short-term conversational memory and recoverable session state.
+
+## Agentic Pipeline (P1–P5): From RAG to Agent
+
+The medical-QA path is not a single retrieve-then-generate chain — it is a self-correcting agent with five layered behaviors. Each was built as an isolated stage (spec → plan → TDD → review) and ships with a config toggle that rolls back to the previous stage's behavior, plus compiled-graph integration tests proving the loops actually run through LangGraph's state machinery.
+
+```mermaid
+flowchart TD
+    A([User turn]) --> B["analyze_turn<br/>(intent + compound split)"]
+    B -->|medical_rag| C["rewrite_query"]
+    C --> D["<b>P3</b> decompose_tasks<br/>compound → 1-3 sub-questions"]
+    D --> E["Send × N — parallel fan-out"]
+    E --> F1["agent subgraph #1"]
+    E --> F2["agent subgraph #N"]
+    F1 --> G["orchestrator ⇄ tools<br/>(hybrid retrieval)"]
+    F2 --> G
+    G --> H["<b>P1</b> evaluate_evidence — sufficient?"]
+    H -->|refine query & re-search| G
+    H -->|yes / exhausted| I["collect_answer"]
+    I --> J["grounded_answer_generation<br/>(merge by index)"]
+    J --> K["<b>P2</b> answer_grounding_check — grounded?"]
+    K -->|not grounded, budget left| L["<b>P2</b> revise_answer<br/>(evidence-bounded rewrite)"]
+    L --> K
+    K -->|grounded / exhausted| M["<b>P5</b> self_eval — LLM-as-judge<br/>safety · accuracy · completeness · groundedness"]
+    M -->|score &lt; 0.6| N["append soft-degrade caveat"]
+    M -->|ok| O
+    N --> O["<b>P4</b> supervise — dispatch peer agent?"]
+    O -->|appointment| P["appointment agent"]
+    O -->|triage| Q["triage agent"]
+    O -->|FINISH| Z([turn end])
+    P --> O
+    Q --> O
+```
+
+| Stage | Agent behavior | Key node(s) | Toggle (default) | What it adds |
+| --- | --- | --- | --- | --- |
+| **P1** | Retrieval loop | `evaluate_evidence` | `ENABLE_AGENTIC_RETRIEVAL=true` (`MAX_EVIDENCE_ROUNDS=2`) | Evidence-sufficiency reflection — re-searches with a refined query when retrieval is thin |
+| **P2** | Answer reflection | `answer_grounding_check` + `revise_answer` | `ENABLE_ANSWER_REFLECTION=true` (`MAX_GROUNDING_ROUNDS=1`) | Grounding critique + evidence-bounded rewrite — no re-retrieval, stays in the answer stage |
+| **P3** | Autonomous planning | `decompose_tasks` + `Send×N` | `ENABLE_TASK_DECOMPOSITION=true` (`MAX_SUB_QUESTIONS=3`) | Splits a compound question into independent facets, fans out parallel retrieval, merges by index |
+| **P4** | Multi-agent collaboration | `supervise` + `reset_supervisor_state` | `ENABLE_MULTI_AGENT_SUPERVISOR=true` (`MAX_SUPERVISOR_ROUNDS=3`) | LLM supervisor observes the medical answer and dispatches a peer agent (booking/triage) in the same turn |
+| **P5** | Self-reflection | `self_eval` | `ENABLE_SELF_EVAL=true` (`SELF_EVAL_DEGRADE_THRESHOLD=0.6`) | LLM-as-judge scores the final answer on 4 dimensions; low scores trigger a visible self-deprecating caveat; score + details persist to `route_logs` |
+
+**Engineering guarantees that make it a real agent, not a pipeline:**
+- Every stage is **never-raise** — structured-output LLM calls degrade to a safe default (neutral score / FINISH / single-path) on failure, so the graph never hangs.
+- **Cross-turn state safety** — `reset_supervisor_state` (turn start) and `request_clarification` (resume) clear supervisor flags so a clarification interrupt can't mis-route the next turn.
+- **Reusability** — P3 fans out by reusing P1's retrieval loop as a unit; P4's fan-in reuses the existing `agent_answers` aggregation. Each stage composes rather than rewrites.
+- **Rollback** — disabling any toggle restores the prior stage's topology; all five are on by default.
+
+Per-stage design specs and implementation plans live in [`docs/superpowers/`](docs/superpowers/). See also the [interview architecture guide](docs/INTERVIEW_PROJECT_ARCHITECTURE_CN.md) and [architecture gallery](docs/INTERVIEW_PROJECT_ARCHITECTURE_GALLERY.html).
 
 ## Typical Workflows
 
@@ -373,7 +421,9 @@ It is **not** a medical device, does **not** provide diagnosis, and does **not**
 
 ## Roadmap
 
+- ~~Build the agentic pipeline (retrieval loop, answer reflection, task decomposition, multi-agent supervisor, online self-eval)~~ — **done (P1–P5)**, see [Agentic Pipeline](#agentic-pipeline-p1p5-from-rag-to-agent)
+- ~~Add stronger answer-level evaluation~~ — **done (P5 `self_eval`, LLM-as-judge on safety/accuracy/completeness/groundedness, persisted to `route_logs`)**
 - Move more admin capabilities from Gradio to dedicated FastAPI/React pages
-- Add stronger answer-level evaluation and RAGAS-style reporting
 - Improve appointment rescheduling and alternative-slot planning
 - Add auth and deployment profiles for real multi-user environments
+- Make `_structured_output_llm._default()` handle `Literal` fields natively (currently P4/P5 rely on node-level try/except)
