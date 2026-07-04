@@ -120,6 +120,31 @@ class ChatTurnInputServiceTests(unittest.TestCase):
         self.assertEqual(turn_input.user_memories_text, "")
         self.assertNotIn("_mcp_pool", turn_input.stream_input)
 
+    def test_prepare_hard_trims_messages_when_context_too_large(self):
+        from unittest import mock
+        import config
+
+        long_content = "token " * 3000
+        rag_system = FakeRagSystem(state={"intent": "medical_rag"}, summary="")
+        rag_system.session_memory.recent_messages = [
+            HumanMessage(content="old " + long_content),
+            AIMessage(content="old answer"),
+            HumanMessage(content="recent question"),
+            AIMessage(content="recent answer"),
+        ]
+        service = self._service(rag_system)
+
+        with mock.patch.object(config, "CONTEXT_HARD_TRIM_THRESHOLD", 20), \
+             mock.patch.object(config, "CONTEXT_HARD_TRIM_RESERVE", 5), \
+             mock.patch.object(config, "RECENT_CONTEXT_TURNS", 1):
+            turn_input = service.prepare(message="new question", thread_id="thread-trim")
+
+        final_messages = turn_input.stream_input["messages"]
+        self.assertGreaterEqual(len(final_messages), 3)
+        self.assertEqual(final_messages[-1].content, "new question")
+        contents = [m.content for m in final_messages]
+        self.assertNotIn("old " + long_content, contents)
+
 
 if __name__ == "__main__":
     unittest.main()

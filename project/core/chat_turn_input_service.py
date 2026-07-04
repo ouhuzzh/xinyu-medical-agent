@@ -7,7 +7,9 @@ import uuid
 from dataclasses import dataclass
 
 import config
+from core.context_compression import trim_messages_to_token_budget
 from langchain_core.messages import HumanMessage
+from utils import estimate_context_tokens
 
 
 logger = logging.getLogger(__name__)
@@ -130,6 +132,24 @@ class ChatTurnInputService:
         stored_messages = self.rag_system.session_memory.get_recent_messages(active_thread_id)
         long_term_summary = self.rag_system.summary_store.get_summary(active_thread_id)
         state_messages = self._build_state_messages(session_state)
+        user_message_obj = HumanMessage(content=user_message)
+
+        # Hard-trim safety net: if the full context window is approaching the
+        # model limit, drop older stored messages while preserving recent turns.
+        candidate_messages = [*state_messages, *stored_messages, user_message_obj]
+        if estimate_context_tokens(candidate_messages) > config.CONTEXT_HARD_TRIM_THRESHOLD:
+            available_tokens = max(
+                0,
+                config.CONTEXT_HARD_TRIM_THRESHOLD
+                - config.CONTEXT_HARD_TRIM_RESERVE
+                - estimate_context_tokens(state_messages)
+                - estimate_context_tokens([user_message_obj]),
+            )
+            stored_messages = trim_messages_to_token_budget(
+                stored_messages,
+                available_tokens,
+                config.RECENT_CONTEXT_TURNS,
+            )
 
         if long_term_summary:
             self.rag_system.agent_graph.update_state(
