@@ -206,18 +206,21 @@ RECENT_CONTEXT_TURNS = int(os.environ.get("RECENT_CONTEXT_TURNS", "3"))
 
 # --- Context compression / summarization triggers ---
 # Primary trigger: summarize older turns when recent-message tokens exceed this.
-SUMMARY_TOKEN_THRESHOLD = int(os.environ.get("SUMMARY_TOKEN_THRESHOLD", "2500"))
+# Default tuned for 128K-context models; lower for 8K local models.
+SUMMARY_TOKEN_THRESHOLD = int(os.environ.get("SUMMARY_TOKEN_THRESHOLD", "8000"))
 # Absolute ceiling: force summarization when recent messages reach this count.
-SUMMARY_MAX_MESSAGE_CEILING = int(os.environ.get("SUMMARY_MAX_MESSAGE_CEILING", "24"))
+SUMMARY_MAX_MESSAGE_CEILING = int(os.environ.get("SUMMARY_MAX_MESSAGE_CEILING", "32"))
 # Deprecated fallback: used only when SUMMARY_TOKEN_THRESHOLD is 0.
 SUMMARY_REFRESH_THRESHOLD = int(os.environ.get("SUMMARY_REFRESH_THRESHOLD", "4"))
 
 # --- Hard-trim safety net for context window ---
 # If messages about to enter the graph exceed this token count, older messages
 # are dropped until under budget (most recent RECENT_CONTEXT_TURNS preserved).
-CONTEXT_HARD_TRIM_THRESHOLD = int(os.environ.get("CONTEXT_HARD_TRIM_THRESHOLD", "6000"))
+# Must leave room for system prompt + retrieved documents + user query.
+# Default tuned for 128K-context models; lower for 8K local models.
+CONTEXT_HARD_TRIM_THRESHOLD = int(os.environ.get("CONTEXT_HARD_TRIM_THRESHOLD", "30000"))
 # Headroom reserved for the model's own response / scratchpad.
-CONTEXT_HARD_TRIM_RESERVE = int(os.environ.get("CONTEXT_HARD_TRIM_RESERVE", "500"))
+CONTEXT_HARD_TRIM_RESERVE = int(os.environ.get("CONTEXT_HARD_TRIM_RESERVE", "4000"))
 
 # --- User Memory Configuration ---
 USER_MEMORY_ENABLED = os.environ.get("USER_MEMORY_ENABLED", "true").lower() == "true"
