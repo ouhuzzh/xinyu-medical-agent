@@ -50,6 +50,23 @@ class RedisSessionMemoryFallbackTests(unittest.TestCase):
         self.assertEqual(memory.get_recent_messages(thread_id), [])
         self.assertEqual(memory.get_state(thread_id), {})
 
+    def test_set_recent_messages_replaces_fallback_history(self):
+        memory = RedisSessionMemory()
+        memory._enabled = False
+        thread_id = "thread-set-recent"
+
+        memory.append_exchange(thread_id, "A", "B")
+        from langchain_core.messages import HumanMessage, AIMessage
+        memory.set_recent_messages(
+            thread_id,
+            [HumanMessage(content="X"), AIMessage(content="Y")],
+        )
+
+        messages = memory.get_recent_messages(thread_id)
+        self.assertEqual(len(messages), 2)
+        self.assertEqual(messages[0].content, "X")
+        self.assertEqual(messages[1].content, "Y")
+
     def test_status_info_marks_degraded_in_development_when_redis_is_down(self):
         with mock.patch.object(redis_memory_module, "redis", _FailingRedisModule), \
                 mock.patch.object(config, "APP_ENV", "development"), \

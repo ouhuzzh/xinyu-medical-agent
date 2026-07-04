@@ -152,6 +152,33 @@ class RedisSessionMemory:
         )
         return len(serialized)
 
+    def set_recent_messages(self, thread_id: str, messages: list) -> None:
+        """Atomically replace the recent message history for a thread.
+
+        Used by context compression to drop older messages after they have
+        been summarised while preserving the most recent exchanges.
+        """
+        client = self._get_client()
+        serialized = []
+        for msg in messages:
+            if isinstance(msg, HumanMessage):
+                role = "user"
+            elif isinstance(msg, AIMessage):
+                role = "assistant"
+            else:
+                role = getattr(msg, "type", "assistant")
+            content = getattr(msg, "content", "")
+            serialized.append({"role": role, "content": content})
+
+        if not client:
+            self._fallback_messages[thread_id] = self._serialize_messages(serialized)
+            return
+        client.setex(
+            self._messages_key(thread_id),
+            config.REDIS_TTL_SECONDS,
+            self._serialize_messages(serialized),
+        )
+
     def get_state(self, thread_id: str):
         client = self._get_client()
         if not client:
