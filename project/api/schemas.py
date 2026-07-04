@@ -44,6 +44,17 @@ class ClearSessionResponse(BaseModel):
     cleared: bool = True
 
 
+class CompressSessionRequest(BaseModel):
+    thread_id: str
+
+
+class CompressSessionResponse(BaseModel):
+    thread_id: str
+    compressed: bool
+    preserved_count: int = 0
+    summary_length: int = 0
+
+
 class RenameSessionRequest(BaseModel):
     thread_id: str
     title: str = Field(..., min_length=1, max_length=80)

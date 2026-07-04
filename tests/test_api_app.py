@@ -662,6 +662,21 @@ class ApiAppTests(unittest.TestCase):
         self.assertEqual(unbound_response.json()["ok"], False)
         self.assertIn("尚未成功连接", unbound_response.json()["error"])
 
+    def test_compress_session_request_response_schema(self):
+        from api.schemas import CompressSessionRequest, CompressSessionResponse
+
+        req = CompressSessionRequest(thread_id="t1")
+        self.assertEqual(req.thread_id, "t1")
+
+        resp = CompressSessionResponse(
+            thread_id="t1",
+            compressed=True,
+            preserved_count=2,
+            summary_length=10,
+        )
+        self.assertTrue(resp.compressed)
+        self.assertEqual(resp.preserved_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

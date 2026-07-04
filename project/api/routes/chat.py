@@ -2,6 +2,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+import config
 from api.auth import (
     AuthenticatedUser,
     enforce_chat_rate_limit,
@@ -17,6 +18,8 @@ from api.schemas import (
     ChatStreamRequest,
     ClearSessionRequest,
     ClearSessionResponse,
+    CompressSessionRequest,
+    CompressSessionResponse,
     CreateSessionRequest,
     CreateSessionResponse,
     DeleteSessionRequest,
@@ -207,6 +210,39 @@ def clear_chat(
     if callable(touch_session):
         touch_session(payload.thread_id)
     return ClearSessionResponse(thread_id=payload.thread_id)
+
+
+@router.post("/api/chat/compress", response_model=CompressSessionResponse)
+def compress_chat(
+    request: Request,
+    payload: CompressSessionRequest,
+    current_user: AuthenticatedUser = Depends(require_current_user),
+):
+    request.state.route_type = "chat_compress"
+    request.state.thread_id = payload.thread_id
+    ensure_owned_session(payload.thread_id, current_user)
+    container = get_container()
+
+    from core.context_compression import ContextCompressionService
+
+    service = ContextCompressionService()
+    result = service.compress_thread(
+        session_memory=container.rag_system.session_memory,
+        summary_store=container.rag_system.summary_store,
+        thread_id=payload.thread_id,
+        preserve_recent_turns=config.RECENT_CONTEXT_TURNS,
+    )
+
+    touch_session = getattr(container.chat_sessions, "touch_session", None)
+    if callable(touch_session):
+        touch_session(payload.thread_id)
+
+    return CompressSessionResponse(
+        thread_id=payload.thread_id,
+        compressed=result["compressed"],
+        preserved_count=result["preserved_count"],
+        summary_length=result["summary_length"],
+    )
 
 
 @router.post("/api/chat/stream")
