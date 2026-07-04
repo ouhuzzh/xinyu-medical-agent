@@ -91,6 +91,8 @@ flowchart TD
 - **Multi-agent supervisor** — after producing the medical answer, dispatches booking or triage peer agents in the same turn.
 - **Online self-evaluation** — LLM-as-judge scores safety, accuracy, completeness, and groundedness; low scores append a visible caveat.
 
+See the [Agentic Pipeline (P1–P5)](#agentic-pipeline-p1p5-from-rag-to-agent) section below for the staged implementation, config toggles, and integration tests.
+
 ### Three-Tier Memory: Redis + Summary + Semantic
 
 Conversations are remembered at three time scales so the assistant can both stay grounded in the current thread and recall long-term facts.
