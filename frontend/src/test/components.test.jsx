@@ -6,6 +6,7 @@ import Composer from "../components/Composer";
 import ClearConfirmDialog from "../components/ClearConfirmDialog";
 import ActionButtons from "../components/ActionButtons";
 import Sidebar from "../components/Sidebar";
+import ChatHeader from "../components/ChatHeader";
 
 describe("TypingDots", () => {
   it("renders without crashing", () => {
@@ -155,5 +156,39 @@ describe("ActionButtons", () => {
       <ActionButtons content="请**确认取消**以继续" onAction={() => {}} />,
     );
     expect(screen.getByText("确认取消")).toBeInTheDocument();
+  });
+});
+
+describe("ChatHeader", () => {
+  it("renders compress context button", () => {
+    render(
+      <ChatHeader
+        threadId="thread-1"
+        isConnected={true}
+        streamState="idle"
+        onMenuClick={() => {}}
+        onOpenSearch={() => {}}
+        onExport={() => {}}
+        onCompress={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("压缩上下文")).toBeInTheDocument();
+  });
+
+  it("calls onCompress when compress button is clicked", () => {
+    const onCompress = vi.fn();
+    render(
+      <ChatHeader
+        threadId="thread-1"
+        isConnected={true}
+        streamState="idle"
+        onMenuClick={() => {}}
+        onOpenSearch={() => {}}
+        onExport={() => {}}
+        onCompress={onCompress}
+      />,
+    );
+    fireEvent.click(screen.getByLabelText("压缩上下文"));
+    expect(onCompress).toHaveBeenCalledTimes(1);
   });
 });

@@ -112,6 +112,11 @@ export default {
   "dialog.clear.body": "Are you sure you want to clear all chat history? This action cannot be undone.",
   "dialog.clear.cancel": "Cancel",
   "dialog.clear.confirm": "Confirm Clear",
+  "dialog.compress.title": "Compress Context",
+  "dialog.compress.body": "Compress older messages into a summary? The most recent exchanges will remain visible.",
+  "dialog.compress.cancel": "Cancel",
+  "dialog.compress.confirm": "Compress",
+  "chat.header.compress": "Compress context",
 
   // Error
   "error.connection": "Cannot connect to backend. Please ensure FastAPI is running.",

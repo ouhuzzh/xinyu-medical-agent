@@ -135,6 +135,20 @@ export function clearChatSession(apiBaseUrl, onFallback, authToken, threadId) {
   );
 }
 
+export function compressChatSession(apiBaseUrl, onFallback, authToken, threadId) {
+  return apiFetchJson(
+    "/api/chat/compress",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: threadId }),
+    },
+    apiBaseUrl,
+    onFallback,
+    authToken,
+  );
+}
+
 export function fetchSystemStatus(apiBaseUrl, onFallback, authToken) {
   return apiFetchJson("/api/system/status", undefined, apiBaseUrl, onFallback, authToken);
 }

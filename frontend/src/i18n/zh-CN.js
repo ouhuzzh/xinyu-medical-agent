@@ -112,6 +112,11 @@ export default {
   "dialog.clear.body": "确定要清空当前所有对话记录吗？此操作无法撤销。",
   "dialog.clear.cancel": "取消",
   "dialog.clear.confirm": "确认清空",
+  "dialog.compress.title": "压缩上下文",
+  "dialog.compress.body": "将较早的消息压缩成摘要吗？最近的几轮对话仍会保留可见。",
+  "dialog.compress.cancel": "取消",
+  "dialog.compress.confirm": "压缩",
+  "chat.header.compress": "压缩上下文",
 
   // Error
   "error.connection": "无法连接后端服务，请确认 FastAPI 已启动。",

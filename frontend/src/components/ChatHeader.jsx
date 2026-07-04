@@ -1,5 +1,5 @@
 import React from "react";
-import { Menu, Search, Download, ShieldCheck, Sparkles } from "lucide-react";
+import { Menu, Search, Download, ShieldCheck, Sparkles, Shrink } from "lucide-react";
 
 const STATE_MAP = {
   connecting: { text: "连接中", variant: "info" },
@@ -18,6 +18,7 @@ const ChatHeader = React.memo(function ChatHeader({
   onMenuClick,
   onOpenSearch,
   onExport,
+  onCompress,
 }) {
   const { text: stateText, variant: stateVariant } =
     STATE_MAP[streamState || "idle"] ?? STATE_MAP.idle;
@@ -75,6 +76,15 @@ const ChatHeader = React.memo(function ChatHeader({
           aria-label="导出对话"
         >
           <Download size={16} />
+        </button>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={onCompress}
+          title="压缩上下文"
+          aria-label="压缩上下文"
+        >
+          <Shrink size={16} />
         </button>
       </div>
     </header>

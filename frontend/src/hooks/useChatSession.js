@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useReducer } from "react";
 import { THREAD_KEY } from "../constants/app";
 import {
   clearChatSession,
+  compressChatSession,
   createSession,
   deleteChatSession,
   fetchChatHistory,
@@ -231,6 +232,27 @@ export function useChatSession({
     }
   }, [apiBaseUrl, authToken, refreshSessions, setApiBaseUrl, state.threadId]);
 
+  const compressChat = useCallback(async () => {
+    if (!state.threadId || isStreamingRef.current) return null;
+    try {
+      const result = await compressChatSession(
+        apiBaseUrl,
+        setApiBaseUrl,
+        authToken,
+        state.threadId,
+      );
+      await loadHistory(state.threadId);
+      dispatch({ type: "SET_ERROR", payload: "" });
+      return result;
+    } catch (err) {
+      dispatch({
+        type: "SET_ERROR",
+        payload: err.message || "压缩会话失败，请稍后再试。",
+      });
+      return null;
+    }
+  }, [apiBaseUrl, authToken, loadHistory, setApiBaseUrl, state.threadId]);
+
   const renameSession = useCallback(async (threadId, title) => {
     const nextTitle = String(title || "").trim();
     if (!threadId || !nextTitle || isStreamingRef.current) return false;
@@ -364,6 +386,7 @@ export function useChatSession({
     retryLastMessage,
     stopStreaming,
     clearChat,
+    compressChat,
     newSession: createNewSession,
     selectSession,
     renameSession,
