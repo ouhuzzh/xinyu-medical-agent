@@ -203,7 +203,21 @@ REDIS_DB = int(os.environ.get("REDIS_DB", "0"))
 REDIS_TTL_SECONDS = int(os.environ.get("REDIS_TTL_SECONDS", "86400"))
 SHORT_TERM_WINDOW_SIZE = int(os.environ.get("SHORT_TERM_WINDOW_SIZE", "12"))
 RECENT_CONTEXT_TURNS = int(os.environ.get("RECENT_CONTEXT_TURNS", "3"))
+
+# --- Context compression / summarization triggers ---
+# Primary trigger: summarize older turns when recent-message tokens exceed this.
+SUMMARY_TOKEN_THRESHOLD = int(os.environ.get("SUMMARY_TOKEN_THRESHOLD", "2500"))
+# Absolute ceiling: force summarization when recent messages reach this count.
+SUMMARY_MAX_MESSAGE_CEILING = int(os.environ.get("SUMMARY_MAX_MESSAGE_CEILING", "24"))
+# Deprecated fallback: used only when SUMMARY_TOKEN_THRESHOLD is 0.
 SUMMARY_REFRESH_THRESHOLD = int(os.environ.get("SUMMARY_REFRESH_THRESHOLD", "4"))
+
+# --- Hard-trim safety net for context window ---
+# If messages about to enter the graph exceed this token count, older messages
+# are dropped until under budget (most recent RECENT_CONTEXT_TURNS preserved).
+CONTEXT_HARD_TRIM_THRESHOLD = int(os.environ.get("CONTEXT_HARD_TRIM_THRESHOLD", "6000"))
+# Headroom reserved for the model's own response / scratchpad.
+CONTEXT_HARD_TRIM_RESERVE = int(os.environ.get("CONTEXT_HARD_TRIM_RESERVE", "500"))
 
 # --- User Memory Configuration ---
 USER_MEMORY_ENABLED = os.environ.get("USER_MEMORY_ENABLED", "true").lower() == "true"
