@@ -1,12 +1,13 @@
 import sys
 import unittest
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
 
 from core.chat_interface import ChatInterface  # noqa: E402
 from core.chat_turn_service import ChatTurnService, TurnArtifacts  # noqa: E402
+from core.context_compression import ContextCompressionService  # noqa: E402
 
 
 class FakeGraphState:
@@ -26,10 +27,21 @@ class FakeSessionMemory:
     def __init__(self):
         self.appended = []
         self.saved_states = []
+        self._recent_messages = []
 
     def append_exchange(self, thread_id, user_message, assistant_message):
         self.appended.append((thread_id, user_message, assistant_message))
-        return 1
+        self._recent_messages.extend([
+            HumanMessage(content=user_message),
+            AIMessage(content=assistant_message),
+        ])
+        return len(self._recent_messages)
+
+    def get_recent_messages(self, thread_id):
+        return list(self._recent_messages)
+
+    def set_recent_messages(self, thread_id, messages):
+        self._recent_messages = list(messages)
 
     def set_state(self, thread_id, state):
         self.saved_states.append((thread_id, dict(state)))
@@ -105,7 +117,6 @@ class ChatTurnServiceTests(unittest.TestCase):
         rag_system = FakeRagSystem()
         route_log_store = FakeRouteLogStore()
         service = self._build_service(rag_system, route_log_store)
-        service._run_post_chat_summary = lambda **kwargs: None
         service._schedule_memory_extraction = lambda **kwargs: None
 
         artifacts = TurnArtifacts(
@@ -146,6 +157,94 @@ class ChatTurnServiceTests(unittest.TestCase):
         self.assertEqual(len(route_log_store.logs), 1)
         self.assertEqual(route_log_store.logs[0]["route_reason"], "pending:appointment")
         self.assertTrue(route_log_store.logs[0]["had_pending_state"])
+
+    def test_finalize_turn_triggers_compression_based_on_token_threshold(self):
+        from unittest import mock
+        import config
+
+        rag_system = FakeRagSystem()
+        route_log_store = FakeRouteLogStore()
+        service = self._build_service(rag_system, route_log_store)
+        service._schedule_memory_extraction = lambda **kwargs: None
+
+        compressed_result = {
+            "thread_id": "thread-tok",
+            "compressed": True,
+            "reason": "token",
+            "preserved_count": 2,
+            "summary_length": 10,
+        }
+        fake_service = mock.MagicMock(spec=ContextCompressionService)
+        fake_service.compress_thread.return_value = compressed_result
+        service._compression_service = fake_service
+
+        artifacts = TurnArtifacts(
+            response_messages=[{"role": "assistant", "content": "answer"}],
+            latest_values={"primary_intent": "medical_rag"},
+            final_assistant="answer",
+            combined_assistant_text="answer",
+            clarification_text="",
+            updated_state={},
+            had_pending_state=False,
+            route_reason="medical_rag",
+            secondary_turn_executed=False,
+            response_messages_changed=False,
+        )
+
+        with mock.patch.object(config, "SUMMARY_TOKEN_THRESHOLD", 1):
+            service.finalize_turn(
+                active_thread_id="thread-tok",
+                request_id="req-tok",
+                user_message="question",
+                session_state={},
+                checkpoint_resumed=False,
+                user_id="",
+                artifacts=artifacts,
+            )
+
+        fake_service.compress_thread.assert_called_once()
+        call_kwargs = fake_service.compress_thread.call_args.kwargs
+        self.assertEqual(call_kwargs["thread_id"], "thread-tok")
+        self.assertEqual(call_kwargs["preserve_recent_turns"], config.RECENT_CONTEXT_TURNS)
+
+    def test_finalize_turn_skips_compression_when_under_threshold(self):
+        from unittest import mock
+        import config
+
+        rag_system = FakeRagSystem()
+        route_log_store = FakeRouteLogStore()
+        service = self._build_service(rag_system, route_log_store)
+        service._schedule_memory_extraction = lambda **kwargs: None
+
+        fake_service = mock.MagicMock(spec=ContextCompressionService)
+        service._compression_service = fake_service
+
+        artifacts = TurnArtifacts(
+            response_messages=[{"role": "assistant", "content": "answer"}],
+            latest_values={"primary_intent": "medical_rag"},
+            final_assistant="answer",
+            combined_assistant_text="answer",
+            clarification_text="",
+            updated_state={},
+            had_pending_state=False,
+            route_reason="medical_rag",
+            secondary_turn_executed=False,
+            response_messages_changed=False,
+        )
+
+        with mock.patch.object(config, "SUMMARY_TOKEN_THRESHOLD", 100000), \
+             mock.patch.object(config, "SUMMARY_MAX_MESSAGE_CEILING", 1000):
+            service.finalize_turn(
+                active_thread_id="thread-no",
+                request_id="req-no",
+                user_message="question",
+                session_state={},
+                checkpoint_resumed=False,
+                user_id="",
+                artifacts=artifacts,
+            )
+
+        fake_service.compress_thread.assert_not_called()
 
 
 if __name__ == "__main__":

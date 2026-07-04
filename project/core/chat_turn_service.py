@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from langchain_core.messages import AIMessage
 
 import config
+from core.context_compression import ContextCompressionService, should_compress_context
 from db.route_log_store import RouteLogStore
 
 
@@ -50,9 +51,11 @@ class ChatTurnService:
         build_chat_failure_fallback,
         resolved_session_state,
         invalidate_memory_cache,
+        compression_service=None,
     ):
         self.rag_system = rag_system
         self.route_log_store = route_log_store or RouteLogStore()
+        self._compression_service = compression_service
         self._extract_final_assistant_text = extract_final_assistant_text
         self._extract_all_visible_assistant_texts = extract_all_visible_assistant_texts
         self._extract_clarification_text = extract_clarification_text
@@ -148,16 +151,15 @@ class ChatTurnService:
                 user_message,
                 artifacts.combined_assistant_text,
             )
-            if recent_count >= config.SUMMARY_REFRESH_THRESHOLD:
-                conversation_summary = artifacts.latest_values.get("conversation_summary", "")
-                if conversation_summary:
-                    self.rag_system.summary_store.save_summary(active_thread_id, conversation_summary, recent_count)
-
-        self._run_post_chat_summary(
-            active_thread_id=active_thread_id,
-            latest_values=artifacts.latest_values,
-            combined_assistant_text=artifacts.combined_assistant_text,
-        )
+            recent_messages = self.rag_system.session_memory.get_recent_messages(active_thread_id)
+            if should_compress_context(recent_messages, recent_count):
+                compression_service = self._compression_service or ContextCompressionService()
+                compression_service.compress_thread(
+                    session_memory=self.rag_system.session_memory,
+                    summary_store=self.rag_system.summary_store,
+                    thread_id=active_thread_id,
+                    preserve_recent_turns=config.RECENT_CONTEXT_TURNS,
+                )
 
         self._schedule_memory_extraction(
             active_thread_id=active_thread_id,
