@@ -2,7 +2,7 @@
 
 # 心语医疗助手 · Xinyu Medical Agent
 
-**A production-grade medical AI assistant built with LangGraph — RAG, cross-session memory, multi-hospital MCP booking, and PII encryption.**
+**A production-grade medical AI assistant built with LangGraph — not a RAG demo, but a self-correcting agent with agentic retrieval, cross-session memory, multi-hospital MCP booking, and PII encryption.**
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 ![LangGraph](https://img.shields.io/badge/LangGraph-stateful%20agent-1f6feb)
@@ -47,14 +47,100 @@ Most RAG demos answer one question from a few documents. This project is closer 
 
 | Area | Capability |
 | --- | --- |
-| LangGraph orchestration | Skill plugin framework — add a new intent by registering 1 Skill class, not editing 5+ graph nodes |
-| Medical RAG | Parent-child chunking, dense + sparse retrieval, RRF fusion, rerank, evidence grounding checks |
-| 3-layer memory | Redis sliding window → LLM summary compression → pgvector cross-session semantic recall |
+| LangGraph orchestration | Declarative Skill plugin framework — 3-layer intent routing (rule + semantic + LLM), add an intent with 1 class |
+| Agentic RAG | Self-correcting retrieval: evidence-reflection loop, task decomposition, answer grounding check, online self-evaluation |
+| 3-layer memory | Redis sliding window → LLM summary compression → pgvector cross-session semantic recall with importance scoring |
 | MCP multi-hospital | Fernet-encrypted per-user credentials, namespaced tool injection, 3-state circuit breaker per hospital |
 | Appointment Skill | Discovery → Preview → Confirm; code-gated state transitions (idempotency + state machine), not LLM judgment |
 | Knowledge base | Local document upload, official source sync (NHC/WHO), content-hash update detection, soft delete |
 | Security | High-risk symptom alerts, PII column-level encryption, JWT auth + login lockout, rate limiting, audit log |
 | Frontend | Aurora glassmorphism UI — responsive, accessible, dark-mode, PWA-ready |
+
+## Core Capabilities
+
+### Agentic RAG: From Retrieve to Reason
+
+The medical-QA path is not a single retrieve-then-generate chain. It is a self-correcting agent loop built in five composable stages, each gated by a runtime toggle and covered by compiled-graph integration tests.
+
+```mermaid
+flowchart TD
+    A([User query]) --> B[analyze_turn]
+    B --> C[rewrite_query]
+    C --> D[decompose_tasks]
+    D --> E[Send × N — parallel sub-questions]
+    E --> F[agent subgraph]
+    F --> G[hybrid retrieval]
+    G --> H{evidence sufficient?}
+    H -->|no| I[refine query]
+    I --> G
+    H -->|yes| J[collect_answer]
+    J --> K[grounded answer generation]
+    K --> L{grounding check}
+    L -->|fail| M[revise_answer]
+    M --> L
+    L -->|pass| N[self_eval — LLM-as-judge]
+    N --> O[supervise — dispatch peer agent]
+    O --> P[appointment / triage]
+    P --> O
+    O -->|FINISH| Z([turn end])
+```
+
+- **Evidence-reflection retrieval loop** — rewrites and re-searches when evidence is thin.
+- **Answer grounding check + rewrite** — detects hallucination and rewrites strictly within retrieved evidence.
+- **Task decomposition** — splits compound questions into parallel sub-questions, then merges answers by index.
+- **Multi-agent supervisor** — after producing the medical answer, dispatches booking or triage peer agents in the same turn.
+- **Online self-evaluation** — LLM-as-judge scores safety, accuracy, completeness, and groundedness; low scores append a visible caveat.
+
+### Three-Tier Memory: Redis + Summary + Semantic
+
+Conversations are remembered at three time scales so the assistant can both stay grounded in the current thread and recall long-term facts.
+
+```mermaid
+flowchart LR
+    subgraph Short["Short-term"]
+        R[Redis sliding window]
+    end
+    subgraph Medium["Medium-term"]
+        S[LLM summary compression]
+    end
+    subgraph Long["Long-term"]
+        E[episodic memory]
+        U[user memories]
+        F[reflection memories]
+    end
+    R --> S
+    S --> E
+    E --> U
+    U --> F
+```
+
+| Tier | Store | What it keeps |
+| --- | --- | --- |
+| Short-term | Redis | Recent N messages in the active thread |
+| Medium-term | PostgreSQL | LLM-compressed conversation summary |
+| Long-term | pgvector | User facts, episodic turns, reflection abstractions with importance scoring |
+
+Result: **-27.4% prompt tokens** at 30 turns and **74% cross-session fact recall**.
+
+### Three-Layer Intent Routing: Rule + Semantic + LLM
+
+Skills replace hardcoded if-else intent chains. Each Skill declares how it wants to be matched and where it routes.
+
+```mermaid
+flowchart LR
+    Q[User query] --> L1[L1 keywords]
+    L1 -->|miss| L2[L2 semantic utterances]
+    L2 -->|miss| L3[LLM classifier]
+    L1 -->|hit| R[route to graph node]
+    L2 -->|hit| R
+    L3 -->|hit| R
+```
+
+- **L1 keywords** — exact high-confidence action words, O(1) match, no LLM cost.
+- **L2 utterances** — embedding centroid over example sentences for semantic similarity.
+- **L3 LLM hint** — skill description injected into the LLM intent-classification prompt for fuzzy cases.
+
+Adding a new intent means adding one `BaseSkill` subclass; the core router and graph wiring stay untouched.
 
 ## Architecture
 
