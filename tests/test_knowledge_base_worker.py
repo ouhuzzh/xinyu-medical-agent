@@ -40,6 +40,21 @@ class FakeStopEvent:
 
 
 class KnowledgeBaseWorkerTests(unittest.TestCase):
+    def test_disabled_worker_does_not_initialize_expensive_runtime(self):
+        created = []
+        stop_event = FakeStopEvent(waits_before_stop=0)
+
+        worker = KnowledgeBaseWorker(
+            bootstrap_on_start=False,
+            sync_enabled=False,
+            runner_factory=lambda: created.append("runner"),
+        )
+
+        worker.run_forever(stop_event)
+
+        self.assertEqual(created, [])
+        self.assertEqual(stop_event.wait_calls, [3600])
+
     def test_runs_bootstrap_then_scheduled_sync_and_closes(self):
         runner = FakeRunner()
         stop_event = FakeStopEvent(waits_before_stop=1)

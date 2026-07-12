@@ -78,6 +78,25 @@ class MedicalRagSkill(BaseSkill):
     def llm_hint(self) -> str:
         return "health questions, symptoms, treatments, casual chat, emotional support"
 
+    def match(self, query: str, *, context: Dict[str, Any]) -> bool:
+        """Provide a safe legacy match without turning medical terms into L1 routes.
+
+        The graph's fast L1 router intentionally leaves this skill keyword-free
+        so ambiguous medical language can still use the normal rewrite flow.
+        ``SkillRegistry.classify_intent`` is also used by diagnostics and
+        evaluators, though, and it needs a meaningful medical match.
+        """
+        del context
+        normalized = (query or "").strip().lower()
+        if not normalized:
+            return False
+        has_medical_hint = any(hint in normalized for hint in KB_HINTS)
+        has_question = (
+            any(hint in normalized for hint in KB_QUESTION_HINTS)
+            or normalized.endswith(("?", "？", "吗"))
+        )
+        return has_medical_hint and has_question
+
     def get_state_schema(self) -> Dict[str, Any]:
         return {}
 

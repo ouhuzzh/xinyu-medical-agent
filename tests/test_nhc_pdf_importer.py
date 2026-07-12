@@ -4,11 +4,12 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / "project"))
 
 from core.medical_source_ingest import NhcPdfWhitelistImporter  # noqa: E402
 
-FIXTURES_DIR = Path(r"D:\nageoffer\agentic-rag-for-dummies\tests\fixtures")
+FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures"
 
 
 class FakeNhcImporter(NhcPdfWhitelistImporter):

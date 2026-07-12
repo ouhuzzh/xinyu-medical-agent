@@ -7,7 +7,8 @@ from unittest import mock
 
 from langchain_core.documents import Document
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / "project"))
 
 from core.document_manager import DocumentManager  # noqa: E402
 
@@ -69,7 +70,7 @@ class FakeRagSystem:
 
 class DocumentManagerTests(unittest.TestCase):
     def setUp(self):
-        temp_root = Path(r"D:\nageoffer\agentic-rag-for-dummies\runtime\test_tmp")
+        temp_root = PROJECT_ROOT / "runtime" / "test_tmp"
         temp_root.mkdir(parents=True, exist_ok=True)
         self.temp_dir = str(temp_root / f"doc-manager-{uuid.uuid4().hex}")
         Path(self.temp_dir).mkdir(parents=True, exist_ok=True)

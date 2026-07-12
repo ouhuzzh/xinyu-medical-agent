@@ -8,7 +8,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / "project"))
 
 import psycopg  # noqa: E402
 import config  # noqa: E402
@@ -24,7 +25,7 @@ from memory.summary_store import SummaryStore  # noqa: E402
 from rag_agent.tools import ToolFactory, reset_retrieval_context, set_retrieval_context  # noqa: E402
 from services.appointment_service import AppointmentService  # noqa: E402
 
-FIXTURES_DIR = Path(r"D:\nageoffer\agentic-rag-for-dummies\tests\fixtures")
+FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures"
 
 
 class KeywordEmbeddings:
@@ -72,6 +73,7 @@ def _db_available() -> bool:
             dbname=config.POSTGRES_DB,
             user=config.POSTGRES_USER,
             password=config.POSTGRES_PASSWORD,
+            connect_timeout=1,
         ) as conn:
             with conn.cursor() as cur:
                 cur.execute("select 1")

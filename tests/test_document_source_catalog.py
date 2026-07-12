@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "project"))
 
 from core.document_source_catalog import OFFICIAL_MEDICAL_SOURCES, export_catalog  # noqa: E402
 

@@ -4,7 +4,7 @@ import unittest
 from langchain_core.messages import AIMessage
 from langchain_core.documents import Document
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "project"))
 
 from rag_agent.nodes import answer_grounding_check, grounded_answer_generation  # noqa: E402
 from rag_agent.tools import check_sufficiency, grade_documents, ground_answer, plan_queries  # noqa: E402

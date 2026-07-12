@@ -5,13 +5,14 @@ from pathlib import Path
 
 from langchain_core.documents import Document
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / "project"))
 
 from core.qa_eval import RetrievalQualityEvaluator, load_qa_samples  # noqa: E402
 from benchmarks.evaluate_qa_quality import _render_markdown_report  # noqa: E402
 
 
-FIXTURES_DIR = Path(r"D:\nageoffer\agentic-rag-for-dummies\tests\fixtures")
+FIXTURES_DIR = PROJECT_ROOT / "tests" / "fixtures"
 ANSWER_FIXTURE = json.loads((FIXTURES_DIR / "qa_eval_answers.json").read_text(encoding="utf-8"))
 
 

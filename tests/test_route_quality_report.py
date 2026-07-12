@@ -1,7 +1,7 @@
 import sys
 import unittest
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "project"))
 
 from db.route_log_store import RouteLogStore  # noqa: E402
 from benchmarks.evaluate_route_quality import _render_markdown_report, _render_text_report  # noqa: E402

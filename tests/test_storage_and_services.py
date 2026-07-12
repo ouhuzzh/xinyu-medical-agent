@@ -3,7 +3,7 @@ import unittest
 from datetime import date
 from unittest.mock import Mock, patch
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "project"))
 
 from memory.summary_store import SummaryStore  # noqa: E402
 from services.appointment_service import AppointmentService  # noqa: E402

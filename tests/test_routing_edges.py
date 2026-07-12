@@ -1,7 +1,7 @@
 import sys
 import unittest
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "project"))
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage  # noqa: E402
 from rag_agent.edges import route_after_action, route_after_orchestrator_call, route_after_prepare_secondary_turn, route_after_query_plan, route_after_rewrite  # noqa: E402

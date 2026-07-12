@@ -2,7 +2,7 @@ import sys
 import unittest
 from datetime import date, timedelta
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "project"))
 
 from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402
 from rag_agent.nodes import handle_appointment, handle_cancel_appointment  # noqa: E402

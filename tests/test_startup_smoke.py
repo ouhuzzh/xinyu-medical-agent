@@ -5,7 +5,7 @@ import sys
 import unittest
 import warnings
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "project"))
 
 warnings.filterwarnings("ignore", category=ResourceWarning)
 
@@ -21,6 +21,7 @@ def _db_available() -> bool:
             dbname=config.POSTGRES_DB,
             user=config.POSTGRES_USER,
             password=config.POSTGRES_PASSWORD,
+            connect_timeout=1,
         ) as conn:
             with conn.cursor() as cur:
                 cur.execute("select 1")

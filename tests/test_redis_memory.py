@@ -2,7 +2,7 @@ import sys
 import unittest
 from unittest import mock
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "project"))
 
 import config  # noqa: E402
 from memory import redis_memory as redis_memory_module  # noqa: E402

@@ -1,7 +1,7 @@
 import sys
 import unittest
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "project"))
 
 from core.rag_system import RAGSystem  # noqa: E402
 from core import document_manager as document_manager_module  # noqa: E402

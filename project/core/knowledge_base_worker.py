@@ -96,23 +96,31 @@ class KnowledgeBaseWorker:
         self,
         runner: KnowledgeBaseJobRunner | None = None,
         *,
+        runner_factory=KnowledgeBaseJobRunner,
         bootstrap_on_start: bool = config.KB_WORKER_BOOTSTRAP_ON_START,
         sync_enabled: bool = config.KB_WORKER_SYNC_ENABLED,
         sync_interval_seconds: float | None = None,
     ):
-        self.runner = runner or KnowledgeBaseJobRunner()
+        self._runner = runner
+        self._runner_factory = runner_factory
         self.bootstrap_on_start = bootstrap_on_start
         self.sync_enabled = sync_enabled
         self.sync_interval_seconds = sync_interval_seconds or max(
             int(config.KB_SYNC_INTERVAL_HOURS), 1
         ) * 3600
 
+    def _get_runner(self) -> KnowledgeBaseJobRunner:
+        """Create the expensive DB/embedding runtime only when work is enabled."""
+        if self._runner is None:
+            self._runner = self._runner_factory()
+        return self._runner
+
     def run_forever(self, stop_event: threading.Event | None = None) -> None:
         stop_event = stop_event or threading.Event()
         try:
             if self.bootstrap_on_start:
                 logger.info("Running knowledge-base bootstrap in worker.")
-                self.runner.bootstrap()
+                self._get_runner().bootstrap()
 
             if not self.sync_enabled:
                 logger.info("Knowledge-base scheduler is disabled; worker is standing by.")
@@ -126,12 +134,13 @@ class KnowledgeBaseWorker:
             )
             while not stop_event.wait(self.sync_interval_seconds):
                 try:
-                    events = self.runner.sync_all()
+                    events = self._get_runner().sync_all()
                     logger.info("Knowledge-base scheduled sync completed with %s events.", len(events))
                 except Exception:
                     logger.exception("Knowledge-base scheduled sync failed; next run remains scheduled.")
         finally:
-            self.runner.close()
+            if self._runner is not None:
+                self._runner.close()
 
 
 def run_worker() -> None:

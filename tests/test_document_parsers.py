@@ -5,14 +5,15 @@ import uuid
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / "project"))
 
 from core.document_parsers import supported_upload_extensions, unstructured_to_markdown  # noqa: E402
 
 
 class DocumentParserTests(unittest.TestCase):
     def setUp(self):
-        temp_root = Path(r"D:\nageoffer\agentic-rag-for-dummies\runtime\test_tmp")
+        temp_root = PROJECT_ROOT / "runtime" / "test_tmp"
         temp_root.mkdir(parents=True, exist_ok=True)
         self.temp_dir = str(temp_root / f"doc-parser-{uuid.uuid4().hex}")
         Path(self.temp_dir).mkdir(parents=True, exist_ok=True)

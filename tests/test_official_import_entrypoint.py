@@ -3,7 +3,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT / "project"))
 
 from core.document_manager import DocumentManager  # noqa: E402
 
@@ -11,6 +12,9 @@ from core.document_manager import DocumentManager  # noqa: E402
 class FakeRagSystem:
     def __init__(self):
         self.collection_name = "test"
+        self.vector_db = object()
+        self.parent_store = object()
+        self.chunker = object()
         self.refreshed = False
 
     def refresh_knowledge_base_status(self):
@@ -21,7 +25,7 @@ class OfficialImportEntrypointTests(unittest.TestCase):
     def test_import_official_source_calls_sync_service(self):
         rag_system = FakeRagSystem()
         manager = DocumentManager(rag_system)
-        manager.markdown_dir = Path(r"D:\nageoffer\agentic-rag-for-dummies\markdown_docs")
+        manager.markdown_dir = PROJECT_ROOT / "markdown_docs"
 
         fake_result = mock.Mock(downloaded=3, written=2, updated=1, unchanged=0, deactivated=0, failed=0, index_added=3, index_skipped=0)
         with mock.patch("core.document_manager.KnowledgeBaseSyncService") as sync_cls:

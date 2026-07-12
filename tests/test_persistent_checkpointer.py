@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from typing import TypedDict
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "project"))
 
 from langgraph.graph import END, START, StateGraph  # noqa: E402
 from rag_agent.persistent_checkpointer import PersistentInMemorySaver  # noqa: E402

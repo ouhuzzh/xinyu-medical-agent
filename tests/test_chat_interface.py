@@ -4,7 +4,7 @@ import unittest
 
 from langchain_core.messages import AIMessage
 
-sys.path.insert(0, r"D:\nageoffer\agentic-rag-for-dummies\project")
+sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "project"))
 
 from core.chat_interface import ChatInterface, SILENT_NODES  # noqa: E402
 from rag_agent.tools import reset_retrieval_context, set_retrieval_context  # noqa: E402

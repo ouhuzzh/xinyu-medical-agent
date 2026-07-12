@@ -9,6 +9,7 @@ Evaluates:
 
 from __future__ import annotations
 import json
+import logging
 import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -17,6 +18,9 @@ from typing import Callable, Iterable, List, Optional
 from langchain_core.messages import AIMessage, HumanMessage
 from rag_agent.tools import ToolFactory
 from rag_agent.nodes import analyze_turn
+
+
+logger = logging.getLogger(__name__)
 
 
 CLARIFICATION_PATTERNS = (
@@ -257,6 +261,17 @@ def _confidence_bucket_from_docs(docs) -> str:
 class RetrievalQualityEvaluator:
     def __init__(self, collection, *, limit: int = 3, score_threshold: float = 0.7,
                  pipeline_config=None):
+        # ``analyze_turn`` delegates rule routing to the skill registry.  The
+        # live application bootstraps that registry during graph compilation,
+        # but offline evaluators run independently of the application startup.
+        # Without this registration every expected route is reported as an LLM
+        # fallback, producing a misleading 0% route hit rate.
+        try:
+            from core.skill_bootstrapper import SkillBootstrapper
+
+            SkillBootstrapper().bootstrap()
+        except Exception:
+            logger.warning("QA evaluator could not bootstrap skills; route metrics may be incomplete.", exc_info=True)
         self.tool_factory = ToolFactory(collection)
         self.limit = limit
         self.score_threshold = score_threshold
@@ -349,6 +364,17 @@ class RetrievalQualityEvaluator:
             "topic_focus": "",
         }
         route_result = analyze_turn(route_state)
+        if not route_result.get("primary_intent"):
+            # In the compiled graph an inconclusive rule pass goes directly to
+            # ``rewrite_query``, i.e. the medical-RAG path.  Preserve that
+            # graph-level default in offline route metrics instead of
+            # incorrectly recording an empty intent.
+            route_result = {
+                **route_result,
+                "primary_intent": "medical_rag",
+                "decision_source": "graph_default",
+                "route_reason": "rule_inconclusive_default_rag",
+            }
 
         import time as _time
         t0 = _time.perf_counter()
