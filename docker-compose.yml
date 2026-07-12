@@ -65,6 +65,9 @@ services:
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com/v1}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       ENABLE_RERANK: ${ENABLE_RERANK:-false}
       RERANK_API_KEY: ${RERANK_API_KEY:-}
       RERANK_BASE_URL: ${RERANK_BASE_URL:-https://api.siliconflow.cn/v1/rerank}
@@ -73,8 +76,8 @@ services:
       MCP_TOKEN_ENCRYPTION_KEYS: ${MCP_TOKEN_ENCRYPTION_KEYS:-}
       MCP_APPOINTMENT_TOOL_MAPPING: ${MCP_APPOINTMENT_TOOL_MAPPING:-}
       MCP_HOSPITAL_ALIASES: ${MCP_HOSPITAL_ALIASES:-}
-      AUTO_BOOTSTRAP_KNOWLEDGE_BASE: ${AUTO_BOOTSTRAP_KNOWLEDGE_BASE:-false}
-      ENABLE_KB_SYNC_SCHEDULER: ${ENABLE_KB_SYNC_SCHEDULER:-false}
+      AUTO_BOOTSTRAP_KNOWLEDGE_BASE: "false"
+      ENABLE_KB_SYNC_SCHEDULER: "false"
       LANGGRAPH_CHECKPOINT_PATH: /app/runtime/langgraph_checkpoints.pkl
     ports:
       - "8000:8000"
@@ -87,6 +90,40 @@ services:
       timeout: 5s
       retries: 20
       start_period: 30s
+
+  worker:
+    build:
+      context: .
+      dockerfile: project/Dockerfile.api
+      args:
+        INSTALL_LOCAL_ML: ${INSTALL_LOCAL_ML:-false}
+    container_name: medical-agent-worker
+    command: ["python", "worker.py"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-ai_companion}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docker-postgres-password}
+      ACTIVE_EMBEDDING_PROVIDER: ${ACTIVE_EMBEDDING_PROVIDER:-openai_compatible}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+      VECTOR_DIMENSION: ${VECTOR_DIMENSION:-1024}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      KB_WORKER_BOOTSTRAP_ON_START: ${AUTO_BOOTSTRAP_KNOWLEDGE_BASE:-false}
+      KB_WORKER_SYNC_ENABLED: ${ENABLE_KB_SYNC_SCHEDULER:-false}
+      KB_SYNC_INTERVAL_HOURS: ${KB_SYNC_INTERVAL_HOURS:-24}
+      KB_SYNC_OFFICIAL_SOURCES: ${KB_SYNC_OFFICIAL_SOURCES:-medlineplus,nhc,who}
+      KB_SOFT_DELETE_MISSING: ${KB_SOFT_DELETE_MISSING:-true}
+      KB_REPLACE_LOCAL_DUPLICATES: ${KB_REPLACE_LOCAL_DUPLICATES:-true}
+    volumes:
+      - ./runtime:/app/runtime
+      - ./markdown_docs:/app/markdown_docs
 
   frontend:
     build:

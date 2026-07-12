@@ -403,6 +403,19 @@ API startup no longer auto-runs knowledge-base background jobs. Run maintenance 
 .\venv\Scripts\python.exe project\kb_jobs.py sync-all
 ```
 
+Docker Compose also starts a dedicated `worker` process. Set the following in
+the Compose env file to let that process own automatic maintenance:
+
+```text
+AUTO_BOOTSTRAP_KNOWLEDGE_BASE=true
+ENABLE_KB_SYNC_SCHEDULER=true
+KB_SYNC_INTERVAL_HOURS=24
+```
+
+The API container forces its in-process knowledge-base scheduler off, so adding
+API replicas does not duplicate scheduled maintenance. The worker reuses the
+PostgreSQL advisory lock used by manual jobs.
+
 ## Benchmarks
 
 Bundled benchmark snapshots:

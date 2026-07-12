@@ -1,6 +1,6 @@
 # 架构改造路线图
 
-更新时间：2026-06-29
+更新时间：2026-07-12
 
 本文档是当前仍有参考价值的架构路线图，不是逐条待办清单。已经完成的阶段用于说明系统为什么变成现在的结构；未完成的阶段用于指导后续演进。
 
@@ -13,6 +13,7 @@
 - 已完成 `RAGSystem` 瘦身第一步：服务启动、图编译、知识库监督和 skill 注册已经开始拆分。
 - 已完成 embedding schema guard：启动期检查 `VECTOR_DIMENSION` 与 pgvector 列定义。
 - 已完成多医院 MCP 挂号选择闭环：多医院未明确时澄清，确认阶段锁定 `hospital_code`。
+- 已完成部署拓扑第一步：Compose 增加独立知识库 Worker，自动 bootstrap 和定时同步不再由 API 容器执行。
 - 当前正在推进 P4 多智能体监督/任务分解方向，详细设计记录放在 `docs/superpowers/`。
 
 ## 当前主要问题
@@ -126,10 +127,11 @@
 
 任务：
 
-- 增加 `docker-compose.yml`：api、frontend、postgres、redis、worker、mock-mcp。
+- 已完成第一步：`docker-compose.yml` 和生产 Compose 已增加独立 `worker` 服务。
 - 将 Gradio 标记为 admin/debug profile。
 - 增加 readiness/liveness 分离：`/api/health` 只测进程存活，`/api/system/status` 测依赖。
-- 增加 worker/job 入口运行 KB sync、memory extraction 等后台任务。
+- 已完成第一步：增加 `project/worker.py` 入口运行 KB bootstrap 和定时同步，复用 PostgreSQL advisory lock。
+- 后续：将 memory extraction 等非交互任务迁移到持久化任务队列。
 
 验收：
 
@@ -147,6 +149,6 @@
 
 ## 下一阶段建议
 
-- 继续拆 `RAGSystem`：下一步可以推进 Skill manifest loader，或拆 API/后台 worker 启动边界。
+- 继续拆 `RAGSystem`：下一步可以推进 Skill manifest loader，并将 memory extraction 接入持久化任务队列。
 - 为 schema guard 后续接入正式迁移工具（如 Alembic）预留 metadata/version 表。
 - 将 MCP pool 的健康状态和熔断状态从进程内迁移到 Redis/PostgreSQL。

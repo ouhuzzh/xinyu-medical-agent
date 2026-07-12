@@ -139,6 +139,14 @@ STATUS_REFRESH_SECONDS = float(os.environ.get("STATUS_REFRESH_SECONDS", "2"))
 RECENT_IMPORT_TASK_LIMIT = int(os.environ.get("RECENT_IMPORT_TASK_LIMIT", "8"))
 ENABLE_KB_SYNC_SCHEDULER = os.environ.get("ENABLE_KB_SYNC_SCHEDULER", "false").lower() == "true"
 KB_SYNC_INTERVAL_HOURS = int(os.environ.get("KB_SYNC_INTERVAL_HOURS", "24"))
+KB_WORKER_BOOTSTRAP_ON_START = os.environ.get(
+    "KB_WORKER_BOOTSTRAP_ON_START",
+    str(AUTO_BOOTSTRAP_KNOWLEDGE_BASE),
+).lower() == "true"
+KB_WORKER_SYNC_ENABLED = os.environ.get(
+    "KB_WORKER_SYNC_ENABLED",
+    str(ENABLE_KB_SYNC_SCHEDULER),
+).lower() == "true"
 KB_SYNC_OFFICIAL_SOURCES = [
     item.strip().lower()
     for item in os.environ.get("KB_SYNC_OFFICIAL_SOURCES", "medlineplus,nhc,who").split(",")
@@ -149,6 +157,7 @@ KB_REPLACE_LOCAL_DUPLICATES = os.environ.get("KB_REPLACE_LOCAL_DUPLICATES", "tru
 
 # --- Runtime / App Mode ---
 APP_ENV = os.environ.get("APP_ENV", "development").strip().lower() or "development"
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").strip().upper() or "INFO"
 
 # --- API / Frontend Configuration ---
 API_CORS_ORIGINS = [

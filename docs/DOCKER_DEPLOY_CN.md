@@ -5,6 +5,7 @@
 - PostgreSQL + pgvector
 - Redis
 - FastAPI 后端
+- 知识库后台 Worker
 - Vite 前端静态站点（nginx）
 
 ## 1. 准备配置
@@ -52,7 +53,20 @@ curl -H "Authorization: Bearer demo-admin-token" http://localhost:8000/api/syste
 ```powershell
 docker compose ps
 docker compose logs -f api
+docker compose logs -f worker
 ```
+
+如需自动补建知识库并按计划同步官方来源，在环境文件中设置：
+
+```text
+AUTO_BOOTSTRAP_KNOWLEDGE_BASE=true
+ENABLE_KB_SYNC_SCHEDULER=true
+KB_SYNC_INTERVAL_HOURS=24
+```
+
+这些开关只交给 `worker` 容器执行；API 容器不会启动同类后台线程。因此增加 API
+副本不会重复触发定时同步。多个 Worker 意外同时运行时，PostgreSQL advisory lock
+会阻止同一知识库任务并发执行。
 
 ## 4. 停止与清理
 
@@ -203,6 +217,7 @@ python scripts/prod_acceptance_check.py \
 - PostgreSQL 和 Redis 不映射到公网端口。
 - 前端生产构建不再默认使用 `demo-admin-token`。
 - API healthcheck 使用公开的 `/api/healthz`，不依赖 demo token。
+- 自动知识库补建和定时同步由独立 `worker` 容器执行，API 只处理交互请求。
 - 后端镜像默认安装 `requirements-api.txt`，不安装 `requirements-ml-local.txt` 里的 `torch/sentence-transformers/transformers`；只有本地 HuggingFace embedding 才设置 `INSTALL_LOCAL_ML=true`。
 
 建议域名：
