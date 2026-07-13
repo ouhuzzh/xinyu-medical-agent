@@ -101,18 +101,9 @@ ENABLE_MULTI_AGENT_SUPERVISOR = os.environ.get("ENABLE_MULTI_AGENT_SUPERVISOR", 
 ENABLE_SELF_EVAL = os.environ.get("ENABLE_SELF_EVAL", "true").lower() == "true"
 SELF_EVAL_DEGRADE_THRESHOLD = float(os.environ.get("SELF_EVAL_DEGRADE_THRESHOLD", "0.6"))
 
-# Compound-request queue - drain 3+ segment compounds across turns instead of
-# silently dropping them, and drop the intent-pair whitelist so any compound
-# intent pair is honored. When false, reverts to the legacy [:2] cap + whitelist.
-ENABLE_COMPOUND_QUEUE = os.environ.get("ENABLE_COMPOUND_QUEUE", "true").lower() == "true"
-MAX_COMPOUND_SEGMENTS = int(os.environ.get("MAX_COMPOUND_SEGMENTS", "5"))
-
-# Phase 2: unified turn planner - LLM-based cross-intent compound decomposition
-# replacing the rule-based split. Produces a planned_tasks list drained by
-# dispatch_next_task, with a completeness gate. Opt-in: default false until
-# validated (adds one light-LLM call per turn). When false, Phase 1's rule-based
-# compound queue + supervisor remain active.
-ENABLE_TURN_PLANNER = os.environ.get("ENABLE_TURN_PLANNER", "false").lower() == "true"
+# Unified turn planner - LLM-based cross-intent compound decomposition. Produces
+# a planned_tasks list drained by dispatch_next_task within a single graph
+# invocation, with a completeness gate. Adds one light-LLM call per turn.
 MAX_PLANNED_TASKS = int(os.environ.get("MAX_PLANNED_TASKS", "4"))
 
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")

@@ -120,7 +120,6 @@ from .rag_nodes import (
 from .routing_nodes import (
     analyze_turn,
     intent_router,
-    prepare_secondary_turn,
     recommend_department,
     request_clarification,
     summarize_history,
@@ -235,7 +234,6 @@ __all__ = [
     # --- routing nodes ---
     "analyze_turn",
     "intent_router",
-    "prepare_secondary_turn",
     "recommend_department",
     "request_clarification",
     "summarize_history",

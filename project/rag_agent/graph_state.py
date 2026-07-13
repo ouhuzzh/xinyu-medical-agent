@@ -51,10 +51,6 @@ class State(MessagesState):
     clarification_attempts: int = 0
     clarification_target: str = ""
     deferred_user_question: str = ""
-    # Compound-request drain queue: segments beyond the 2nd, each {"intent","query"}.
-    # prepare_secondary_turn pops one per turn so 3+ segment compounds are answered
-    # across turns instead of silently dropped.
-    deferred_extra_tasks: List[dict] = []
     # Phase 2 turn planner: LLM-produced cross-intent task list + drained results.
     # dispatch_next_task pops the next undone task; completeness_gate checks coverage.
     planned_tasks: List[dict] = []

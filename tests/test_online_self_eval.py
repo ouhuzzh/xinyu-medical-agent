@@ -203,17 +203,10 @@ class TestExtractAnswerBody(unittest.TestCase):
 
 
 class TestRouteAfterSelfEval(unittest.TestCase):
-    def test_to_supervise_when_supervisor_enabled(self):
-        import project.rag_agent.edges as edges
+    def test_routes_to_advance_task(self):
         from project.rag_agent.edges import route_after_self_eval
-        with unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", True):
-            self.assertEqual(route_after_self_eval(_make_main_state()), "supervise")
-
-    def test_to_end_when_supervisor_disabled(self):
-        import project.rag_agent.edges as edges
-        from project.rag_agent.edges import route_after_self_eval
-        with unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False):
-            self.assertEqual(route_after_self_eval(_make_main_state()), "__end__")
+        # Planner always owns the drain -> advance_task (supervisor is dormant).
+        self.assertEqual(route_after_self_eval(_make_main_state()), "advance_task")
 
 
 class TestRouteAfterGroundingSelfEval(unittest.TestCase):
@@ -232,18 +225,18 @@ class TestRouteAfterGroundingSelfEval(unittest.TestCase):
         state = _make_main_state(grounding_passed=False, grounding_rounds=0)
         self.assertEqual(route_after_grounding(state), "revise_answer")
 
-    def test_grounded_routes_to_supervise_when_self_eval_disabled(self):
+    def test_grounded_drains_to_advance_task_when_self_eval_disabled(self):
         import project.rag_agent.edges as edges
         from project.rag_agent.edges import route_after_grounding
         with unittest.mock.patch.object(edges.config, "ENABLE_SELF_EVAL", False):
-            self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)), "supervise")
+            self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)), "advance_task")
 
-    def test_grounded_routes_to_end_when_both_disabled(self):
+    def test_grounded_drains_to_advance_task_when_both_disabled(self):
         import project.rag_agent.edges as edges
         from project.rag_agent.edges import route_after_grounding
         with unittest.mock.patch.object(edges.config, "ENABLE_SELF_EVAL", False), \
              unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False):
-            self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)), "__end__")
+            self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)), "advance_task")
 
 
 class TestGraphWiring(unittest.TestCase):
@@ -300,7 +293,7 @@ class TestCompiledSelfEval(unittest.TestCase):
         from project.rag_agent.graph_state import State
         from project.rag_agent.edges import route_after_self_eval
 
-        log = {"self_eval": 0, "supervise": 0}
+        log = {"self_eval": 0, "drain": 0}
 
         def _fake_self_eval(state):
             log["self_eval"] += 1
@@ -313,30 +306,25 @@ class TestCompiledSelfEval(unittest.TestCase):
                 }
             return {"self_eval_score": 0.9, "self_eval_details": {"caveat_appended": False}}
 
-        def _fake_supervise(state):
-            log["supervise"] += 1
-            return {"supervisor_active": False, "supervisor_rounds": 0, "supervisor_next": "FINISH"}
-
-        def _sink(state):
+        def _drain(state):
+            log["drain"] += 1
             return {}
 
         builder = StateGraph(State)
         builder.add_node("self_eval", _fake_self_eval)
-        builder.add_node("supervise", _fake_supervise)
-        builder.add_node("end_sink", _sink)
+        builder.add_node("advance_task", _drain)
         builder.add_edge(START, "self_eval")
         builder.add_conditional_edges("self_eval", route_after_self_eval, {
-            "supervise": "supervise", "__end__": "end_sink",
+            "advance_task": "advance_task",
         })
-        builder.add_conditional_edges("supervise", lambda s: "__end__", {"__end__": "end_sink"})
-        builder.add_edge("end_sink", END)
+        builder.add_edge("advance_task", END)
         return builder.compile(), log
 
-    def test_self_eval_then_supervise_then_end(self):
+    def test_self_eval_then_drain(self):
         graph, log = self._build_graph(fake_eval_returns_caveat=False)
         final = graph.invoke(_make_main_state())
         self.assertEqual(log["self_eval"], 1)
-        self.assertEqual(log["supervise"], 1)
+        self.assertEqual(log["drain"], 1)
         self.assertAlmostEqual(final["self_eval_score"], 0.9)
 
     def test_caveat_message_appended(self):

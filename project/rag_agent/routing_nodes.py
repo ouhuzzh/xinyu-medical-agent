@@ -57,20 +57,6 @@ logger = logging.getLogger(__name__)
 # Local constants
 # ---------------------------------------------------------------------------
 
-# Compound-request split connectors. Longer entries precede shorter prefixes in
-# the alternation so "另外还有" matches before "另外" and "然后再" before "然后"
-# (the previous fixed-order regex mis-split these, leaving stray "再"/"还有").
-# 句号/分号 intentionally excluded - medical questions naturally contain them and
-# reliably splitting on them needs LLM judgment (deferred to the Phase 2 planner).
-_COMPOUND_CONNECTORS: tuple = (
-    "另外还有", "然后再", "另外", "然后", "顺便", "并且", "同时",
-    "再帮我", "再问一下", "还有", "对了", "问一下", "以及", "此外",
-)
-_COMPOUND_SPLIT_RE = re.compile(
-    r"(?:，|,)?\s*(" + "|".join(_COMPOUND_CONNECTORS) + r")\s*"
-)
-
-
 # ---------------------------------------------------------------------------
 # Private helpers (only used by routing nodes)
 # ---------------------------------------------------------------------------
@@ -181,33 +167,6 @@ def _classify_query_pipeline(
     return ("", 0.0, "need_llm")
 
 
-def _split_compound_request(user_query: str) -> list[str]:
-    query = (user_query or "").strip()
-    if not query:
-        return []
-    segments = [segment.strip(" ，,。；;") for segment in _COMPOUND_SPLIT_RE.split(query) if segment and segment.strip(" ，,。；;")]
-    cleaned = []
-    for segment in segments:
-        if segment in _COMPOUND_CONNECTORS:
-            continue
-        cleaned.append(segment)
-    if not cleaned:
-        return [query]
-    if len(cleaned) == 1:
-        return cleaned
-    # Legacy: hard cap at 2 segments (3rd+ silently dropped).
-    # New (ENABLE_COMPOUND_QUEUE): keep up to MAX_COMPOUND_SEGMENTS; segments
-    # beyond the 2nd are drained across turns via deferred_extra_tasks
-    # (see analyze_turn / prepare_secondary_turn) instead of being dropped.
-    try:
-        import config
-        if getattr(config, "ENABLE_COMPOUND_QUEUE", True):
-            return cleaned[: config.MAX_COMPOUND_SEGMENTS]
-    except Exception:
-        pass
-    return cleaned[:2]
-
-
 def _classify_query_by_rules(
     user_query: str,
     *,
@@ -229,53 +188,6 @@ def _classify_query_by_rules(
     except Exception:
         pass
     return ("", "rule_inconclusive")
-
-
-# Action intents that own a specialist + route_after_action drain point.
-_ACTION_INTENTS = {"appointment", "cancel_appointment", "triage"}
-
-
-def _choose_compound_intents(first_intent: str, second_intent: str) -> tuple[str, str]:
-    """Pick the (primary, secondary) intent pair for a 2-segment compound request.
-
-    New mode (ENABLE_COMPOUND_QUEUE=true, default):
-      - action primary + any secondary -> keep both (route_after_action drains
-        the secondary, then deferred_extra_tasks drains the rest across turns).
-      - medical_rag primary + action secondary -> keep both, in user order. The
-        P4 supervisor dispatches the action after the medical answer; we do NOT
-        reorder, so the user's stated order is preserved.
-      - anything else (medical_rag + medical_rag, greeting + X, ...) -> don't
-        split. For medical_rag + medical_rag this lets decompose (P3) handle the
-        facets against the *full* query; for other pairs the secondary has no
-        drain path so splitting would only orphan it.
-
-    Legacy mode (false): only the original 5 whitelisted pairs are kept; any
-    other pair silently drops the second intent (original behavior).
-    """
-    try:
-        import config
-        queue_enabled = getattr(config, "ENABLE_COMPOUND_QUEUE", True)
-    except Exception:
-        queue_enabled = True
-
-    if queue_enabled:
-        if first_intent in _ACTION_INTENTS and second_intent:
-            return first_intent, second_intent
-        if first_intent == "medical_rag" and second_intent in _ACTION_INTENTS:
-            return first_intent, second_intent
-        return first_intent, ""
-
-    # Legacy whitelist + appointment-only reorder (original behavior).
-    if (first_intent, second_intent) in {
-        ("cancel_appointment", "medical_rag"),
-        ("appointment", "medical_rag"),
-        ("triage", "appointment"),
-        ("triage", "medical_rag"),
-    }:
-        return first_intent, second_intent
-    if (first_intent, second_intent) == ("medical_rag", "appointment"):
-        return "appointment", "medical_rag"
-    return first_intent, ""
 
 
 def _looks_like_appointment_update(user_query: str) -> bool:
@@ -415,117 +327,20 @@ def analyze_turn(state: State):
             "last_route_reason": "continue_department_selection",
         }
 
-    try:
-        import config
-        queue_enabled = getattr(config, "ENABLE_COMPOUND_QUEUE", True)
-        turn_planner_enabled = getattr(config, "ENABLE_TURN_PLANNER", False)
-    except Exception:
-        queue_enabled = True
-        turn_planner_enabled = False
-
-    # Phase 2: when the unified turn planner is enabled, skip the rule-based
-    # compound split entirely - plan_tasks will decompose the message (handling
-    # arbitrary connectors, 3+ segments, any intent combo). Resume branches
-    # above still take precedence. route_after_analyze_turn sends fresh queries
+    # The unified turn planner decomposes every fresh turn (arbitrary connectors,
+    # 3+ segments, any intent combo) into planned_tasks. Resume branches above
+    # still take precedence. route_after_analyze_turn sends fresh queries
     # (primary_intent empty) to plan_tasks.
-    if turn_planner_enabled:
-        return {
-            "recent_context": recent_context,
-            "topic_focus": topic_focus or state.get("topic_focus", ""),
-            "primary_intent": "",
-            "primary_user_query": user_query,
-            "originalQuery": user_query,
-            "decision_source": "planner",
-            "route_reason": "turn_planner",
-            "last_route_reason": "turn_planner",
-            "intent_source": "planner",
-        }
-
-    segments = _split_compound_request(user_query)
-    first_segment = segments[0] if segments else user_query
-    second_segment = segments[1] if len(segments) > 1 else ""
-    first_intent, first_conf, first_reason = _classify_query_pipeline(
-        first_segment,
-        conversation_summary=state.get("conversation_summary", ""),
-        recent_context=recent_context,
-        topic_focus=state.get("topic_focus", ""),
-    )
-    second_intent = ""
-    second_conf = 0.0
-    second_reason = ""
-    if second_segment:
-        second_intent, second_conf, second_reason = _classify_query_pipeline(
-            second_segment,
-            conversation_summary=state.get("conversation_summary", ""),
-            recent_context=recent_context,
-            topic_focus=state.get("topic_focus", ""),
-        )
-        # New mode: a non-empty segment that L1/L2 couldn't pin to a concrete
-        # action intent is medical_rag (the default fallback). This lets
-        # "挂号皮肤科，问湿疹" route appointment -> medical_rag even when L2
-        # embedding doesn't fire on "问湿疹". Legacy mode keeps empty (whitelist
-        # then drops it, reproducing original behavior).
-        if queue_enabled and not second_intent:
-            second_intent = "medical_rag"
-
-    # New mode: 3rd+ segments are queued in deferred_extra_tasks and drained
-    # across turns by prepare_secondary_turn (instead of silently dropped).
-    extra_tasks: list = []
-    if queue_enabled and len(segments) > 2:
-        for seg in segments[2:]:
-            seg = (seg or "").strip()
-            if not seg:
-                continue
-            ei_intent, _ei_conf, _ei_reason = _classify_query_pipeline(
-                seg,
-                conversation_summary=state.get("conversation_summary", ""),
-                recent_context=recent_context,
-                topic_focus=state.get("topic_focus", ""),
-            )
-            if not ei_intent:
-                ei_intent = "medical_rag"
-            extra_tasks.append({"intent": ei_intent, "query": seg})
-
-    primary_intent, secondary_intent = _choose_compound_intents(first_intent, second_intent)
-    # Compute stale count for return if we're tracking a pending action
-    stale_update = {}
-    if state.get("pending_action_type") and not _should_continue_pending_action(state, user_query):
-        stale_update["pending_stale_count"] = stale
-
-    if primary_intent:
-        route_reason = first_reason if not secondary_intent else f"{first_reason}+{second_reason or 'secondary'}"
-        return {
-            "recent_context": recent_context,
-            "topic_focus": topic_focus or state.get("topic_focus", ""),
-            "primary_intent": primary_intent,
-            "secondary_intent": secondary_intent,
-            "primary_user_query": first_segment if secondary_intent else user_query,
-            "secondary_user_query": second_segment if secondary_intent else "",
-            "deferred_user_question": second_segment if secondary_intent else "",
-            "deferred_extra_tasks": extra_tasks,
-            "decision_source": "rule",
-            "route_reason": route_reason,
-            "last_route_reason": route_reason,
-            "intent_confidence": float(first_conf),
-            "intent_source": first_reason,
-            **stale_update,
-        }
-
     return {
         "recent_context": recent_context,
         "topic_focus": topic_focus or state.get("topic_focus", ""),
         "primary_intent": "",
-        "secondary_intent": "",
         "primary_user_query": user_query,
-        "secondary_user_query": "",
-        "deferred_user_question": "",
-        "deferred_extra_tasks": [],
-        "decision_source": "llm",
-        "route_reason": "rule_inconclusive",
-        "last_route_reason": "rule_inconclusive",
-        "intent_confidence": 0.0,
-        "intent_source": "need_llm",
-        **stale_update,
+        "originalQuery": user_query,
+        "decision_source": "planner",
+        "route_reason": "turn_planner",
+        "last_route_reason": "turn_planner",
+        "intent_source": "planner",
     }
 
 
@@ -1035,52 +850,9 @@ def request_clarification(state: State):
     return {"supervisor_active": False, "supervisor_rounds": 0}
 
 
-def prepare_secondary_turn(state: State):
-    secondary_intent = state.get("secondary_intent", "")
-    deferred_question = state.get("deferred_user_question") or state.get("secondary_user_query") or ""
-
-    # Compound drain: no immediate secondary left, but queued extras remain ->
-    # pop the next {"intent","query"} and stage it as the new secondary. This
-    # extends the original single-secondary mechanism to N-segment compounds.
-    if (not secondary_intent or not deferred_question):
-        extras = list(state.get("deferred_extra_tasks") or [])
-        if extras:
-            nxt = extras[0] or {}
-            remaining = extras[1:]
-            drained_intent = str(nxt.get("intent", "") or "").strip() or "medical_rag"
-            drained_question = str(nxt.get("query", "") or "").strip()
-            if drained_question:
-                return {
-                    "intent": drained_intent,
-                    "primary_intent": drained_intent,
-                    "secondary_intent": "",
-                    "primary_user_query": drained_question,
-                    "secondary_user_query": "",
-                    "deferred_user_question": "",
-                    "deferred_extra_tasks": remaining,
-                    "route_reason": f"drain_extra:{drained_intent}",
-                    "last_route_reason": f"drain_extra:{drained_intent}",
-                    "messages": [HumanMessage(content=drained_question)],
-                }
-        return {}
-
-    return {
-        "intent": secondary_intent,
-        "primary_intent": secondary_intent,
-        "secondary_intent": "",
-        "primary_user_query": deferred_question,
-        "secondary_user_query": "",
-        "deferred_user_question": "",
-        "route_reason": f"resume_secondary:{secondary_intent}",
-        "last_route_reason": f"resume_secondary:{secondary_intent}",
-        "messages": [HumanMessage(content=deferred_question)],
-    }
-
-
 __all__ = [
     "analyze_turn",
     "intent_router",
-    "prepare_secondary_turn",
     "recommend_department",
     "request_clarification",
     "summarize_history",

@@ -187,8 +187,9 @@ The medical-QA path is not a single retrieve-then-generate chain — it is a sel
 
 ```mermaid
 flowchart TD
-    A([User turn]) --> B["analyze_turn<br/>(intent + compound split)"]
-    B -->|medical_rag| C["rewrite_query"]
+    A([User turn]) --> B["analyze_turn<br/>(intent)"]
+    B --> PT["plan_tasks<br/>(compound -> planned_tasks)"]
+    PT -->|medical_rag| C["rewrite_query"]
     C --> D["<b>P3</b> decompose_tasks<br/>compound → 1-3 sub-questions"]
     D --> E["Send × N — parallel fan-out"]
     E --> F1["agent subgraph #1"]
@@ -220,6 +221,8 @@ flowchart TD
 | **P3** | Autonomous planning | `decompose_tasks` + `Send×N` | `ENABLE_TASK_DECOMPOSITION=true` (`MAX_SUB_QUESTIONS=3`) | Splits a compound question into independent facets, fans out parallel retrieval, merges by index |
 | **P4** | Multi-agent collaboration | `supervise` + `reset_supervisor_state` | `ENABLE_MULTI_AGENT_SUPERVISOR=true` (`MAX_SUPERVISOR_ROUNDS=3`) | LLM supervisor observes the medical answer and dispatches a peer agent (booking/triage) in the same turn |
 | **P5** | Self-reflection | `self_eval` | `ENABLE_SELF_EVAL=true` (`SELF_EVAL_DEGRADE_THRESHOLD=0.6`) | LLM-as-judge scores the final answer on 4 dimensions; low scores trigger a visible self-deprecating caveat; score + details persist to `route_logs` |
+
+**Turn planner (compound turns):** `analyze_turn` routes every fresh turn to `plan_tasks`, which decomposes cross-intent compound messages (e.g. "挂号皮肤科，顺便问湿疹") into an ordered `planned_tasks` list. `dispatch_next_task` drains them within a single graph invocation via `advance_task` -> `route_to_next_or_gate`, with `completeness_gate` appending a caveat for any unaddressed task. This replaces the earlier rule-based compound split + cross-turn drain queue; the P4 supervisor stays registered but dormant under the planner.
 
 **Engineering guarantees that make it a real agent, not a pipeline:**
 - Every stage is **never-raise** — structured-output LLM calls degrade to a safe default (neutral score / FINISH / single-path) on failure, so the graph never hangs.

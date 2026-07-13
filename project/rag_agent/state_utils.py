@@ -171,8 +171,3 @@ def _looks_like_schedule_update(user_query: str) -> bool:
     return bool(re.search(r"\d{1,2}[点时:：]", normalized) or re.search(r"\d{1,2}\s*月|\d{4}-\d{1,2}-\d{1,2}|明天|后天|周[一二三四五六日天]", normalized))
 
 
-def _split_compound_request(user_query: str) -> list[str]:
-    """Split a compound request like '我感冒了，帮我挂个号' into segments."""
-    import re
-    segments = re.split(r"[,，;；\n]|(?:并且|同时|还要|另外|而且|还有)", user_query)
-    return [s.strip() for s in segments if s.strip()]

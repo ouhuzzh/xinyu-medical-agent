@@ -17,7 +17,7 @@ from typing import Callable, Iterable, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage
 from rag_agent.tools import ToolFactory
-from rag_agent.nodes import analyze_turn
+from rag_agent.routing_nodes import _classify_query_pipeline
 
 
 logger = logging.getLogger(__name__)
@@ -363,7 +363,26 @@ class RetrievalQualityEvaluator:
             "recommended_department": "",
             "topic_focus": "",
         }
-        route_result = analyze_turn(route_state)
+        # analyze_turn now defers to the LLM turn planner (which can't run
+        # offline), so route metrics use the L1/L2 classifier directly - the
+        # same classifier the planner consults for L1 hints.
+        _route_query = ""
+        _route_msgs = route_state.get("messages") or []
+        if _route_msgs:
+            _route_query = str(getattr(_route_msgs[-1], "content", "") or "")
+        _intent, _conf, _reason = _classify_query_pipeline(
+            _route_query,
+            conversation_summary=route_state.get("conversation_summary", ""),
+            recent_context="",
+            topic_focus=route_state.get("topic_focus", ""),
+        )
+        route_result = {
+            "primary_intent": _intent,
+            "secondary_intent": "",
+            "decision_source": _reason,
+            "route_reason": _reason,
+            "intent_confidence": float(_conf),
+        }
         if not route_result.get("primary_intent"):
             # In the compiled graph an inconclusive rule pass goes directly to
             # ``rewrite_query``, i.e. the medical-RAG path.  Preserve that

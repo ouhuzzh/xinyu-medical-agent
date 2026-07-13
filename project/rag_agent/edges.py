@@ -6,22 +6,14 @@ import config
 from config import MAX_ITERATIONS, MAX_TOOL_CALLS, MAX_EVIDENCE_ROUNDS, MAX_GROUNDING_ROUNDS, MAX_SUB_QUESTIONS
 
 
-def route_after_analyze_turn(state: State) -> Literal["rewrite_query", "intent_router"]:
-    """Skip intent_router LLM call when rules were inconclusive.
-
-    When analyze_turn rules already determined a concrete intent
-    (greeting, cancel, appointment, triage, skill-registered), go to
-    intent_router which will short-circuit (no LLM call).
-
-    When rules are inconclusive (empty primary_intent), go directly to
-    rewrite_query — which now also classifies intent in the same LLM
-    call.  Saves one 14B LLM call (~4.5s) per medical query.
+def route_after_analyze_turn(state: State) -> Literal["intent_router", "plan_tasks"]:
+    """Route resume branches (primary_intent set) to intent_router; every fresh
+    turn (empty primary_intent) goes to plan_tasks, which decomposes it into
+    planned_tasks.
     """
     if state.get("primary_intent", ""):
         return "intent_router"
-    if getattr(config, "ENABLE_TURN_PLANNER", False):
-        return "plan_tasks"
-    return "rewrite_query"
+    return "plan_tasks"
 
 
 def route_after_intent(state: State) -> str:
@@ -174,75 +166,28 @@ def route_after_orchestrator_call(state: AgentState) -> Literal["tools", "fallba
     return "tools"
 
 
-def route_after_action(state: State) -> Literal["request_clarification", "prepare_secondary_turn", "supervise", "__end__"]:
+def route_after_action(state: State) -> Literal["request_clarification", "supervise", "advance_task", "__end__"]:
     """Route after an action specialist (appointment/triage) finishes.
 
-    Priority: pending clarification > secondary turn > supervisor loop > END.
-    The supervisor_active branch (P4) is lowest priority so that explicit
-    pending/secondary signals (stronger closure intents) win.
+    Priority: pending clarification > pending multi-turn action (END) >
+    supervisor (dormant under the planner) > planner drain (advance_task) > END.
 
-    The secondary-turn branch also fires when deferred_extra_tasks is non-empty
-    (compound drain queue), so 3+ segment compounds continue draining across
-    turns instead of ending with unaddressed segments.
+    A still-pending multi-turn appointment (pending_action_type/candidates/
+    confirmation) ends the turn - it resumes via pending_action_type on the
+    user's next reply; remaining planned tasks are cleared then (known
+    limitation).
     """
     if state.get("pending_clarification") and state.get("clarification_target"):
         return "request_clarification"
-    if getattr(config, "ENABLE_TURN_PLANNER", False):
-        # Phase 2 planner drain: a finished action task -> advance_task records
-        # it and drains the next planned task (or gates). A still-pending
-        # multi-turn appointment (pending_action_type/candidates/confirmation)
-        # ends the turn - the appointment continues via pending_action_type on
-        # the user's next reply; remaining planned tasks are cleared then
-        # (known limitation, same shape as Phase 1's deferred_extra_tasks).
-        if (
-            state.get("pending_action_type")
-            or state.get("pending_candidates")
-            or state.get("deferred_confirmation_action")
-        ):
-            return "__end__"
-        return "advance_task"
-    has_pending_secondary = bool(state.get("secondary_intent") and state.get("deferred_user_question"))
-    has_queued_extras = bool(state.get("deferred_extra_tasks"))
     if (
-        (has_pending_secondary or has_queued_extras)
-        and not state.get("pending_clarification")
-        and not state.get("pending_action_type")
-        and not state.get("pending_candidates")
-        and not state.get("deferred_confirmation_action")
+        state.get("pending_action_type")
+        or state.get("pending_candidates")
+        or state.get("deferred_confirmation_action")
     ):
-        return "prepare_secondary_turn"
+        return "__end__"
     if bool(state.get("supervisor_active", False)):
         return "supervise"
-    return "__end__"
-
-
-def route_after_prepare_secondary_turn(state: State) -> Literal["rewrite_query", "handle_appointment", "handle_cancel_appointment", "recommend_department"]:
-    intent = state.get("primary_intent") or state.get("intent") or ""
-
-    # Check skill-registered routes first
-    try:
-        from skills.registry import get_skill_registry
-        registry = get_skill_registry()
-        if registry.skills:
-            skill_routes = registry.get_route_mapping()
-            if intent in skill_routes:
-                target = skill_routes[intent]
-                # Only return targets that are valid for this edge's mapping
-                if target in ("handle_appointment", "handle_cancel_appointment",
-                              "recommend_department", "rewrite_query"):
-                    return target
-    except Exception:
-        pass
-
-    # Legacy fallback
-    _LEGACY_ROUTES = {
-        "appointment": "handle_appointment",
-        "cancel_appointment": "handle_cancel_appointment",
-        "triage": "recommend_department",
-    }
-    if intent in _LEGACY_ROUTES:
-        return _LEGACY_ROUTES[intent]
-    return "rewrite_query"
+    return "advance_task"
 
 
 def _has_repeated_no_evidence(state: AgentState) -> bool:
@@ -308,13 +253,13 @@ def route_after_evidence(state: AgentState) -> Literal["should_compress_context"
     return "should_compress_context"
 
 
-def route_after_grounding(state: State) -> Literal["__end__", "revise_answer", "supervise", "self_eval"]:
-    """P2/P4/P5: route after the answer grounding check.
+def route_after_grounding(state: State) -> Literal["revise_answer", "self_eval", "advance_task"]:
+    """P2/P5: route after the answer grounding check.
 
-    - grounded → self_eval (P5) when on, else supervise (P4) / END
-    - not grounded + budget + reflection on → revise_answer
-    - not grounded + budget + reflection off → self_eval (P5) / supervise (P4) / END
-    - budget exhausted → self_eval (P5) / supervise (P4) / END
+    - grounded -> self_eval (P5) when on, else advance_task (drain next planned task)
+    - not grounded + budget + reflection on -> revise_answer
+    - not grounded + budget + reflection off -> self_eval / advance_task
+    - budget exhausted -> self_eval / advance_task
     """
     if bool(state.get("grounding_passed", False)):
         return _next_after_grounding()
@@ -327,55 +272,33 @@ def route_after_grounding(state: State) -> Literal["__end__", "revise_answer", "
 def _next_after_grounding() -> str:
     """Terminal target after grounding.
 
-    Phase 2 (ENABLE_TURN_PLANNER): bypass the supervisor - the planner already
-    planned all tasks, so after grounding (and optional self_eval) we drain the
-    next planned task via advance_task. Otherwise: self_eval if on, else
-    supervisor if on, else END.
+    The planner owns the per-task drain: after grounding (and optional
+    self_eval) we drain the next planned task via advance_task.
     """
-    if getattr(config, "ENABLE_TURN_PLANNER", False):
-        return "self_eval" if config.ENABLE_SELF_EVAL else "advance_task"
-    if config.ENABLE_SELF_EVAL:
-        return "self_eval"
-    return "supervise" if config.ENABLE_MULTI_AGENT_SUPERVISOR else "__end__"
+    return "self_eval" if config.ENABLE_SELF_EVAL else "advance_task"
 
 
 def route_after_self_eval(state: State) -> str:
-    """P5: after self-eval, continue to the P4 supervisor (or END if disabled).
-
-    Phase 2 (ENABLE_TURN_PLANNER): skip the supervisor -> advance_task drains
-    the next planned task. Otherwise: supervisor if on; else drain Phase 1's
-    deferred_extra_tasks before ending.
-    """
-    if getattr(config, "ENABLE_TURN_PLANNER", False):
-        return "advance_task"
-    if config.ENABLE_MULTI_AGENT_SUPERVISOR:
-        return "supervise"
-    if state.get("deferred_extra_tasks"):
-        return "prepare_secondary_turn"
-    return "__end__"
+    """After self-eval, drain the next planned task via advance_task."""
+    return "advance_task"
 
 
 def route_after_supervisor(state: State) -> str:
     """P4: dispatch the supervisor's chosen agent, or finish.
 
-    Compound drain: when the supervisor is done (FINISH) but deferred_extra_tasks
-    still holds undrained segments, route to prepare_secondary_turn to drain the
-    next one instead of ending the turn. This is the medical-path terminal drain
-    point (action-path draining happens at route_after_action).
+    Dormant under the planner (the planner owns task drain via advance_task);
+    retained for a future supervisor-alongside-planner routing decision.
     """
     nxt = str(state.get("supervisor_next", "FINISH") or "FINISH").strip()
     if nxt == "appointment":
         return "handle_appointment_skill"
     if nxt == "triage":
         return "recommend_department"
-    # FINISH: drain any remaining compound segments before ending.
-    if state.get("deferred_extra_tasks"):
-        return "prepare_secondary_turn"
     return "__end__"
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: unified turn planner routing (active only when ENABLE_TURN_PLANNER).
+# Turn planner routing (plan_tasks -> dispatch_next_task -> handler -> advance_task -> gate).
 # ---------------------------------------------------------------------------
 
 def route_after_plan_tasks(state: State) -> str:
@@ -389,8 +312,7 @@ def route_after_dispatch(state: State) -> str:
     """Route the staged task to its handler by intent.
 
     dispatch_next_task sets state['intent'] / primary_user_query to the staged
-    task; this edge sends it to the right specialist. Mirrors
-    route_after_prepare_secondary_turn but for the planner's task list.
+    task; this edge sends it to the right specialist.
     """
     intent = state.get("intent") or state.get("primary_intent") or ""
     try:

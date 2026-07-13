@@ -4,12 +4,14 @@ import unittest
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "project"))
 
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage  # noqa: E402
-from rag_agent.edges import route_after_action, route_after_orchestrator_call, route_after_prepare_secondary_turn, route_after_query_plan, route_after_rewrite  # noqa: E402
-from rag_agent.nodes import analyze_turn, prepare_secondary_turn  # noqa: E402
+from rag_agent.edges import route_after_action, route_after_orchestrator_call, route_after_query_plan, route_after_rewrite  # noqa: E402
+from rag_agent.nodes import analyze_turn  # noqa: E402
 
 
 class RoutingEdgeTests(unittest.TestCase):
-    def test_analyze_turn_splits_supported_compound_request(self):
+    def test_analyze_turn_routes_fresh_turn_to_planner(self):
+        # The turn planner owns compound decomposition now; analyze_turn returns
+        # an empty primary_intent so route_after_analyze_turn sends it to plan_tasks.
         result = analyze_turn(
             {
                 "messages": [HumanMessage(content="取消刚才那个预约，然后我这个咳嗽还要看吗")],
@@ -23,48 +25,8 @@ class RoutingEdgeTests(unittest.TestCase):
                 "topic_focus": "",
             }
         )
-
-        self.assertEqual(result["primary_intent"], "cancel_appointment")
-        self.assertEqual(result["secondary_intent"], "medical_rag")
-        self.assertEqual(result["deferred_user_question"], "我这个咳嗽还要看吗")
-
-    def test_analyze_turn_splits_appointment_then_medical_follow_up(self):
-        result = analyze_turn(
-            {
-                "messages": [HumanMessage(content="帮我挂呼吸内科，另外高血压药还要不要继续吃？")],
-                "conversation_summary": "",
-                "pending_action_type": "",
-                "pending_candidates": [],
-                "pending_clarification": "",
-                "clarification_target": "",
-                "appointment_context": {},
-                "recommended_department": "",
-                "topic_focus": "",
-            }
-        )
-
-        self.assertEqual(result["primary_intent"], "appointment")
-        self.assertEqual(result["secondary_intent"], "medical_rag")
-        self.assertEqual(result["deferred_user_question"], "高血压药还要不要继续吃？")
-
-    def test_analyze_turn_splits_triage_then_medical_question(self):
-        result = analyze_turn(
-            {
-                "messages": [HumanMessage(content="我发烧咳嗽挂什么科，然后流感怎么预防？")],
-                "conversation_summary": "",
-                "pending_action_type": "",
-                "pending_candidates": [],
-                "pending_clarification": "",
-                "clarification_target": "",
-                "appointment_context": {},
-                "recommended_department": "",
-                "topic_focus": "",
-            }
-        )
-
-        self.assertEqual(result["primary_intent"], "triage")
-        self.assertEqual(result["secondary_intent"], "medical_rag")
-        self.assertEqual(result["deferred_user_question"], "流感怎么预防？")
+        self.assertEqual(result["primary_intent"], "")
+        self.assertEqual(result["decision_source"], "planner")
 
     def test_analyze_turn_keeps_department_selection_inside_appointment_flow(self):
         result = analyze_turn(
@@ -128,20 +90,6 @@ class RoutingEdgeTests(unittest.TestCase):
             "decompose_tasks",
         )
 
-    def test_route_after_action_prepares_secondary_turn_when_primary_is_done(self):
-        decision = route_after_action(
-            {
-                "secondary_intent": "medical_rag",
-                "deferred_user_question": "我这个咳嗽还要看吗",
-                "pending_clarification": "",
-                "pending_action_type": "",
-                "pending_candidates": [],
-                "deferred_confirmation_action": "",
-            }
-        )
-
-        self.assertEqual(decision, "prepare_secondary_turn")
-
     def test_route_after_action_blocks_secondary_turn_when_candidates_or_deferred_confirmation_exist(self):
         with_candidates = route_after_action(
             {
@@ -166,19 +114,6 @@ class RoutingEdgeTests(unittest.TestCase):
 
         self.assertEqual(with_candidates, "__end__")
         self.assertEqual(with_deferred_confirmation, "__end__")
-
-    def test_prepare_secondary_turn_resets_secondary_state(self):
-        update = prepare_secondary_turn(
-            {
-                "secondary_intent": "appointment",
-                "deferred_user_question": "帮我挂呼吸内科，明天下午",
-            }
-        )
-
-        self.assertEqual(update["intent"], "appointment")
-        self.assertEqual(update["primary_intent"], "appointment")
-        self.assertEqual(update["deferred_user_question"], "")
-        self.assertEqual(route_after_prepare_secondary_turn(update), "handle_appointment")
 
     def test_route_after_orchestrator_falls_back_after_repeated_no_evidence(self):
         decision = route_after_orchestrator_call(

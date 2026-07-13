@@ -99,23 +99,23 @@ class TestResetSupervisorState(unittest.TestCase):
         from project.rag_agent.rag_nodes import reset_supervisor_state
         state = _make_main_state(supervisor_active=True, supervisor_rounds=2, supervisor_next="appointment")
         result = reset_supervisor_state(state)
-        self.assertEqual(result, {"supervisor_active": False, "supervisor_rounds": 0, "deferred_extra_tasks": []})
+        self.assertEqual(result, {"supervisor_active": False, "supervisor_rounds": 0, "planned_tasks": [], "task_results": [{"__reset__": True}], "planner_replan_count": 0})
 
     def test_does_not_touch_other_fields(self):
         from project.rag_agent.rag_nodes import reset_supervisor_state
         state = _make_main_state(originalQuery="keep me")
         result = reset_supervisor_state(state)
         self.assertNotIn("originalQuery", result)
-        # deferred_extra_tasks is cleared every fresh turn so stale compound-drain
-        # queues don't bleed into a new user message.
-        self.assertEqual(set(result.keys()), {"supervisor_active", "supervisor_rounds", "deferred_extra_tasks"})
+        # Planner task state is cleared every fresh turn so stale planned_tasks
+        # don't bleed into a new user message.
+        self.assertEqual(set(result.keys()), {"supervisor_active", "supervisor_rounds", "planned_tasks", "task_results", "planner_replan_count"})
 
-    def test_clears_stale_deferred_extras(self):
-        """A leftover drain queue from a previous turn is cleared at turn start."""
+    def test_clears_stale_planned_tasks(self):
+        """A leftover planned_tasks list from a previous turn is cleared at turn start."""
         from project.rag_agent.rag_nodes import reset_supervisor_state
-        state = _make_main_state(deferred_extra_tasks=[{"intent": "medical_rag", "query": "stale"}])
+        state = _make_main_state(planned_tasks=[{"id": 0, "intent": "medical_rag", "query": "stale"}])
         result = reset_supervisor_state(state)
-        self.assertEqual(result["deferred_extra_tasks"], [])
+        self.assertEqual(result["planned_tasks"], [])
 
 
 class _FakeStructuredLLM:
@@ -249,21 +249,22 @@ class TestRouteAfterGroundingSupervisor(unittest.TestCase):
         state = _make_main_state(grounding_passed=False, grounding_rounds=0)
         self.assertEqual(route_after_grounding(state), "revise_answer")
 
-    def test_grounded_routes_to_end_when_both_disabled(self):
+    def test_grounded_drains_to_advance_task_when_self_eval_off(self):
         import project.rag_agent.edges as edges
         from project.rag_agent.edges import route_after_grounding
         with unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False), \
              unittest.mock.patch.object(edges.config, "ENABLE_SELF_EVAL", False):
-            self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)), "__end__")
+            # Planner always owns the drain -> advance_task (not __end__).
+            self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)), "advance_task")
 
-    def test_budget_exhausted_routes_to_end_when_both_disabled(self):
+    def test_budget_exhausted_drains_to_advance_task_when_self_eval_off(self):
         import config
         import project.rag_agent.edges as edges
         from project.rag_agent.edges import route_after_grounding
         state = _make_main_state(grounding_passed=False, grounding_rounds=config.MAX_GROUNDING_ROUNDS)
         with unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False), \
              unittest.mock.patch.object(edges.config, "ENABLE_SELF_EVAL", False):
-            self.assertEqual(route_after_grounding(state), "__end__")
+            self.assertEqual(route_after_grounding(state), "advance_task")
 
     def test_not_grounded_with_budget_routes_to_self_eval_when_reflection_off(self):
         """Regression: reflection-off + supervisor-on must not return revise_answer
@@ -294,26 +295,14 @@ class TestRouteAfterActionSupervisorBranch(unittest.TestCase):
                                  clarification_target="handle_appointment_skill")
         self.assertEqual(route_after_action(state), "request_clarification")
 
-    def test_secondary_turn_beats_supervisor(self):
-        # Tests router priority in isolation; supervise clears these signals on
-        # dispatch, so this combination only arises if a specialist re-populates them.
-        from project.rag_agent.edges import route_after_action
-        state = _make_main_state(supervisor_active=True,
-                                 secondary_intent="appointment",
-                                 deferred_user_question="挂号",
-                                 pending_action_type="",
-                                 pending_candidates=[],
-                                 deferred_confirmation_action="")
-        self.assertEqual(route_after_action(state), "prepare_secondary_turn")
-
-    def test_no_supervisor_no_pending_goes_to_end(self):
+    def test_no_supervisor_no_pending_drains_next_task(self):
         from project.rag_agent.edges import route_after_action
         state = _make_main_state(supervisor_active=False)
         state.update({"pending_clarification": "", "clarification_target": "",
                       "secondary_intent": "", "deferred_user_question": "",
                       "pending_action_type": "", "pending_candidates": [],
                       "deferred_confirmation_action": ""})
-        self.assertEqual(route_after_action(state), "__end__")
+        self.assertEqual(route_after_action(state), "advance_task")
 
 
 class TestGraphWiring(unittest.TestCase):
@@ -326,8 +315,7 @@ class TestGraphWiring(unittest.TestCase):
         self.assertIn("reset_supervisor_state", src)
         # New edge function used
         self.assertIn("route_after_supervisor", src)
-        # Supervisor config flag referenced (gating the wiring)
-        self.assertIn("ENABLE_MULTI_AGENT_SUPERVISOR", src)
+        # Supervisor node is registered unconditionally (dormant under the planner).
         # reset_supervisor_state must sit between START and analyze_turn
         self.assertIn('add_edge(START, "reset_supervisor_state")', src)
         self.assertIn('add_edge("reset_supervisor_state", "analyze_turn")', src)
@@ -384,8 +372,8 @@ class TestCompiledSupervisorLoop(unittest.TestCase):
         })
         builder.add_conditional_edges("specialist", route_after_action, {
             "request_clarification": END,
-            "prepare_secondary_turn": END,
             "supervise": "supervise",
+            "advance_task": END,
             "__end__": END,
         })
         return builder.compile(), call_log

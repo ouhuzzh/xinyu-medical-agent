@@ -149,21 +149,6 @@ class TestContextBuilding(unittest.TestCase):
         self.assertEqual(f, "hypertension")
 
 
-class TestCompoundSplitting(unittest.TestCase):
-    """Compound request detection."""
-
-    @staticmethod
-    def _split(q):
-        from rag_agent.routing_nodes import _split_compound_request
-        return _split_compound_request(q)
-
-    def test_single(self):
-        self.assertEqual(self._split("headache"), ["headache"])
-
-    def test_empty(self):
-        self.assertEqual(self._split(""), [])
-
-
 class TestPendingAction(unittest.TestCase):
     """Pending action state transitions."""
 

@@ -300,7 +300,7 @@ def plan_retrieval_queries(state: State, llm):
 
 
 def reset_supervisor_state(state: State):
-    """P4: clear supervisor loop flags at turn start.
+    """Clear supervisor loop flags and planner task state at turn start.
 
     LangGraph's checkpointer persists State across turns. If a supervisor-
     dispatched specialist interrupted (e.g. appointment needs clarification),
@@ -308,25 +308,18 @@ def reset_supervisor_state(state: State):
     back to supervise. This node resets those flags every turn, before
     analyze_turn, with zero invasion of analyze_turn's return paths.
 
-    Also clears deferred_extra_tasks: the compound drain queue is consumed
-    within a single graph invocation, so any leftover at the start of a fresh
-    user message is stale and must not bleed into the new turn. (Drain flows
-    never re-enter this node - prepare_secondary_turn does not start a new
-    invocation - so mid-drain queues are preserved.)
-
-    Phase 2 (ENABLE_TURN_PLANNER): also clears planned_tasks / task_results /
-    planner_replan_count for the same reason - the planner re-plans from
-    scratch on each fresh user message.
+    The planner re-plans from scratch on each fresh user message, so any
+    leftover planned_tasks / task_results / planner_replan_count is stale and
+    must not bleed into the new turn.
     """
-    reset = {"supervisor_active": False, "supervisor_rounds": 0, "deferred_extra_tasks": []}
-    try:
-        if getattr(config, "ENABLE_TURN_PLANNER", False):
-            reset["planned_tasks"] = []
-            # task_results uses accumulate_or_reset; a __reset__ sentinel clears it.
-            reset["task_results"] = [{"__reset__": True}]
-            reset["planner_replan_count"] = 0
-    except Exception:
-        pass
+    reset = {
+        "supervisor_active": False,
+        "supervisor_rounds": 0,
+        "planned_tasks": [],
+        # task_results uses accumulate_or_reset; a __reset__ sentinel clears it.
+        "task_results": [{"__reset__": True}],
+        "planner_replan_count": 0,
+    }
     return reset
 
 
@@ -381,8 +374,8 @@ def supervise(state: State, llm):
     if next_agent == "FINISH":
         return {"supervisor_active": False, "supervisor_rounds": 0, "supervisor_next": "FINISH"}
 
-    # Dispatch: consume the secondary-intent handoff signal so route_after_action's
-    # prepare_secondary_turn branch cannot re-fire it (double-dispatch guard).
+    # Dispatch: consume the secondary-intent handoff signal so the same task
+    # cannot be re-dispatched (double-dispatch guard).
     return {
         "supervisor_active": True,
         "supervisor_rounds": rounds + 1,
@@ -521,8 +514,7 @@ def decompose_tasks(state: State, llm):
 
 
 # ---------------------------------------------------------------------------
-# Phase 2: unified turn planner (plan_tasks / dispatch_next_task /
-# advance_task / completeness_gate). Active only when ENABLE_TURN_PLANNER=true.
+# Turn planner (plan_tasks / dispatch_next_task / advance_task / completeness_gate).
 # ---------------------------------------------------------------------------
 
 def _planner_user_query(state: State) -> str:
@@ -556,9 +548,8 @@ def _next_undone_task(state: State):
 
 
 def plan_tasks(state: State, llm):
-    """Phase 2 turn planner: decompose the user's message into an ordered list
-    of independent cross-intent tasks. Replaces analyze_turn's rule-based
-    compound split when ENABLE_TURN_PLANNER=true.
+    """Turn planner: decompose the user's message into an ordered list
+    of independent cross-intent tasks. Replaces the legacy rule-based compound split.
 
     Each task is {id, intent, query}. Single-intent -> one task; cross-intent
     compound -> N. Within-medical multi-facet decomposition stays with

@@ -20,8 +20,6 @@ from langchain_core.messages import HumanMessage, AIMessage  # noqa: E402
 class TestConfigFields(unittest.TestCase):
     def test_planner_config_fields_exist(self):
         import config
-        self.assertTrue(hasattr(config, "ENABLE_TURN_PLANNER"))
-        self.assertFalse(config.ENABLE_TURN_PLANNER)  # default off (opt-in)
         self.assertTrue(hasattr(config, "MAX_PLANNED_TASKS"))
         self.assertGreaterEqual(config.MAX_PLANNED_TASKS, 3)
 
@@ -303,23 +301,13 @@ class TestEndToEndDrain(unittest.TestCase):
 
 
 class TestResetSupervisorStatePlanner(unittest.TestCase):
-    def test_flag_on_clears_planner_state(self):
-        import config
+    def test_clears_planner_state(self):
         from project.rag_agent.rag_nodes import reset_supervisor_state
-        with patch.object(config, "ENABLE_TURN_PLANNER", True):
-            result = reset_supervisor_state({"planned_tasks": [{"id": 0}], "task_results": [{"id": 0}]})
+        result = reset_supervisor_state({"planned_tasks": [{"id": 0}], "task_results": [{"id": 0}]})
         self.assertEqual(result["planned_tasks"], [])
         # task_results cleared via __reset__ sentinel.
         self.assertEqual(result["task_results"], [{"__reset__": True}])
         self.assertEqual(result["planner_replan_count"], 0)
-
-    def test_flag_off_does_not_touch_planner_state(self):
-        import config
-        from project.rag_agent.rag_nodes import reset_supervisor_state
-        with patch.object(config, "ENABLE_TURN_PLANNER", False):
-            result = reset_supervisor_state({})
-        self.assertNotIn("planned_tasks", result)
-        self.assertNotIn("task_results", result)
 
 
 if __name__ == "__main__":
