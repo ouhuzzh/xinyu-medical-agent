@@ -197,15 +197,18 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
         "handle_cancel_appointment": "handle_cancel_appointment",
         "recommend_department": "recommend_department",
     })
-    # P4: supervisor dispatches a peer agent (appointment/triage) or finishes.
+    # P4: supervisor dispatches a peer agent (appointment/triage), drains a
+    # queued compound segment, or finishes.
     graph_builder.add_conditional_edges("supervise", route_after_supervisor, {
         "handle_appointment_skill": "handle_appointment_skill",
         "recommend_department": "recommend_department",
+        "prepare_secondary_turn": "prepare_secondary_turn",
         "__end__": END,
     })
-    # P5: after self-eval, continue to the supervisor (or END).
+    # P5: after self-eval, continue to the supervisor (or drain/END if disabled).
     graph_builder.add_conditional_edges("self_eval", route_after_self_eval, {
         "supervise": "supervise",
+        "prepare_secondary_turn": "prepare_secondary_turn",
         "__end__": END,
     })
     graph_builder.add_edge("grounded_answer_generation", "answer_grounding_check")

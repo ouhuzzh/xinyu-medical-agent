@@ -99,14 +99,23 @@ class TestResetSupervisorState(unittest.TestCase):
         from project.rag_agent.rag_nodes import reset_supervisor_state
         state = _make_main_state(supervisor_active=True, supervisor_rounds=2, supervisor_next="appointment")
         result = reset_supervisor_state(state)
-        self.assertEqual(result, {"supervisor_active": False, "supervisor_rounds": 0})
+        self.assertEqual(result, {"supervisor_active": False, "supervisor_rounds": 0, "deferred_extra_tasks": []})
 
     def test_does_not_touch_other_fields(self):
         from project.rag_agent.rag_nodes import reset_supervisor_state
         state = _make_main_state(originalQuery="keep me")
         result = reset_supervisor_state(state)
         self.assertNotIn("originalQuery", result)
-        self.assertEqual(set(result.keys()), {"supervisor_active", "supervisor_rounds"})
+        # deferred_extra_tasks is cleared every fresh turn so stale compound-drain
+        # queues don't bleed into a new user message.
+        self.assertEqual(set(result.keys()), {"supervisor_active", "supervisor_rounds", "deferred_extra_tasks"})
+
+    def test_clears_stale_deferred_extras(self):
+        """A leftover drain queue from a previous turn is cleared at turn start."""
+        from project.rag_agent.rag_nodes import reset_supervisor_state
+        state = _make_main_state(deferred_extra_tasks=[{"intent": "medical_rag", "query": "stale"}])
+        result = reset_supervisor_state(state)
+        self.assertEqual(result["deferred_extra_tasks"], [])
 
 
 class _FakeStructuredLLM:

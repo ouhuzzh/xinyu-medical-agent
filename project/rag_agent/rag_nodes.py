@@ -305,8 +305,14 @@ def reset_supervisor_state(state: State):
     the leftover supervisor_active=True would mis-route the resumed specialist
     back to supervise. This node resets those flags every turn, before
     analyze_turn, with zero invasion of analyze_turn's return paths.
+
+    Also clears deferred_extra_tasks: the compound drain queue is consumed
+    within a single graph invocation, so any leftover at the start of a fresh
+    user message is stale and must not bleed into the new turn. (Drain flows
+    never re-enter this node - prepare_secondary_turn does not start a new
+    invocation - so mid-drain queues are preserved.)
     """
-    return {"supervisor_active": False, "supervisor_rounds": 0}
+    return {"supervisor_active": False, "supervisor_rounds": 0, "deferred_extra_tasks": []}
 
 
 def supervise(state: State, llm):
@@ -811,6 +817,44 @@ def collect_answer(state: AgentState):
     }
 # --- End of Agent Nodes---
 
+def _build_missing_subquestion_caveat(state, sorted_answers) -> str:
+    """Detect sub-questions that decompose planned but weren't reliably answered,
+    and return an explicit caveat naming them.
+
+    A sub-question counts as unaddressed if its index never produced an
+    agent_answer, or the answer is empty / the "Unable to generate" fallback.
+    Returns "" when no decomposition happened (single question) or every planned
+    sub-question was answered - so the caveat only fires for genuine compound
+    medical questions that came back partial.
+    """
+    subs = [str(s).strip() for s in (state.get("sub_questions") or []) if str(s).strip()]
+    if len(subs) <= 1:
+        return ""
+    answered: dict = {}
+    for a in sorted_answers:
+        if not isinstance(a, dict):
+            continue
+        try:
+            idx = int(a.get("index", -1))
+        except (TypeError, ValueError):
+            continue
+        if idx < 0:
+            continue
+        answered[idx] = str(a.get("answer", "") or "").strip()
+    missing: list = []
+    for i, q in enumerate(subs):
+        ans = answered.get(i)
+        if ans is None or not ans or "Unable to generate" in ans:
+            missing.append(q)
+    if not missing:
+        return ""
+    items = "、".join(f"「{q}」" for q in missing)
+    return (
+        f"\n\n⚠️ 您的问题包含多个部分，其中关于{items}暂未能给出可靠回答，"
+        f"可否再单独描述一下这部分？"
+    )
+
+
 def grounded_answer_generation(state: State, llm):
     if not state.get("agent_answers"):
         return {"messages": [AIMessage(content="No answers were generated.")]}
@@ -887,8 +931,9 @@ def grounded_answer_generation(state: State, llm):
         citation_block = "\n\n参考来源：\n" + "\n".join(citation_lines)
 
     final_content = _sanitize_final_answer_text(synthesis_response.content)
+    missing_caveat = _build_missing_subquestion_caveat(state, sorted_answers)
     return {
-        "messages": [AIMessage(content=f"{final_content}{confidence_note}{citation_block}")],
+        "messages": [AIMessage(content=f"{final_content}{confidence_note}{missing_caveat}{citation_block}")],
         "clarification_attempts": 0,
         "grounding_evidence_score": aggregate_evidence_score,
     }
