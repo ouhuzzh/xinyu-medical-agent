@@ -25,6 +25,10 @@ from .rag_nodes import (
     self_eval,
     should_compress_context,
     supervise,
+    plan_tasks,
+    dispatch_next_task,
+    advance_task,
+    completeness_gate,
 )
 from .routing_nodes import (
     analyze_turn,
@@ -110,6 +114,13 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     graph_builder.add_node("grounded_answer_generation", partial(grounded_answer_generation, llm=_strong_llm))
     graph_builder.add_node("answer_grounding_check", partial(answer_grounding_check, llm=_strong_llm))
 
+    # Phase 2: unified turn planner nodes (registered only when enabled).
+    if config.ENABLE_TURN_PLANNER:
+        graph_builder.add_node("plan_tasks", partial(plan_tasks, llm=_light_llm))
+        graph_builder.add_node("dispatch_next_task", dispatch_next_task)
+        graph_builder.add_node("advance_task", advance_task)
+        graph_builder.add_node("completeness_gate", completeness_gate)
+
     # Register skill nodes (if any skills are registered)
     _skill_route_targets = {}
     try:
@@ -137,14 +148,40 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     graph_builder.add_edge("reset_supervisor_state", "analyze_turn")
     # Conditional: rules inconclusive → skip intent_router, go direct to rewrite_query.
     # Rules explicit (greeting/cancel/appt/triage/mcp) → intent_router for final routing.
+    _analyze_map = {
+        "intent_router": "intent_router",
+        "rewrite_query": "rewrite_query",
+    }
+    if config.ENABLE_TURN_PLANNER:
+        _analyze_map["plan_tasks"] = "plan_tasks"
     graph_builder.add_conditional_edges(
         "analyze_turn",
         route_after_analyze_turn,
-        {
-            "intent_router": "intent_router",
-            "rewrite_query": "rewrite_query",
-        },
+        _analyze_map,
     )
+
+    # Phase 2: planner chain - plan_tasks -> dispatch_next_task -> handler ->
+    # advance_task -> (next task | completeness_gate) -> END.
+    if config.ENABLE_TURN_PLANNER:
+        graph_builder.add_conditional_edges("plan_tasks", route_after_plan_tasks, {
+            "dispatch_next_task": "dispatch_next_task",
+            "completeness_gate": "completeness_gate",
+        })
+        _dispatch_map = {
+            "rewrite_query": "rewrite_query",
+            "handle_appointment_skill": "handle_appointment_skill",
+            "recommend_department": "recommend_department",
+            "__end__": END,
+        }
+        for _node_name in _skill_route_targets.values():
+            if _node_name not in _dispatch_map:
+                _dispatch_map[_node_name] = _node_name
+        graph_builder.add_conditional_edges("dispatch_next_task", route_after_dispatch, _dispatch_map)
+        graph_builder.add_conditional_edges("advance_task", route_to_next_or_gate, {
+            "dispatch_next_task": "dispatch_next_task",
+            "completeness_gate": "completeness_gate",
+        })
+        graph_builder.add_edge("completeness_gate", END)
 
     # Build the intent_router conditional edges mapping, merging static + skill routes
     _intent_route_map = {
@@ -187,10 +224,16 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
         "handle_cancel_appointment": "handle_cancel_appointment",
     })
     graph_builder.add_edge(["agent"], "grounded_answer_generation")
-    graph_builder.add_conditional_edges("recommend_department", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "supervise": "supervise", "__end__": END})
-    graph_builder.add_conditional_edges("handle_appointment_skill", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "supervise": "supervise", "__end__": END})
-    graph_builder.add_conditional_edges("handle_appointment", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "supervise": "supervise", "__end__": END})
-    graph_builder.add_conditional_edges("handle_cancel_appointment", route_after_action, {"request_clarification": "request_clarification", "prepare_secondary_turn": "prepare_secondary_turn", "supervise": "supervise", "__end__": END})
+    _action_map = {
+        "request_clarification": "request_clarification",
+        "prepare_secondary_turn": "prepare_secondary_turn",
+        "supervise": "supervise",
+        "__end__": END,
+    }
+    if config.ENABLE_TURN_PLANNER:
+        _action_map["advance_task"] = "advance_task"
+    for _action_src in ("recommend_department", "handle_appointment_skill", "handle_appointment", "handle_cancel_appointment"):
+        graph_builder.add_conditional_edges(_action_src, route_after_action, _action_map)
     graph_builder.add_conditional_edges("prepare_secondary_turn", route_after_prepare_secondary_turn, {
         "rewrite_query": "rewrite_query",
         "handle_appointment": "handle_appointment",
@@ -206,11 +249,15 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
         "__end__": END,
     })
     # P5: after self-eval, continue to the supervisor (or drain/END if disabled).
-    graph_builder.add_conditional_edges("self_eval", route_after_self_eval, {
+    # Phase 2: -> advance_task (drain next planned task) instead of supervisor.
+    _self_eval_map = {
         "supervise": "supervise",
         "prepare_secondary_turn": "prepare_secondary_turn",
         "__end__": END,
-    })
+    }
+    if config.ENABLE_TURN_PLANNER:
+        _self_eval_map["advance_task"] = "advance_task"
+    graph_builder.add_conditional_edges("self_eval", route_after_self_eval, _self_eval_map)
     graph_builder.add_edge("grounded_answer_generation", "answer_grounding_check")
     if config.ENABLE_ANSWER_REFLECTION:
         # P2: answer reflection loop — critique + evidence-bounded rewrite, re-checked.
@@ -221,6 +268,8 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
             _grounding_map["self_eval"] = "self_eval"
         if config.ENABLE_MULTI_AGENT_SUPERVISOR:
             _grounding_map["supervise"] = "supervise"
+        if config.ENABLE_TURN_PLANNER:
+            _grounding_map["advance_task"] = "advance_task"
         graph_builder.add_conditional_edges(
             "answer_grounding_check",
             route_after_grounding,
@@ -233,7 +282,9 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
             _grounding_map["self_eval"] = "self_eval"
         if config.ENABLE_MULTI_AGENT_SUPERVISOR:
             _grounding_map["supervise"] = "supervise"
-        if config.ENABLE_SELF_EVAL or config.ENABLE_MULTI_AGENT_SUPERVISOR:
+        if config.ENABLE_TURN_PLANNER:
+            _grounding_map["advance_task"] = "advance_task"
+        if config.ENABLE_SELF_EVAL or config.ENABLE_MULTI_AGENT_SUPERVISOR or config.ENABLE_TURN_PLANNER:
             graph_builder.add_conditional_edges(
                 "answer_grounding_check",
                 route_after_grounding,

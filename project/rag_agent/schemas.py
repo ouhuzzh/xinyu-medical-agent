@@ -208,3 +208,58 @@ class AnswerSelfEval(BaseModel):
     completeness: Literal[1, 2, 3, 4, 5] = Field(description="完整性 1-5：是否充分回答了用户问题（尤其多 facet 问题）。")
     groundedness: Literal[1, 2, 3, 4, 5] = Field(description="证据支撑度 1-5：是否限于检索证据、未臆造。")
     reason: str = Field(description="简短说明打分依据。")
+
+
+class PlannedTask(BaseModel):
+    """A single task in the turn planner's plan.
+
+    For structured output with Literal-constrained intent, use
+    ``build_turn_plan_schema()`` which dynamically builds a model whose
+    ``intent`` field uses Literal[intent_labels].
+    """
+    intent: str = Field(description="Intent label for this task.")
+    query: str = Field(description="Self-contained sub-query for this task, usable directly for retrieval/action.")
+
+
+class TurnPlan(BaseModel):
+    """Base turn-plan schema with flexible str intent.
+
+    Use ``build_turn_plan_schema()`` for a Literal-constrained variant that
+    validates intent against the current core + skill intent labels.
+    """
+    tasks: List[PlannedTask] = Field(description="Ordered list of independent tasks (1-N).")
+    reason: str = Field(description="Short rationale for the decomposition.")
+
+
+def build_turn_plan_schema(
+    intent_labels: Optional[Sequence[str]] = None,
+) -> type[BaseModel]:
+    """Build a Pydantic model for the turn plan with Literal[intent] on each task.
+
+    Dynamically creates a PlannedTask variant whose ``intent`` field uses
+    Literal to constrain output to the *current* set of intent labels (core +
+    skills), so newly added skills are automatically supported without manual
+    schema updates. Mirrors ``build_intent_analysis_schema``.
+    """
+    if not intent_labels:
+        intent_labels = ("medical_rag", "triage", "appointment",
+                         "cancel_appointment", "greeting", "clarification")
+
+    literal_type = Literal[tuple(intent_labels)]  # type: ignore[valid-type]
+
+    dynamic_planned_task = create_model(
+        "DynamicPlannedTask",
+        intent=(literal_type, Field(
+            description=f"Intent for this task. One of: {', '.join(intent_labels)}"
+        )),
+        query=(str, Field(
+            description="Self-contained sub-query for this task, usable directly for retrieval/action."
+        )),
+    )
+    return create_model(
+        "DynamicTurnPlan",
+        tasks=(List[dynamic_planned_task], Field(  # type: ignore[valid-type]
+            description="Ordered list of independent tasks (1-N)."
+        )),
+        reason=(str, Field(description="Short rationale for the decomposition.")),
+    )

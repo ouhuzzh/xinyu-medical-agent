@@ -418,8 +418,28 @@ def analyze_turn(state: State):
     try:
         import config
         queue_enabled = getattr(config, "ENABLE_COMPOUND_QUEUE", True)
+        turn_planner_enabled = getattr(config, "ENABLE_TURN_PLANNER", False)
     except Exception:
         queue_enabled = True
+        turn_planner_enabled = False
+
+    # Phase 2: when the unified turn planner is enabled, skip the rule-based
+    # compound split entirely - plan_tasks will decompose the message (handling
+    # arbitrary connectors, 3+ segments, any intent combo). Resume branches
+    # above still take precedence. route_after_analyze_turn sends fresh queries
+    # (primary_intent empty) to plan_tasks.
+    if turn_planner_enabled:
+        return {
+            "recent_context": recent_context,
+            "topic_focus": topic_focus or state.get("topic_focus", ""),
+            "primary_intent": "",
+            "primary_user_query": user_query,
+            "originalQuery": user_query,
+            "decision_source": "planner",
+            "route_reason": "turn_planner",
+            "last_route_reason": "turn_planner",
+            "intent_source": "planner",
+        }
 
     segments = _split_compound_request(user_query)
     first_segment = segments[0] if segments else user_query

@@ -472,6 +472,49 @@ def get_supervisor_prompt() -> str:
     )
 
 
+def get_turn_planner_prompt(skill_hints: list[tuple[str, str]] | None = None) -> str:
+    """System prompt for the plan_tasks node (Phase 2 turn planner).
+
+    Decomposes the user's latest message into an ordered list of independent
+    tasks, each tagged with an intent label and a self-contained sub-query.
+    Single-intent messages yield a single-task list. Cross-intent compounds
+    yield multiple tasks. Output must be strict JSON matching the TurnPlan
+    schema: {"tasks": [{"intent": "...", "query": "..."}], "reason": "..."}.
+    """
+    core_intents = [
+        ("medical_rag", "health questions, symptoms, treatments, casual chat, emotional support"),
+        ("triage", '"挂什么科" type department-recommendation questions'),
+        ("appointment", 'booking requests ("我要挂号", "帮我预约")'),
+        ("cancel_appointment", 'cancellation requests ("取消预约 APT123", "取消刚才的挂号")'),
+        ("greeting", 'polite greetings/declines ("你好", "谢谢", "再见")'),
+        ("clarification", "ONLY when truly unintelligible AND no useful context exists"),
+    ]
+    intent_lines = []
+    seen = set()
+    for label, desc in core_intents:
+        intent_lines.append(f"- {label}: {desc}")
+        seen.add(label)
+    for label, hint in (skill_hints or []):
+        if label not in seen:
+            intent_lines.append(f"- {label}: {hint}")
+            seen.add(label)
+    intent_section = "\n".join(intent_lines)
+    return (
+        "你是一名医疗助手的任务规划器。把用户最新一条消息分解为一个有序的独立任务列表，"
+        "每个任务标注 intent 并给出自足的子查询（可直接用于检索或动作）。\n\n"
+        f"可选 intent：\n{intent_section}\n\n"
+        "判定原则：\n"
+        "- 单一意图 -> tasks 只含 1 个任务，query 为原消息（必要时略作规整）。\n"
+        "- 跨意图复合（如「挂号皮肤科，顺便问湿疹护理」）-> 拆成多个任务，各自 intent 与 query。\n"
+        "- 同一意图的多个医学 facet（如「高血压用药 + 血压监测」）-> 合并为 1 个 medical_rag 任务"
+        "（内部子问题由下游并行检索处理，不要在这里拆）。\n"
+        "- 每个 query 必须自足、不依赖其他任务即可理解。\n"
+        "- 最多 4 个任务，顺序按用户提及先后。\n\n"
+        "严格输出 JSON，不要输出多余文字：\n"
+        '{"tasks": [{"intent": "medical_rag", "query": "..."}], "reason": "简短依据"}'
+    )
+
+
 def get_self_eval_prompt() -> str:
     """System prompt for the self_eval node (P5).
 

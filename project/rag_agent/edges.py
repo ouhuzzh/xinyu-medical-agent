@@ -19,6 +19,8 @@ def route_after_analyze_turn(state: State) -> Literal["rewrite_query", "intent_r
     """
     if state.get("primary_intent", ""):
         return "intent_router"
+    if getattr(config, "ENABLE_TURN_PLANNER", False):
+        return "plan_tasks"
     return "rewrite_query"
 
 
@@ -185,6 +187,20 @@ def route_after_action(state: State) -> Literal["request_clarification", "prepar
     """
     if state.get("pending_clarification") and state.get("clarification_target"):
         return "request_clarification"
+    if getattr(config, "ENABLE_TURN_PLANNER", False):
+        # Phase 2 planner drain: a finished action task -> advance_task records
+        # it and drains the next planned task (or gates). A still-pending
+        # multi-turn appointment (pending_action_type/candidates/confirmation)
+        # ends the turn - the appointment continues via pending_action_type on
+        # the user's next reply; remaining planned tasks are cleared then
+        # (known limitation, same shape as Phase 1's deferred_extra_tasks).
+        if (
+            state.get("pending_action_type")
+            or state.get("pending_candidates")
+            or state.get("deferred_confirmation_action")
+        ):
+            return "__end__"
+        return "advance_task"
     has_pending_secondary = bool(state.get("secondary_intent") and state.get("deferred_user_question"))
     has_queued_extras = bool(state.get("deferred_extra_tasks"))
     if (
@@ -308,20 +324,30 @@ def route_after_grounding(state: State) -> Literal["__end__", "revise_answer", "
     return _next_after_grounding()
 
 
-def _next_after_grounding() -> Literal["__end__", "supervise", "self_eval"]:
-    """P5/P4: terminal target after grounding. self_eval if on, else supervisor if on, else END."""
+def _next_after_grounding() -> str:
+    """Terminal target after grounding.
+
+    Phase 2 (ENABLE_TURN_PLANNER): bypass the supervisor - the planner already
+    planned all tasks, so after grounding (and optional self_eval) we drain the
+    next planned task via advance_task. Otherwise: self_eval if on, else
+    supervisor if on, else END.
+    """
+    if getattr(config, "ENABLE_TURN_PLANNER", False):
+        return "self_eval" if config.ENABLE_SELF_EVAL else "advance_task"
     if config.ENABLE_SELF_EVAL:
         return "self_eval"
     return "supervise" if config.ENABLE_MULTI_AGENT_SUPERVISOR else "__end__"
 
 
-def route_after_self_eval(state: State) -> Literal["supervise", "__end__", "prepare_secondary_turn"]:
+def route_after_self_eval(state: State) -> str:
     """P5: after self-eval, continue to the P4 supervisor (or END if disabled).
 
-    When the supervisor is disabled, drain any remaining compound segments
-    (deferred_extra_tasks) before ending, so 3+ segment compounds aren't cut
-    short. (With the supervisor on, draining happens at route_after_supervisor.)
+    Phase 2 (ENABLE_TURN_PLANNER): skip the supervisor -> advance_task drains
+    the next planned task. Otherwise: supervisor if on; else drain Phase 1's
+    deferred_extra_tasks before ending.
     """
+    if getattr(config, "ENABLE_TURN_PLANNER", False):
+        return "advance_task"
     if config.ENABLE_MULTI_AGENT_SUPERVISOR:
         return "supervise"
     if state.get("deferred_extra_tasks"):
@@ -346,3 +372,70 @@ def route_after_supervisor(state: State) -> str:
     if state.get("deferred_extra_tasks"):
         return "prepare_secondary_turn"
     return "__end__"
+
+
+# ---------------------------------------------------------------------------
+# Phase 2: unified turn planner routing (active only when ENABLE_TURN_PLANNER).
+# ---------------------------------------------------------------------------
+
+def route_after_plan_tasks(state: State) -> str:
+    """plan_tasks -> dispatch_next_task (or gate if planning yielded nothing)."""
+    if not state.get("planned_tasks"):
+        return "completeness_gate"
+    return "dispatch_next_task"
+
+
+def route_after_dispatch(state: State) -> str:
+    """Route the staged task to its handler by intent.
+
+    dispatch_next_task sets state['intent'] / primary_user_query to the staged
+    task; this edge sends it to the right specialist. Mirrors
+    route_after_prepare_secondary_turn but for the planner's task list.
+    """
+    intent = state.get("intent") or state.get("primary_intent") or ""
+    try:
+        from skills.registry import get_skill_registry
+        registry = get_skill_registry()
+        if registry.skills:
+            skill_routes = registry.get_route_mapping()
+            if intent in skill_routes:
+                target = skill_routes[intent]
+                if target != "rewrite_query":
+                    return target
+    except Exception:
+        pass
+    _MAP = {
+        "appointment": "handle_appointment_skill",
+        "cancel_appointment": "handle_appointment_skill",
+        "triage": "recommend_department",
+        "medical_rag": "rewrite_query",
+        "clarification": "rewrite_query",
+    }
+    if intent in _MAP:
+        return _MAP[intent]
+    # greeting / unknown: terminal - remaining planned tasks are not drained
+    # (greeting is terminal in both flag-on and flag-off modes).
+    return "__end__" if intent == "greeting" else "rewrite_query"
+
+
+def route_to_next_or_gate(state: State) -> str:
+    """After advance_task records the just-finished task: dispatch the next
+    undone planned task, or go to completeness_gate if all are done.
+    """
+    done = set()
+    for r in (state.get("task_results") or []):
+        if isinstance(r, dict) and r.get("id") is not None:
+            try:
+                done.add(int(r.get("id")))
+            except (TypeError, ValueError):
+                continue
+    for t in (state.get("planned_tasks") or []):
+        if not isinstance(t, dict):
+            continue
+        try:
+            tid = int(t.get("id", -1))
+        except (TypeError, ValueError):
+            continue
+        if tid not in done:
+            return "dispatch_next_task"
+    return "completeness_gate"

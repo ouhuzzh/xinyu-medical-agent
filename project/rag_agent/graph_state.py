@@ -55,6 +55,11 @@ class State(MessagesState):
     # prepare_secondary_turn pops one per turn so 3+ segment compounds are answered
     # across turns instead of silently dropped.
     deferred_extra_tasks: List[dict] = []
+    # Phase 2 turn planner: LLM-produced cross-intent task list + drained results.
+    # dispatch_next_task pops the next undone task; completeness_gate checks coverage.
+    planned_tasks: List[dict] = []
+    task_results: Annotated[List[dict], accumulate_or_reset] = []
+    planner_replan_count: int = 0
     recommended_department: str = ""
     appointment_context: Dict[str, str] = {}
     appointment_skill_mode: str = ""

@@ -107,6 +107,14 @@ SELF_EVAL_DEGRADE_THRESHOLD = float(os.environ.get("SELF_EVAL_DEGRADE_THRESHOLD"
 ENABLE_COMPOUND_QUEUE = os.environ.get("ENABLE_COMPOUND_QUEUE", "true").lower() == "true"
 MAX_COMPOUND_SEGMENTS = int(os.environ.get("MAX_COMPOUND_SEGMENTS", "5"))
 
+# Phase 2: unified turn planner - LLM-based cross-intent compound decomposition
+# replacing the rule-based split. Produces a planned_tasks list drained by
+# dispatch_next_task, with a completeness gate. Opt-in: default false until
+# validated (adds one light-LLM call per turn). When false, Phase 1's rule-based
+# compound queue + supervisor remain active.
+ENABLE_TURN_PLANNER = os.environ.get("ENABLE_TURN_PLANNER", "false").lower() == "true"
+MAX_PLANNED_TASKS = int(os.environ.get("MAX_PLANNED_TASKS", "4"))
+
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "")
 OPENAI_ENABLE_THINKING = os.environ.get("OPENAI_ENABLE_THINKING", "false").lower() == "true"
