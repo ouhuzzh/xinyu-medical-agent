@@ -158,6 +158,14 @@ class TestL2Embedding(unittest.TestCase):
             cls.embedder._lazy_init()
         except Exception as e:
             raise unittest.SkipTest(f"Embedding model not available: {e}")
+        # _lazy_init swallows model-load failures (e.g. missing embedding API
+        # key) and leaves centroids empty - detect that and skip rather than
+        # fail every assertion with empty/None classifications.
+        if not getattr(cls.embedder, "_centroids", None):
+            raise unittest.SkipTest(
+                "Embedding model not available: no intent centroids built "
+                "(likely missing embedding API key in the test env)"
+            )
 
     def _classify_l2(self, query: str) -> tuple:
         """Run L1+L2 pipeline on a query."""
