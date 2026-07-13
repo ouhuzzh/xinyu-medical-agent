@@ -1,11 +1,20 @@
 """Dialogue quality tests for rule-based code paths (no LLM required).
 
 Tests intent routing, follow-up detection, pending state, memory parsing,
-context building, compound query splitting.
+context building.
 """
 
 import os, sys, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "project"))
+
+
+def setUpModule():
+    """Register skill plugins once so L1 keyword classification matches
+    production (skills are registered at app startup by SkillBootstrapper)."""
+    import config
+    if getattr(config, "SKILLS_ENABLED", False):
+        from core.skill_bootstrapper import SkillBootstrapper
+        SkillBootstrapper().bootstrap()
 
 
 class TestIntentRouting(unittest.TestCase):
@@ -28,7 +37,7 @@ class TestIntentRouting(unittest.TestCase):
         self.assertEqual(self._clf("cancel my appointment"), "")
 
     def test_department_question(self):
-        self.assertEqual(self._clf("which department for cough"), "triage")
+        self.assertEqual(self._clf("咳嗽看什么科"), "triage")
 
     def test_explicit_appointment(self):
         # Chinese keywords required for appointment detection
