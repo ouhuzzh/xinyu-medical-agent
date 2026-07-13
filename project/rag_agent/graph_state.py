@@ -51,6 +51,10 @@ class State(MessagesState):
     clarification_attempts: int = 0
     clarification_target: str = ""
     deferred_user_question: str = ""
+    # Compound-request drain queue: segments beyond the 2nd, each {"intent","query"}.
+    # prepare_secondary_turn pops one per turn so 3+ segment compounds are answered
+    # across turns instead of silently dropped.
+    deferred_extra_tasks: List[dict] = []
     recommended_department: str = ""
     appointment_context: Dict[str, str] = {}
     appointment_skill_mode: str = ""

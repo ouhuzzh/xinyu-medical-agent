@@ -101,6 +101,12 @@ ENABLE_MULTI_AGENT_SUPERVISOR = os.environ.get("ENABLE_MULTI_AGENT_SUPERVISOR", 
 ENABLE_SELF_EVAL = os.environ.get("ENABLE_SELF_EVAL", "true").lower() == "true"
 SELF_EVAL_DEGRADE_THRESHOLD = float(os.environ.get("SELF_EVAL_DEGRADE_THRESHOLD", "0.6"))
 
+# Compound-request queue - drain 3+ segment compounds across turns instead of
+# silently dropping them, and drop the intent-pair whitelist so any compound
+# intent pair is honored. When false, reverts to the legacy [:2] cap + whitelist.
+ENABLE_COMPOUND_QUEUE = os.environ.get("ENABLE_COMPOUND_QUEUE", "true").lower() == "true"
+MAX_COMPOUND_SEGMENTS = int(os.environ.get("MAX_COMPOUND_SEGMENTS", "5"))
+
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "")
 OPENAI_ENABLE_THINKING = os.environ.get("OPENAI_ENABLE_THINKING", "false").lower() == "true"

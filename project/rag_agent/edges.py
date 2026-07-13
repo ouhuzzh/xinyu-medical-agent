@@ -178,12 +178,17 @@ def route_after_action(state: State) -> Literal["request_clarification", "prepar
     Priority: pending clarification > secondary turn > supervisor loop > END.
     The supervisor_active branch (P4) is lowest priority so that explicit
     pending/secondary signals (stronger closure intents) win.
+
+    The secondary-turn branch also fires when deferred_extra_tasks is non-empty
+    (compound drain queue), so 3+ segment compounds continue draining across
+    turns instead of ending with unaddressed segments.
     """
     if state.get("pending_clarification") and state.get("clarification_target"):
         return "request_clarification"
+    has_pending_secondary = bool(state.get("secondary_intent") and state.get("deferred_user_question"))
+    has_queued_extras = bool(state.get("deferred_extra_tasks"))
     if (
-        state.get("secondary_intent")
-        and state.get("deferred_user_question")
+        (has_pending_secondary or has_queued_extras)
         and not state.get("pending_clarification")
         and not state.get("pending_action_type")
         and not state.get("pending_candidates")
@@ -310,16 +315,34 @@ def _next_after_grounding() -> Literal["__end__", "supervise", "self_eval"]:
     return "supervise" if config.ENABLE_MULTI_AGENT_SUPERVISOR else "__end__"
 
 
-def route_after_self_eval(state: State) -> Literal["supervise", "__end__"]:
-    """P5: after self-eval, continue to the P4 supervisor (or END if disabled)."""
-    return "supervise" if config.ENABLE_MULTI_AGENT_SUPERVISOR else "__end__"
+def route_after_self_eval(state: State) -> Literal["supervise", "__end__", "prepare_secondary_turn"]:
+    """P5: after self-eval, continue to the P4 supervisor (or END if disabled).
+
+    When the supervisor is disabled, drain any remaining compound segments
+    (deferred_extra_tasks) before ending, so 3+ segment compounds aren't cut
+    short. (With the supervisor on, draining happens at route_after_supervisor.)
+    """
+    if config.ENABLE_MULTI_AGENT_SUPERVISOR:
+        return "supervise"
+    if state.get("deferred_extra_tasks"):
+        return "prepare_secondary_turn"
+    return "__end__"
 
 
 def route_after_supervisor(state: State) -> str:
-    """P4: dispatch the supervisor's chosen agent, or finish."""
+    """P4: dispatch the supervisor's chosen agent, or finish.
+
+    Compound drain: when the supervisor is done (FINISH) but deferred_extra_tasks
+    still holds undrained segments, route to prepare_secondary_turn to drain the
+    next one instead of ending the turn. This is the medical-path terminal drain
+    point (action-path draining happens at route_after_action).
+    """
     nxt = str(state.get("supervisor_next", "FINISH") or "FINISH").strip()
     if nxt == "appointment":
         return "handle_appointment_skill"
     if nxt == "triage":
         return "recommend_department"
+    # FINISH: drain any remaining compound segments before ending.
+    if state.get("deferred_extra_tasks"):
+        return "prepare_secondary_turn"
     return "__end__"
