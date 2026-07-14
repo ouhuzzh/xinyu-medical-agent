@@ -90,13 +90,13 @@ def _apply(state, update):
 
 class TestPlanTasks(unittest.TestCase):
     def test_compound_yields_multiple_tasks(self):
-        from project.rag_agent.rag_nodes import plan_tasks
+        from project.rag_agent.planner_nodes import plan_tasks
         parser = MagicMock()
         parser.invoke.return_value = _verdict([
             ("appointment", "挂号皮肤科"),
             ("medical_rag", "湿疹如何护理"),
         ])
-        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser):
+        with patch("project.rag_agent.planner_nodes._structured_output_llm", return_value=parser):
             result = plan_tasks(_make_state(), MagicMock())
         self.assertEqual(len(result["planned_tasks"]), 2)
         self.assertEqual([t["id"] for t in result["planned_tasks"]], [0, 1])
@@ -104,38 +104,38 @@ class TestPlanTasks(unittest.TestCase):
         self.assertEqual(result["planned_tasks"][1]["query"], "湿疹如何护理")
 
     def test_single_intent_yields_one_task(self):
-        from project.rag_agent.rag_nodes import plan_tasks
+        from project.rag_agent.planner_nodes import plan_tasks
         parser = MagicMock()
         parser.invoke.return_value = _verdict([("medical_rag", "高血压怎么控制")])
-        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser):
+        with patch("project.rag_agent.planner_nodes._structured_output_llm", return_value=parser):
             result = plan_tasks(_make_state(primary_user_query="高血压怎么控制"), MagicMock())
         self.assertEqual(len(result["planned_tasks"]), 1)
 
     def test_llm_failure_falls_back_to_single_task(self):
-        from project.rag_agent.rag_nodes import plan_tasks
+        from project.rag_agent.planner_nodes import plan_tasks
         parser = MagicMock()
         parser.invoke.side_effect = RuntimeError("LLM down")
-        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser):
+        with patch("project.rag_agent.planner_nodes._structured_output_llm", return_value=parser):
             result = plan_tasks(_make_state(), MagicMock())
         self.assertEqual(len(result["planned_tasks"]), 1)
         self.assertEqual(result["planned_tasks"][0]["intent"], "medical_rag")
 
     def test_empty_verdict_falls_back_to_single_task(self):
-        from project.rag_agent.rag_nodes import plan_tasks
+        from project.rag_agent.planner_nodes import plan_tasks
         parser = MagicMock()
         parser.invoke.return_value = _verdict([])
-        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser):
+        with patch("project.rag_agent.planner_nodes._structured_output_llm", return_value=parser):
             result = plan_tasks(_make_state(), MagicMock())
         self.assertEqual(len(result["planned_tasks"]), 1)
 
     def test_respects_max_planned_tasks(self):
         import config
-        from project.rag_agent.rag_nodes import plan_tasks
+        from project.rag_agent.planner_nodes import plan_tasks
         parser = MagicMock()
         parser.invoke.return_value = _verdict([
             ("medical_rag", f"问题{i}") for i in range(10)
         ])
-        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser):
+        with patch("project.rag_agent.planner_nodes._structured_output_llm", return_value=parser):
             result = plan_tasks(_make_state(), MagicMock())
         self.assertEqual(len(result["planned_tasks"]), config.MAX_PLANNED_TASKS)
 
@@ -149,7 +149,7 @@ class TestDispatchNextTask(unittest.TestCase):
         ]
 
     def test_first_task_staged_without_message_injection(self):
-        from project.rag_agent.rag_nodes import dispatch_next_task
+        from project.rag_agent.planner_nodes import dispatch_next_task
         state = _make_state(planned_tasks=self._planned(), task_results=[])
         update = dispatch_next_task(state)
         self.assertEqual(update["intent"], "appointment")
@@ -162,7 +162,7 @@ class TestDispatchNextTask(unittest.TestCase):
         self.assertEqual(update["agent_answers"], [{"__reset__": True}])
 
     def test_subsequent_task_staged_with_message_injection(self):
-        from project.rag_agent.rag_nodes import dispatch_next_task
+        from project.rag_agent.planner_nodes import dispatch_next_task
         state = _make_state(planned_tasks=self._planned(), task_results=[{"id": 0, "status": "done"}])
         update = dispatch_next_task(state)
         self.assertEqual(update["intent"], "medical_rag")
@@ -171,7 +171,7 @@ class TestDispatchNextTask(unittest.TestCase):
         self.assertTrue(any(isinstance(m, HumanMessage) and m.content == "湿疹护理" for m in update["messages"]))
 
     def test_no_undone_task_returns_empty(self):
-        from project.rag_agent.rag_nodes import dispatch_next_task
+        from project.rag_agent.planner_nodes import dispatch_next_task
         state = _make_state(planned_tasks=self._planned(),
                             task_results=[{"id": 0}, {"id": 1}, {"id": 2}])
         self.assertEqual(dispatch_next_task(state), {})
@@ -179,21 +179,21 @@ class TestDispatchNextTask(unittest.TestCase):
 
 class TestAdvanceTask(unittest.TestCase):
     def test_records_lowest_undone_id(self):
-        from project.rag_agent.rag_nodes import advance_task
+        from project.rag_agent.planner_nodes import advance_task
         planned = [{"id": 0, "intent": "appointment"}, {"id": 1, "intent": "medical_rag"}]
         state = _make_state(planned_tasks=planned, task_results=[])
         result = advance_task(state)
         self.assertEqual(result["task_results"], [{"id": 0, "intent": "appointment", "status": "done"}])
 
     def test_skips_done_records_next(self):
-        from project.rag_agent.rag_nodes import advance_task
+        from project.rag_agent.planner_nodes import advance_task
         planned = [{"id": 0, "intent": "appointment"}, {"id": 1, "intent": "medical_rag"}]
         state = _make_state(planned_tasks=planned, task_results=[{"id": 0, "status": "done"}])
         result = advance_task(state)
         self.assertEqual(result["task_results"], [{"id": 1, "intent": "medical_rag", "status": "done"}])
 
     def test_no_undone_returns_empty(self):
-        from project.rag_agent.rag_nodes import advance_task
+        from project.rag_agent.planner_nodes import advance_task
         planned = [{"id": 0, "intent": "appointment"}]
         state = _make_state(planned_tasks=planned, task_results=[{"id": 0}])
         self.assertEqual(advance_task(state), {})
@@ -201,13 +201,13 @@ class TestAdvanceTask(unittest.TestCase):
 
 class TestCompletenessGate(unittest.TestCase):
     def test_all_done_no_caveat(self):
-        from project.rag_agent.rag_nodes import completeness_gate
+        from project.rag_agent.planner_nodes import completeness_gate
         planned = [{"id": 0, "query": "A"}, {"id": 1, "query": "B"}]
         state = _make_state(planned_tasks=planned, task_results=[{"id": 0}, {"id": 1}])
         self.assertEqual(completeness_gate(state), {})
 
     def test_missing_task_appends_caveat(self):
-        from project.rag_agent.rag_nodes import completeness_gate
+        from project.rag_agent.planner_nodes import completeness_gate
         planned = [{"id": 0, "query": "挂号皮肤科"}, {"id": 1, "query": "湿疹护理"}]
         state = _make_state(planned_tasks=planned, task_results=[{"id": 0}])
         result = completeness_gate(state)
@@ -217,7 +217,7 @@ class TestCompletenessGate(unittest.TestCase):
         self.assertIn("⚠️", result["messages"][0].content)
 
     def test_no_planned_tasks_no_caveat(self):
-        from project.rag_agent.rag_nodes import completeness_gate
+        from project.rag_agent.planner_nodes import completeness_gate
         self.assertEqual(completeness_gate(_make_state(planned_tasks=[])), {})
 
 
@@ -255,7 +255,7 @@ class TestEndToEndDrain(unittest.TestCase):
         ]
 
     def test_three_tasks_drain_to_completion(self):
-        from project.rag_agent.rag_nodes import dispatch_next_task, advance_task, completeness_gate
+        from project.rag_agent.planner_nodes import dispatch_next_task, advance_task, completeness_gate
         from project.rag_agent.edges import route_to_next_or_gate
         state = _make_state(planned_tasks=self._planned(), task_results=[])
 
@@ -285,7 +285,7 @@ class TestEndToEndDrain(unittest.TestCase):
 
     def test_drain_then_gate_flags_missing_task(self):
         """If a handler is skipped (advance never records its task), the gate names it."""
-        from project.rag_agent.rag_nodes import dispatch_next_task, advance_task, completeness_gate
+        from project.rag_agent.planner_nodes import dispatch_next_task, advance_task, completeness_gate
         from project.rag_agent.edges import route_to_next_or_gate
         planned = [{"id": 0, "intent": "appointment", "query": "挂号"},
                    {"id": 1, "intent": "medical_rag", "query": "湿疹护理"}]

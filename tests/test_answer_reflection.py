@@ -46,26 +46,26 @@ class TestGroundingCritiqueSchema(unittest.TestCase):
 class TestAnswerGroundingCheck(unittest.TestCase):
     def test_fast_path_writes_grounding_passed_true(self):
         """Strong evidence fast-path → skip ground_answer, write grounding_passed=True."""
-        from project.rag_agent.rag_nodes import answer_grounding_check
+        from project.rag_agent.grounding_nodes import answer_grounding_check
         state = _make_main_state(
             [AIMessage(content="某回答")],
             agent_answers=[{"confidence_bucket": "high", "evidence_score": 0.9, "answer": "证据", "source": "src"}],
             grounding_evidence_score=0.9,
         )
-        with patch("project.rag_agent.rag_nodes.ground_answer") as mock_g:
+        with patch("project.rag_agent.grounding_nodes.ground_answer") as mock_g:
             result = answer_grounding_check(state, MagicMock())
             mock_g.assert_not_called()
         self.assertEqual(result, {"grounding_passed": True})
 
     def test_grounded_true_returns_passed_true_no_overwrite(self):
         """ground_answer says grounded=True (revised==current) → grounding_passed=True, no message append."""
-        from project.rag_agent.rag_nodes import answer_grounding_check
+        from project.rag_agent.grounding_nodes import answer_grounding_check
         state = _make_main_state(
             [AIMessage(content="有证据的回答")],
             agent_answers=[{"confidence_bucket": "low", "evidence_score": 0.5, "answer": "证据文本", "source": "src"}],
             grounding_evidence_score=0.5,
         )
-        with patch("project.rag_agent.rag_nodes.ground_answer",
+        with patch("project.rag_agent.grounding_nodes.ground_answer",
                    return_value={"grounded": True, "revised_answer": "有证据的回答", "note": "grounded"}):
             result = answer_grounding_check(state, MagicMock())
         self.assertTrue(result["grounding_passed"])
@@ -73,13 +73,13 @@ class TestAnswerGroundingCheck(unittest.TestCase):
 
     def test_not_grounded_appends_disclaimer_and_marks_false(self):
         """ground_answer says grounded=False → append disclaimer version, grounding_passed=False."""
-        from project.rag_agent.rag_nodes import answer_grounding_check
+        from project.rag_agent.grounding_nodes import answer_grounding_check
         state = _make_main_state(
             [AIMessage(content="超证据回答")],
             agent_answers=[{"confidence_bucket": "low", "evidence_score": 0.5, "answer": "证据", "source": "src"}],
             grounding_evidence_score=0.5,
         )
-        with patch("project.rag_agent.rag_nodes.ground_answer",
+        with patch("project.rag_agent.grounding_nodes.ground_answer",
                    return_value={"grounded": False, "revised_answer": "超证据回答【声明】", "note": "low_confidence_guardrail"}):
             result = answer_grounding_check(state, MagicMock())
         self.assertFalse(result["grounding_passed"])
@@ -90,7 +90,7 @@ class TestAnswerGroundingCheck(unittest.TestCase):
 class TestReviseAnswer(unittest.TestCase):
     def test_llm_rewrite_appends_and_increments_round(self):
         """LLM returns a valid critique+rewrite → rewrite appended, critique recorded, rounds+1."""
-        from project.rag_agent.rag_nodes import revise_answer
+        from project.rag_agent.grounding_nodes import revise_answer
         from project.rag_agent.schemas import GroundingCritique
         state = _make_main_state(
             [AIMessage(content="超证据回答")],
@@ -99,8 +99,8 @@ class TestReviseAnswer(unittest.TestCase):
         )
         parser = MagicMock()
         parser.invoke.return_value = GroundingCritique(critique="第三句剂量推荐超证据", revised_answer="收窄版回答")
-        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser), \
-             patch("project.rag_agent.rag_nodes.ground_answer",
+        with patch("project.rag_agent.grounding_nodes._structured_output_llm", return_value=parser), \
+             patch("project.rag_agent.grounding_nodes.ground_answer",
                    return_value={"grounded": False, "revised_answer": "fallback声明版", "note": "low_confidence_guardrail"}):
             result = revise_answer(state, MagicMock())
         self.assertEqual(result["messages"][0].content, "收窄版回答")
@@ -109,7 +109,7 @@ class TestReviseAnswer(unittest.TestCase):
 
     def test_empty_llm_result_falls_back_to_ground_answer(self):
         """LLM returns empty (default-on-failure shape) → use ground_answer.revised_answer + note."""
-        from project.rag_agent.rag_nodes import revise_answer
+        from project.rag_agent.grounding_nodes import revise_answer
         from project.rag_agent.schemas import GroundingCritique
         state = _make_main_state(
             [AIMessage(content="超证据回答")],
@@ -118,8 +118,8 @@ class TestReviseAnswer(unittest.TestCase):
         )
         parser = MagicMock()
         parser.invoke.return_value = GroundingCritique(critique="", revised_answer="")
-        with patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser), \
-             patch("project.rag_agent.rag_nodes.ground_answer",
+        with patch("project.rag_agent.grounding_nodes._structured_output_llm", return_value=parser), \
+             patch("project.rag_agent.grounding_nodes.ground_answer",
                    return_value={"grounded": False, "revised_answer": "fallback声明版", "note": "low_confidence_guardrail"}):
             result = revise_answer(state, MagicMock())
         self.assertEqual(result["messages"][0].content, "fallback声明版")
@@ -165,7 +165,7 @@ class TestCompiledGroundingLoop(unittest.TestCase):
     def _build_graph(self, llm):
         from langgraph.graph import StateGraph, START, END
         from project.rag_agent.graph_state import State
-        from project.rag_agent.rag_nodes import answer_grounding_check, revise_answer
+        from project.rag_agent.grounding_nodes import answer_grounding_check, revise_answer
         from project.rag_agent.edges import route_after_grounding
         from functools import partial
 
@@ -205,8 +205,8 @@ class TestCompiledGroundingLoop(unittest.TestCase):
         ]
         parser = MagicMock()
         parser.invoke.return_value = GroundingCritique(critique="超证据", revised_answer="收窄版回答")
-        with patch("project.rag_agent.rag_nodes.ground_answer", side_effect=ground_results), \
-             patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser):
+        with patch("project.rag_agent.grounding_nodes.ground_answer", side_effect=ground_results), \
+             patch("project.rag_agent.grounding_nodes._structured_output_llm", return_value=parser):
             graph, sink = self._build_graph(MagicMock())
             state = _make_main_state(
                 [AIMessage(content="超证据")],
@@ -227,8 +227,8 @@ class TestCompiledGroundingLoop(unittest.TestCase):
         ground_result = {"grounded": False, "revised_answer": "答【声明】", "note": "low_confidence_guardrail"}
         parser = MagicMock()
         parser.invoke.return_value = GroundingCritique(critique="仍超证据", revised_answer="重写版")
-        with patch("project.rag_agent.rag_nodes.ground_answer", return_value=ground_result), \
-             patch("project.rag_agent.rag_nodes._structured_output_llm", return_value=parser):
+        with patch("project.rag_agent.grounding_nodes.ground_answer", return_value=ground_result), \
+             patch("project.rag_agent.grounding_nodes._structured_output_llm", return_value=parser):
             graph, sink = self._build_graph(MagicMock())
             state = _make_main_state(
                 [AIMessage(content="超证据")],
@@ -252,7 +252,7 @@ class TestReflectionDisabledRollback(unittest.TestCase):
     def _build_hard_edge_graph(self, llm):
         from langgraph.graph import StateGraph, START, END
         from project.rag_agent.graph_state import State
-        from project.rag_agent.rag_nodes import answer_grounding_check
+        from project.rag_agent.grounding_nodes import answer_grounding_check
         from functools import partial
 
         builder = StateGraph(State)
@@ -270,7 +270,7 @@ class TestReflectionDisabledRollback(unittest.TestCase):
         return builder.compile(), sink
 
     def test_hard_edge_terminates_un_grounded(self):
-        with patch("project.rag_agent.rag_nodes.ground_answer",
+        with patch("project.rag_agent.grounding_nodes.ground_answer",
                    return_value={"grounded": False, "revised_answer": "答【声明】", "note": "low"}):
             graph, sink = self._build_hard_edge_graph(MagicMock())
             state = _make_main_state(
