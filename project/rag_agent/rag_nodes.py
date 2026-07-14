@@ -52,6 +52,9 @@ from .node_helpers import (
     _extract_topic_focus,
     _format_reference_lines,
     _get_user_query,
+    _done_task_ids,
+    _next_undone_task,
+    _undone_tasks,
     _infer_risk_level,
     _looks_like_general_non_medical_query,
     _looks_like_medical_follow_up,
@@ -302,14 +305,13 @@ def reset_turn_state(state: State):
 
     LangGraph's checkpointer persists State across turns. The planner re-plans
     from scratch on each fresh user message, so any leftover planned_tasks /
-    task_results / planner_replan_count is stale and must not bleed into the
-    new turn. Runs before analyze_turn with zero invasion of its return paths.
+    task_results is stale and must not bleed into the new turn. Runs before
+    analyze_turn with zero invasion of its return paths.
     """
     reset = {
         "planned_tasks": [],
         # task_results uses accumulate_or_reset; a __reset__ sentinel clears it.
         "task_results": [{"__reset__": True}],
-        "planner_replan_count": 0,
     }
     return reset
 
@@ -453,29 +455,6 @@ def _planner_user_query(state: State) -> str:
     return q
 
 
-def _done_task_ids(state: State) -> set:
-    return {
-        int(r.get("id", -1))
-        for r in (state.get("task_results") or [])
-        if isinstance(r, dict) and r.get("id") is not None
-    }
-
-
-def _next_undone_task(state: State):
-    """Lowest-id planned task whose id is not in task_results, or None."""
-    done = _done_task_ids(state)
-    for t in (state.get("planned_tasks") or []):
-        if not isinstance(t, dict):
-            continue
-        try:
-            tid = int(t.get("id", -1))
-        except (TypeError, ValueError):
-            continue
-        if tid not in done:
-            return t
-    return None
-
-
 def plan_tasks(state: State, llm):
     """Turn planner: decompose the user's message into an ordered list
     of independent cross-intent tasks. Replaces the legacy rule-based compound split.
@@ -505,7 +484,6 @@ def plan_tasks(state: State, llm):
     def _single(intent: str) -> dict:
         return {
             "planned_tasks": [{"id": 0, "intent": intent or "medical_rag", "query": user_query}],
-            "planner_replan_count": 0,
         }
 
     if not user_query:
@@ -514,7 +492,7 @@ def plan_tasks(state: State, llm):
     try:
         schema_cls = build_turn_plan_schema(intent_labels)
         parser = _structured_output_llm(llm, schema_cls, max_tokens=config.LLM_STRUCTURED_MAX_TOKENS)
-        sys_msg = SystemMessage(content=get_turn_planner_prompt(skill_hints))
+        sys_msg = SystemMessage(content=get_turn_planner_prompt(skill_hints, max_tasks=config.MAX_PLANNED_TASKS))
         user_payload = (
             f"用户消息：{user_query}\n"
             f"对话摘要：{state.get('conversation_summary', '')}\n"
@@ -540,7 +518,7 @@ def plan_tasks(state: State, llm):
     if not tasks:
         return _single(l1_intent)
 
-    return {"planned_tasks": tasks[: config.MAX_PLANNED_TASKS], "planner_replan_count": 0}
+    return {"planned_tasks": tasks[: config.MAX_PLANNED_TASKS]}
 
 
 def dispatch_next_task(state: State):
@@ -606,18 +584,7 @@ def completeness_gate(state: State):
     plan was interrupted by a pending action). Detection-only (no replan -
     replan is Phase 3). When all tasks completed, this is a no-op pass-through.
     """
-    planned = [t for t in (state.get("planned_tasks") or []) if isinstance(t, dict)]
-    if not planned:
-        return {}
-    done = _done_task_ids(state)
-    missing = []
-    for t in planned:
-        try:
-            tid = int(t.get("id", -1))
-        except (TypeError, ValueError):
-            continue
-        if tid not in done:
-            missing.append(str(t.get("query", "") or "").strip())
+    missing = [str(t.get("query", "") or "").strip() for t in _undone_tasks(state)]
     missing = [q for q in missing if q]
     if not missing:
         return {}

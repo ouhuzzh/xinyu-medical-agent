@@ -2,6 +2,7 @@ from typing import Literal
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.types import Send
 from .graph_state import State, AgentState
+from .node_helpers import _next_undone_task
 import config
 from config import MAX_ITERATIONS, MAX_TOOL_CALLS, MAX_EVIDENCE_ROUNDS, MAX_GROUNDING_ROUNDS, MAX_SUB_QUESTIONS
 
@@ -328,20 +329,4 @@ def route_to_next_or_gate(state: State) -> str:
     """After advance_task records the just-finished task: dispatch the next
     undone planned task, or go to completeness_gate if all are done.
     """
-    done = set()
-    for r in (state.get("task_results") or []):
-        if isinstance(r, dict) and r.get("id") is not None:
-            try:
-                done.add(int(r.get("id")))
-            except (TypeError, ValueError):
-                continue
-    for t in (state.get("planned_tasks") or []):
-        if not isinstance(t, dict):
-            continue
-        try:
-            tid = int(t.get("id", -1))
-        except (TypeError, ValueError):
-            continue
-        if tid not in done:
-            return "dispatch_next_task"
-    return "completeness_gate"
+    return "dispatch_next_task" if _next_undone_task(state) else "completeness_gate"

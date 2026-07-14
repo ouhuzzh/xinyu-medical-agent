@@ -140,8 +140,7 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     # user on the first token.
     graph_builder.add_edge(START, "reset_turn_state")
     graph_builder.add_edge("reset_turn_state", "analyze_turn")
-    # Conditional: rules inconclusive → skip intent_router, go direct to rewrite_query.
-    # Rules explicit (greeting/cancel/appt/triage/mcp) → intent_router for final routing.
+    # Resume branches (primary_intent set) route to intent_router; fresh turns route to plan_tasks.
     _analyze_map = {
         "intent_router": "intent_router",
         "plan_tasks": "plan_tasks",

@@ -29,7 +29,6 @@ class TestStateFields(unittest.TestCase):
         from project.rag_agent.graph_state import State
         self.assertIn("planned_tasks", State.__annotations__)
         self.assertIn("task_results", State.__annotations__)
-        self.assertIn("planner_replan_count", State.__annotations__)
 
 
 class TestSchemas(unittest.TestCase):
@@ -307,7 +306,6 @@ class TestResetSupervisorStatePlanner(unittest.TestCase):
         self.assertEqual(result["planned_tasks"], [])
         # task_results cleared via __reset__ sentinel.
         self.assertEqual(result["task_results"], [{"__reset__": True}])
-        self.assertEqual(result["planner_replan_count"], 0)
 
 
 if __name__ == "__main__":

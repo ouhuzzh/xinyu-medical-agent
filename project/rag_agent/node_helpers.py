@@ -770,6 +770,36 @@ def _get_user_query(state: State) -> str:
     return state.get("primary_user_query") or str(last_message.content).strip()
 
 
+def _done_task_ids(state: State) -> set:
+    """Ids of planned tasks recorded as done in task_results."""
+    return {
+        int(r.get("id", -1))
+        for r in (state.get("task_results") or [])
+        if isinstance(r, dict) and r.get("id") is not None
+    }
+
+
+def _undone_tasks(state: State) -> list:
+    """Planned tasks whose id is not in task_results, in plan order."""
+    done = _done_task_ids(state)
+    out = []
+    for t in (state.get("planned_tasks") or []):
+        if not isinstance(t, dict):
+            continue
+        try:
+            tid = int(t.get("id", -1))
+        except (TypeError, ValueError):
+            continue
+        if tid not in done:
+            out.append(t)
+    return out
+
+
+def _next_undone_task(state: State):
+    """Lowest-id planned task whose id is not in task_results, or None."""
+    return next(iter(_undone_tasks(state)), None)
+
+
 def _get_appointment_context(state: State) -> dict:
     return dict(state.get("appointment_context") or {})
 

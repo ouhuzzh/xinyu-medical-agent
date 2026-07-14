@@ -448,7 +448,7 @@ def get_task_decomposition_prompt() -> str:
     )
 
 
-def get_turn_planner_prompt(skill_hints: list[tuple[str, str]] | None = None) -> str:
+def get_turn_planner_prompt(skill_hints: list[tuple[str, str]] | None = None, max_tasks: int = 4) -> str:
     """System prompt for the plan_tasks node (Phase 2 turn planner).
 
     Decomposes the user's latest message into an ordered list of independent
@@ -485,7 +485,7 @@ def get_turn_planner_prompt(skill_hints: list[tuple[str, str]] | None = None) ->
         "- 同一意图的多个医学 facet（如「高血压用药 + 血压监测」）-> 合并为 1 个 medical_rag 任务"
         "（内部子问题由下游并行检索处理，不要在这里拆）。\n"
         "- 每个 query 必须自足、不依赖其他任务即可理解。\n"
-        "- 最多 4 个任务，顺序按用户提及先后。\n\n"
+        f"- 最多 {max_tasks} 个任务，顺序按用户提及先后。\n\n"
         "严格输出 JSON，不要输出多余文字：\n"
         '{"tasks": [{"intent": "medical_rag", "query": "..."}], "reason": "简短依据"}'
     )

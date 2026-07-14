@@ -51,7 +51,6 @@ class State(MessagesState):
     # dispatch_next_task pops the next undone task; completeness_gate checks coverage.
     planned_tasks: List[dict] = []
     task_results: Annotated[List[dict], accumulate_or_reset] = []
-    planner_replan_count: int = 0
     recommended_department: str = ""
     appointment_context: Dict[str, str] = {}
     appointment_skill_mode: str = ""
