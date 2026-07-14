@@ -800,6 +800,32 @@ def _next_undone_task(state: State):
     return next(iter(_undone_tasks(state)), None)
 
 
+def collect_skill_hints() -> tuple[list, list]:
+    """Collect (skill_hints, intent_labels) from the skill registry for dynamic
+    schema/prompt building. Returns ([], None) when the registry is unavailable."""
+    try:
+        from skills.registry import get_skill_registry
+        _reg = get_skill_registry()
+        return _reg.collect_llm_hints(), _reg.build_intent_labels()
+    except Exception:
+        return [], None
+
+
+def _clear_per_task_rag_state() -> dict:
+    """Reset dict clearing per-task medical-RAG fields so task N+1 doesn't see
+    task N's leftovers. Reducer-backed lists use the __reset__ sentinel."""
+    return {
+        "sub_questions": [],
+        "agent_answers": [{"__reset__": True}],
+        "rewrittenQuestions": [],
+        "questionIsClear": False,
+        "grounding_passed": False,
+        "grounding_rounds": 0,
+        "grounding_critique": "",
+        "grounding_evidence_score": None,
+    }
+
+
 def _get_appointment_context(state: State) -> dict:
     return dict(state.get("appointment_context") or {})
 

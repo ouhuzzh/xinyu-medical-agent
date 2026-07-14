@@ -17,23 +17,34 @@ def route_after_analyze_turn(state: State) -> Literal["intent_router", "plan_tas
     return "plan_tasks"
 
 
-def route_after_intent(state: State) -> str:
-    """Route based on intent.  Prefers skill-registered routes, falls back
-    to legacy static routes when the skill registry is not available."""
-    intent = state.get("intent", "")
+def _skill_route_target(intent: str, *, exclude_rewrite: bool = False) -> str | None:
+    """Return the skill-registered handler node for intent, or None.
 
-    # Check skill-registered routes first (single source of truth)
+    Skills are the single source of truth; returns None when the registry is
+    unavailable or the intent has no skill route. ``exclude_rewrite`` skips
+    ``rewrite_query`` for edges that must not re-enter the RAG pipeline.
+    """
     try:
         from skills.registry import get_skill_registry
         registry = get_skill_registry()
         if registry.skills:
             skill_routes = registry.get_route_mapping()
             if intent in skill_routes:
-                return skill_routes[intent]
+                target = skill_routes[intent]
+                if not (exclude_rewrite and target == "rewrite_query"):
+                    return target
     except Exception:
         pass
+    return None
 
-    # Legacy fallback — used when skill registry is not available or disabled
+
+def route_after_intent(state: State) -> str:
+    """Route based on intent.  Prefers skill-registered routes, falls back
+    to legacy static routes when the skill registry is not available."""
+    intent = state.get("intent", "")
+    target = _skill_route_target(intent)
+    if target:
+        return target
     _LEGACY_ROUTES = {
         "greeting": "__end__",
         "triage": "recommend_department",
@@ -43,8 +54,6 @@ def route_after_intent(state: State) -> str:
     }
     if intent in _LEGACY_ROUTES:
         return _LEGACY_ROUTES[intent]
-
-    # Default: medical RAG pipeline
     return "rewrite_query"
 
 
@@ -59,21 +68,9 @@ def route_after_rewrite(state: State) -> str:
         return "request_clarification"
 
     intent = state.get("intent", "medical_rag")
-
-    # Check skill-registered routes first (single source of truth)
-    try:
-        from skills.registry import get_skill_registry
-        registry = get_skill_registry()
-        if registry.skills:
-            skill_routes = registry.get_route_mapping()
-            if intent in skill_routes:
-                target = skill_routes[intent]
-                if target != "rewrite_query":
-                    return target
-    except Exception:
-        pass
-
-    # Legacy fallback for when skill registry is unavailable
+    target = _skill_route_target(intent, exclude_rewrite=True)
+    if target:
+        return target
     _LEGACY_ROUTES = {
         "appointment": "handle_appointment_skill",
         "cancel_appointment": "handle_appointment_skill",
@@ -82,7 +79,6 @@ def route_after_rewrite(state: State) -> str:
     }
     if intent in _LEGACY_ROUTES:
         return _LEGACY_ROUTES[intent]
-
     # Default: medical RAG pipeline (P3: decompose into sub-questions first)
     return "decompose_tasks"
 
@@ -300,17 +296,9 @@ def route_after_dispatch(state: State) -> str:
     task; this edge sends it to the right specialist.
     """
     intent = state.get("intent") or state.get("primary_intent") or ""
-    try:
-        from skills.registry import get_skill_registry
-        registry = get_skill_registry()
-        if registry.skills:
-            skill_routes = registry.get_route_mapping()
-            if intent in skill_routes:
-                target = skill_routes[intent]
-                if target != "rewrite_query":
-                    return target
-    except Exception:
-        pass
+    target = _skill_route_target(intent, exclude_rewrite=True)
+    if target:
+        return target
     _MAP = {
         "appointment": "handle_appointment_skill",
         "cancel_appointment": "handle_appointment_skill",

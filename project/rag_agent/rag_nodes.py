@@ -55,6 +55,8 @@ from .node_helpers import (
     _done_task_ids,
     _next_undone_task,
     _undone_tasks,
+    collect_skill_hints,
+    _clear_per_task_rag_state,
     _infer_risk_level,
     _looks_like_general_non_medical_query,
     _looks_like_medical_follow_up,
@@ -467,15 +469,11 @@ def plan_tasks(state: State, llm):
     """
     user_query = _planner_user_query(state)
 
-    skill_hints = []
-    intent_labels = None
+    skill_hints, intent_labels = collect_skill_hints()
     l1_intent = ""
     try:
         from skills.registry import get_skill_registry
-        _reg = get_skill_registry()
-        skill_hints = _reg.collect_llm_hints()
-        intent_labels = _reg.build_intent_labels()
-        l1_match = _reg.classify_by_keywords(user_query)
+        l1_match = get_skill_registry().classify_by_keywords(user_query)
         if l1_match:
             l1_intent = l1_match[0]
     except Exception:
@@ -546,14 +544,7 @@ def dispatch_next_task(state: State):
         "primary_user_query": query,
         "originalQuery": query,
         # Per-task RAG state reset (avoid bleeding task N into task N+1).
-        "sub_questions": [],
-        "agent_answers": [{"__reset__": True}],
-        "rewrittenQuestions": [],
-        "questionIsClear": False,
-        "grounding_passed": False,
-        "grounding_rounds": 0,
-        "grounding_critique": "",
-        "grounding_evidence_score": None,
+        **_clear_per_task_rag_state(),
         # Clear Phase 1 compound fields so they don't interfere.
         "secondary_intent": "",
         "deferred_user_question": "",

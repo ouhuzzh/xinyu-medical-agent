@@ -17,7 +17,7 @@ from typing import Callable, Iterable, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage
 from rag_agent.tools import ToolFactory
-from rag_agent.routing_nodes import _classify_query_pipeline
+from rag_agent.routing_nodes import classify_query_offline
 
 
 logger = logging.getLogger(__name__)
@@ -370,30 +370,11 @@ class RetrievalQualityEvaluator:
         _route_msgs = route_state.get("messages") or []
         if _route_msgs:
             _route_query = str(getattr(_route_msgs[-1], "content", "") or "")
-        _intent, _conf, _reason = _classify_query_pipeline(
+        route_result = classify_query_offline(
             _route_query,
             conversation_summary=route_state.get("conversation_summary", ""),
-            recent_context="",
             topic_focus=route_state.get("topic_focus", ""),
         )
-        route_result = {
-            "primary_intent": _intent,
-            "secondary_intent": "",
-            "decision_source": _reason,
-            "route_reason": _reason,
-            "intent_confidence": float(_conf),
-        }
-        if not route_result.get("primary_intent"):
-            # In the compiled graph an inconclusive rule pass goes directly to
-            # ``rewrite_query``, i.e. the medical-RAG path.  Preserve that
-            # graph-level default in offline route metrics instead of
-            # incorrectly recording an empty intent.
-            route_result = {
-                **route_result,
-                "primary_intent": "medical_rag",
-                "decision_source": "graph_default",
-                "route_reason": "rule_inconclusive_default_rag",
-            }
 
         import time as _time
         t0 = _time.perf_counter()

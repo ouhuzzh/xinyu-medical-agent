@@ -26,6 +26,7 @@ from .node_helpers import (
     _build_history_reset_messages,
     _build_recent_context,
     _clear_pending_action_state,
+    collect_skill_hints,
     _extract_topic_focus,
     _get_user_query,
     _infer_risk_level,
@@ -188,6 +189,35 @@ def _classify_query_by_rules(
     except Exception:
         pass
     return ("", "rule_inconclusive")
+
+
+def classify_query_offline(query: str, *, conversation_summary: str = "", topic_focus: str = "") -> dict:
+    """Offline route classification (L1/L2 only) for benchmarking/eval.
+
+    analyze_turn defers to the LLM turn planner, which can't run offline, so
+    offline route metrics use the L1/L2 classifier directly - the same
+    classifier the planner consults for L1 hints. Returns a route_result dict
+    matching analyze_turn's shape; an inconclusive result defaults to
+    medical_rag (the compiled graph's inconclusive -> rewrite_query path).
+    """
+    intent, conf, reason = _classify_query_pipeline(
+        query, conversation_summary=conversation_summary, recent_context="", topic_focus=topic_focus,
+    )
+    if not intent:
+        return {
+            "primary_intent": "medical_rag",
+            "secondary_intent": "",
+            "decision_source": "graph_default",
+            "route_reason": "rule_inconclusive_default_rag",
+            "intent_confidence": 0.0,
+        }
+    return {
+        "primary_intent": intent,
+        "secondary_intent": "",
+        "decision_source": reason,
+        "route_reason": reason,
+        "intent_confidence": float(conf),
+    }
 
 
 def _looks_like_appointment_update(user_query: str) -> bool:
@@ -523,15 +553,7 @@ def intent_router(state: State, llm):
 
     try:
         # Collect skill L3 hints and intent labels for dynamic schema + prompt
-        skill_hints = []
-        intent_labels = None
-        try:
-            from skills.registry import get_skill_registry
-            _reg = get_skill_registry()
-            skill_hints = _reg.collect_llm_hints()
-            intent_labels = _reg.build_intent_labels()
-        except Exception:
-            pass
+        skill_hints, intent_labels = collect_skill_hints()
 
         # Build dynamic schema with Literal[intent_labels] if available
         schema_cls = build_intent_analysis_schema(intent_labels) if intent_labels else IntentAnalysis
