@@ -23,6 +23,15 @@ from benchmarks.evaluate_acceptance_report import build_acceptance_report
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# These benchmarks need the bundled NHC/WHO corpus under markdown_docs/.
+_HAS_BENCHMARK_DOCS = bool(
+    list((REPO_ROOT / "markdown_docs").glob("who-*.md"))
+    or list((REPO_ROOT / "markdown_docs").glob("nhc-*.md"))
+)
+_BENCHMARK_DOC_SKIP = unittest.skipUnless(
+    _HAS_BENCHMARK_DOCS, "needs markdown_docs benchmark corpus (who-*.md / nhc-*.md)"
+)
+
 
 class ResumeBenchmarkTests(unittest.TestCase):
     def test_memory_benchmark_returns_positive_average_reduction(self):
@@ -33,6 +42,7 @@ class ResumeBenchmarkTests(unittest.TestCase):
         self.assertGreater(report["summary"]["avg_token_reduction_rate"], 0.0)
         self.assertGreater(report["summary"]["p95_token_reduction_rate"], 0.0)
 
+    @_BENCHMARK_DOC_SKIP
     def test_medical_rag_benchmark_shows_precision_uplift(self):
         doc_paths = sorted((REPO_ROOT / "markdown_docs").glob("who-*.md")) + sorted((REPO_ROOT / "markdown_docs").glob("nhc-*.md"))
         baseline_docs, optimized_docs = build_isolated_medical_corpora(doc_paths)
@@ -47,6 +57,7 @@ class ResumeBenchmarkTests(unittest.TestCase):
         self.assertGreater(report["summary"]["optimized_precision_at_5"], report["summary"]["baseline_precision_at_5"])
         self.assertGreaterEqual(report["summary"]["optimized_recall_at_5"], report["summary"]["baseline_recall_at_5"])
 
+    @_BENCHMARK_DOC_SKIP
     def test_acceptance_report_builds_without_live_qa(self):
         report = build_acceptance_report(include_live_qa=False)
 
@@ -60,6 +71,7 @@ class ResumeBenchmarkTests(unittest.TestCase):
             report["summary"]["retrieval_precision_at_5_baseline"],
         )
 
+    @_BENCHMARK_DOC_SKIP
     def test_offline_answer_benchmark_shows_answer_score_uplift(self):
         doc_paths = sorted((REPO_ROOT / "markdown_docs").glob("who-*.md")) + sorted((REPO_ROOT / "markdown_docs").glob("nhc-*.md"))
         baseline_docs, optimized_docs = build_isolated_medical_corpora(doc_paths)

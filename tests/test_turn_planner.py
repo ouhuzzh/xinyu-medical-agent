@@ -229,11 +229,15 @@ class TestPlannerEdges(unittest.TestCase):
 
     def test_route_after_dispatch_by_intent(self):
         from project.rag_agent.edges import route_after_dispatch
-        self.assertEqual(route_after_dispatch({"intent": "medical_rag"}), "rewrite_query")
-        self.assertEqual(route_after_dispatch({"intent": "appointment"}), "handle_appointment_skill")
-        self.assertEqual(route_after_dispatch({"intent": "cancel_appointment"}), "handle_appointment_skill")
-        self.assertEqual(route_after_dispatch({"intent": "triage"}), "recommend_department")
-        self.assertEqual(route_after_dispatch({"intent": "greeting"}), "__end__")
+        # Force the legacy _MAP path: other modules' setUpModule bootstraps skills into
+        # the global registry, which would otherwise reroute greeting to the skill handler
+        # instead of __end__. Patch the skill lookup so this tests the legacy map only.
+        with patch("project.rag_agent.edges._skill_route_target", return_value=None):
+            self.assertEqual(route_after_dispatch({"intent": "medical_rag"}), "rewrite_query")
+            self.assertEqual(route_after_dispatch({"intent": "appointment"}), "handle_appointment_skill")
+            self.assertEqual(route_after_dispatch({"intent": "cancel_appointment"}), "handle_appointment_skill")
+            self.assertEqual(route_after_dispatch({"intent": "triage"}), "recommend_department")
+            self.assertEqual(route_after_dispatch({"intent": "greeting"}), "__end__")
 
     def test_route_to_next_or_gate(self):
         from project.rag_agent.edges import route_to_next_or_gate

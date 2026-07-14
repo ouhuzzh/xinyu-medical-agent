@@ -5,8 +5,13 @@ sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1]
 
 from core.rag_system import RAGSystem  # noqa: E402
 
+import config as _config  # noqa: E402
+_HAS_EMBEDDING_KEY = bool(getattr(_config, "OPENAI_API_KEY", ""))
+_EMBEDDING_SKIP = unittest.skipUnless(_HAS_EMBEDDING_KEY, "needs OPENAI_API_KEY for embedding model")
+
 
 class RagSystemImportHistoryTests(unittest.TestCase):
+    @_EMBEDDING_SKIP
     def test_record_import_event_keeps_recent_history(self):
         rag = RAGSystem()
 
