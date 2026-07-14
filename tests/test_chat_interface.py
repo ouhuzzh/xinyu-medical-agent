@@ -16,15 +16,17 @@ class FakeGraphState:
         self.values = values or {}
 
 
+class _FakeRouteLogStore:
+    def save_log(self, payload):
+        pass
+
+
 class FakeGraph:
     def __init__(self, final_values=None):
         self.final_values = final_values or {}
         self._calls = 0
 
     def get_state(self, config):
-        self._calls += 1
-        if self._calls == 1:
-            return FakeGraphState()
         return FakeGraphState(values=self.final_values)
 
     def update_state(self, config, updates):
@@ -79,6 +81,7 @@ class FakeRagSystem:
         self.session_memory = FakeMemory()
         self.vector_db = FakeVectorDb(has_documents=has_documents)
         self.summary_store = FakeSummaryStore()
+        self.route_log_store = _FakeRouteLogStore()
         self.observability = type("Observability", (), {"flush": staticmethod(lambda: None)})()
 
     def get_config(self):

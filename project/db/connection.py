@@ -60,7 +60,8 @@ def get_conninfo() -> str:
         f"port={config.POSTGRES_PORT} "
         f"dbname={config.POSTGRES_DB} "
         f"user={config.POSTGRES_USER} "
-        f"password={config.POSTGRES_PASSWORD}"
+        f"password={config.POSTGRES_PASSWORD} "
+        f"connect_timeout={config.POSTGRES_CONNECT_TIMEOUT}"
     )
 
 

@@ -129,6 +129,7 @@ class ChatInterface:
         )
         self.turn_service = ChatTurnService(
             rag_system,
+            route_log_store=getattr(rag_system, "route_log_store", None),
             extract_final_assistant_text=self._extract_final_assistant_text,
             extract_all_visible_assistant_texts=self._extract_all_visible_assistant_texts,
             extract_clarification_text=self._extract_clarification_text,
