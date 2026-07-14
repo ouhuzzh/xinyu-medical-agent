@@ -166,11 +166,11 @@ def route_after_orchestrator_call(state: AgentState) -> Literal["tools", "fallba
     return "tools"
 
 
-def route_after_action(state: State) -> Literal["request_clarification", "supervise", "advance_task", "__end__"]:
+def route_after_action(state: State) -> Literal["request_clarification", "advance_task", "__end__"]:
     """Route after an action specialist (appointment/triage) finishes.
 
     Priority: pending clarification > pending multi-turn action (END) >
-    supervisor (dormant under the planner) > planner drain (advance_task) > END.
+    planner drain (advance_task) > END.
 
     A still-pending multi-turn appointment (pending_action_type/candidates/
     confirmation) ends the turn - it resumes via pending_action_type on the
@@ -185,8 +185,6 @@ def route_after_action(state: State) -> Literal["request_clarification", "superv
         or state.get("deferred_confirmation_action")
     ):
         return "__end__"
-    if bool(state.get("supervisor_active", False)):
-        return "supervise"
     return "advance_task"
 
 
@@ -254,9 +252,9 @@ def route_after_evidence(state: AgentState) -> Literal["should_compress_context"
 
 
 def route_after_grounding(state: State) -> Literal["revise_answer", "self_eval", "advance_task"]:
-    """P2/P5: route after the answer grounding check.
+    """P2/P4: route after the answer grounding check.
 
-    - grounded -> self_eval (P5) when on, else advance_task (drain next planned task)
+    - grounded -> self_eval (P4) when on, else advance_task (drain next planned task)
     - not grounded + budget + reflection on -> revise_answer
     - not grounded + budget + reflection off -> self_eval / advance_task
     - budget exhausted -> self_eval / advance_task
@@ -281,20 +279,6 @@ def _next_after_grounding() -> str:
 def route_after_self_eval(state: State) -> str:
     """After self-eval, drain the next planned task via advance_task."""
     return "advance_task"
-
-
-def route_after_supervisor(state: State) -> str:
-    """P4: dispatch the supervisor's chosen agent, or finish.
-
-    Dormant under the planner (the planner owns task drain via advance_task);
-    retained for a future supervisor-alongside-planner routing decision.
-    """
-    nxt = str(state.get("supervisor_next", "FINISH") or "FINISH").strip()
-    if nxt == "appointment":
-        return "handle_appointment_skill"
-    if nxt == "triage":
-        return "recommend_department"
-    return "__end__"
 
 
 # ---------------------------------------------------------------------------

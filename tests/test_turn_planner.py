@@ -302,8 +302,8 @@ class TestEndToEndDrain(unittest.TestCase):
 
 class TestResetSupervisorStatePlanner(unittest.TestCase):
     def test_clears_planner_state(self):
-        from project.rag_agent.rag_nodes import reset_supervisor_state
-        result = reset_supervisor_state({"planned_tasks": [{"id": 0}], "task_results": [{"id": 0}]})
+        from project.rag_agent.rag_nodes import reset_turn_state
+        result = reset_turn_state({"planned_tasks": [{"id": 0}], "task_results": [{"id": 0}]})
         self.assertEqual(result["planned_tasks"], [])
         # task_results cleared via __reset__ sentinel.
         self.assertEqual(result["task_results"], [{"__reset__": True}])

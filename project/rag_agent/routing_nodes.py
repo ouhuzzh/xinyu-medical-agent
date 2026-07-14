@@ -841,13 +841,11 @@ def recommend_department(state: State, llm):
 def request_clarification(state: State):
     """No-op node that runs on resume after a clarification interrupt.
 
-    P4: clears supervisor loop flags so a resumed specialist routes to END
-    (via route_after_action) instead of looping back to supervise. This node
-    only executes on resume because the graph is compiled with
+    Only executes on resume because the graph is compiled with
     interrupt_before=["request_clarification"], so the fresh-turn entry point
-    (reset_supervisor_state) does not run on resume.
+    (reset_turn_state) does not run on resume.
     """
-    return {"supervisor_active": False, "supervisor_rounds": 0}
+    return {}
 
 
 __all__ = [

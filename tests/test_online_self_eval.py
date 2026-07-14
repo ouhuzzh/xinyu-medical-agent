@@ -25,9 +25,6 @@ def _make_main_state(**extra):
         "grounding_passed": True,
         "grounding_rounds": 0,
         "grounding_evidence_score": 0.78,
-        "supervisor_active": False,
-        "supervisor_rounds": 0,
-        "supervisor_next": "FINISH",
         "self_eval_score": None,
         "self_eval_details": {},
     }
@@ -145,7 +142,7 @@ class TestSelfEvalNode(unittest.TestCase):
         """Bare MagicMock LLM (no patch of _structured_output_llm) → _default() path.
         AnswerSelfEval dims are Literal[1-5], so _default() sets "" → Pydantic rejects
         → _default() raises → self_eval's try/except → degraded path: score 0.5,
-        degraded=True, NO caveat, never raises. (Mirrors P4 supervise's never-raise test.)"""
+        degraded=True, NO caveat, never raises."""
         import project.rag_agent.rag_nodes as mod
         result = mod.self_eval(self._state_with_answer(), MagicMock())
         self.assertEqual(result["self_eval_score"], 0.5)
@@ -231,11 +228,10 @@ class TestRouteAfterGroundingSelfEval(unittest.TestCase):
         with unittest.mock.patch.object(edges.config, "ENABLE_SELF_EVAL", False):
             self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)), "advance_task")
 
-    def test_grounded_drains_to_advance_task_when_both_disabled(self):
+    def test_grounded_drains_to_advance_task_when_self_eval_disabled(self):
         import project.rag_agent.edges as edges
         from project.rag_agent.edges import route_after_grounding
-        with unittest.mock.patch.object(edges.config, "ENABLE_SELF_EVAL", False), \
-             unittest.mock.patch.object(edges.config, "ENABLE_MULTI_AGENT_SUPERVISOR", False):
+        with unittest.mock.patch.object(edges.config, "ENABLE_SELF_EVAL", False):
             self.assertEqual(route_after_grounding(_make_main_state(grounding_passed=True)), "advance_task")
 
 
@@ -286,7 +282,7 @@ class TestSelfEvalPersistence(unittest.TestCase):
 
 class TestCompiledSelfEval(unittest.TestCase):
     """Verify self_eval slots into a real compiled graph between grounding-check
-    and the supervisor sink, without breaking the P4 chain."""
+    and the planner drain, without breaking the turn chain."""
 
     def _build_graph(self, fake_eval_returns_caveat):
         from langgraph.graph import StateGraph, START, END

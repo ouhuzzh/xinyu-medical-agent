@@ -36,11 +36,7 @@ class State(MessagesState):
     secondary_user_query: str = ""
     planned_queries: List[str] = []
     sub_questions: List[str] = []
-    # P4: multi-agent supervisor — loop flags at medical_rag exit
-    supervisor_active: bool = False
-    supervisor_rounds: int = 0
-    supervisor_next: str = "FINISH"
-    # P5: online self-eval — LLM-as-judge score + details at turn end
+    # P4: online self-eval - LLM-as-judge score + details at turn end
     self_eval_score: float | None = None
     self_eval_details: dict = {}
     decision_source: str = ""

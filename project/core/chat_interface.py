@@ -28,8 +28,7 @@ SILENT_NODES = {
     "decompose_tasks",
     "grounded_answer_generation",
     "answer_grounding_check",
-    "supervise",
-    "reset_supervisor_state",
+    "reset_turn_state",
     "self_eval",
 }
 SYSTEM_NODES = {"summarize_history", "rewrite_query"}

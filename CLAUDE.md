@@ -74,7 +74,7 @@ React/Vite (:5173) → FastAPI (:8000) → ChatInterface → LangGraph graph
 - `graph.py` — builds the StateGraph with 20+ nodes, compiled with a checkpointer; integrates skill-registered nodes dynamically
 - `graph_state.py` — `State` (main graph) and `AgentState` (subgraph) TypedDicts; `skill_data: Dict[str, Any]` holds per-skill state
 - `routing_nodes.py` — intent classification, turn analysis, department recommendation
-- `rag_nodes.py` — query rewrite, retrieval orchestration, answer grounding, fallback
+- `rag_nodes.py` - query rewrite, retrieval orchestration, answer grounding, fallback, turn planner (compound-turn decomposition)
 - `appointment_nodes.py` — booking/cancellation nodes invoked from the graph
 - `edges.py` — conditional edge functions that route between nodes
 - `prompts.py` — all LLM prompt templates

@@ -19,12 +19,11 @@ from .rag_nodes import (
     grounded_answer_generation,
     orchestrator,
     plan_retrieval_queries,
-    reset_supervisor_state,
+    reset_turn_state,
     revise_answer,
     rewrite_query,
     self_eval,
     should_compress_context,
-    supervise,
     plan_tasks,
     dispatch_next_task,
     advance_task,
@@ -97,10 +96,8 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     graph_builder.add_node("intent_router", partial(intent_router, llm=_light_llm))
     graph_builder.add_node("rewrite_query", partial(rewrite_query, llm=_light_llm))
     graph_builder.add_node("decompose_tasks", partial(decompose_tasks, llm=_light_llm))
-    # P4: multi-agent supervisor at medical_rag exit
-    graph_builder.add_node("supervise", partial(supervise, llm=_light_llm))
-    graph_builder.add_node(reset_supervisor_state)
-    # P5: online self-eval between grounding and supervisor
+    graph_builder.add_node(reset_turn_state)
+    # P4: online self-eval after grounding
     graph_builder.add_node("self_eval", partial(self_eval, llm=_light_llm))
     # strong tier: answer generation, department recommendation
     graph_builder.add_node("recommend_department", partial(recommend_department, llm=_strong_llm))
@@ -141,8 +138,8 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     # previous turn is pre-loaded via update_state before graph invocation.
     # It now runs as post-chat cleanup in ChatInterface to avoid blocking the
     # user on the first token.
-    graph_builder.add_edge(START, "reset_supervisor_state")
-    graph_builder.add_edge("reset_supervisor_state", "analyze_turn")
+    graph_builder.add_edge(START, "reset_turn_state")
+    graph_builder.add_edge("reset_turn_state", "analyze_turn")
     # Conditional: rules inconclusive → skip intent_router, go direct to rewrite_query.
     # Rules explicit (greeting/cancel/appt/triage/mcp) → intent_router for final routing.
     _analyze_map = {
@@ -220,20 +217,12 @@ def create_agent_graph(llm, tools_list, appointment_service=None, llm_router=Non
     graph_builder.add_edge(["agent"], "grounded_answer_generation")
     _action_map = {
         "request_clarification": "request_clarification",
-        "supervise": "supervise",
         "advance_task": "advance_task",
         "__end__": END,
     }
     for _action_src in ("recommend_department", "handle_appointment_skill", "handle_appointment", "handle_cancel_appointment"):
         graph_builder.add_conditional_edges(_action_src, route_after_action, _action_map)
-    # P4: supervisor dispatches a peer agent (appointment/triage) or finishes.
-    # Dormant under the planner (retained for a future routing decision).
-    graph_builder.add_conditional_edges("supervise", route_after_supervisor, {
-        "handle_appointment_skill": "handle_appointment_skill",
-        "recommend_department": "recommend_department",
-        "__end__": END,
-    })
-    # P5: after self-eval, drain the next planned task via advance_task.
+    # P4: after self-eval, drain the next planned task via advance_task.
     _self_eval_map = {
         "advance_task": "advance_task",
     }

@@ -448,30 +448,6 @@ def get_task_decomposition_prompt() -> str:
     )
 
 
-def get_supervisor_prompt() -> str:
-    """System prompt for the supervise node (P4).
-
-    The supervisor observes the medical agent's answer + the user's original
-    query and decides whether to dispatch a peer action-agent in the same turn.
-    Output must be strict JSON matching SupervisorDecision:
-    {"next_agent": "appointment|triage|FINISH", "reason": str}.
-    """
-    return (
-        "你是一名医疗助手的 supervisor。医疗问答 agent 刚给出答案，你需要判断是否"
-        "在同轮内派发一个后续动作 agent。\n\n"
-        "可选 agent：\n"
-        "- appointment：用户明确表达挂号/预约/改号需求，且医疗答案未覆盖该动作。\n"
-        "- triage：用户明确表达需要推荐就诊科室，且医疗答案未覆盖该建议。\n"
-        "- FINISH：纯医学知识问答、闲聊、或动作需求已被满足/不明确时，结束本轮。\n\n"
-        "判定原则：\n"
-        "- 仅当用户原始查询明确暗示了挂号或分诊需求时才派发对应 agent。\n"
-        "- 医疗答案已经充分回答了用户问题时，不要再派发 appointment/triage。\n"
-        "- 不确定时选 FINISH。\n\n"
-        "严格输出 JSON，不要输出多余文字：\n"
-        '{"next_agent": "appointment|triage|FINISH", "reason": "简短依据"}'
-    )
-
-
 def get_turn_planner_prompt(skill_hints: list[tuple[str, str]] | None = None) -> str:
     """System prompt for the plan_tasks node (Phase 2 turn planner).
 
@@ -516,7 +492,7 @@ def get_turn_planner_prompt(skill_hints: list[tuple[str, str]] | None = None) ->
 
 
 def get_self_eval_prompt() -> str:
-    """System prompt for the self_eval node (P5).
+    """System prompt for the self_eval node (P4).
 
     LLM-as-judge: rates the final medical answer on 4 dimensions (1-5 each).
     Output must be strict JSON matching AnswerSelfEval:

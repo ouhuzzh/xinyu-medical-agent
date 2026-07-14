@@ -79,19 +79,15 @@ flowchart TD
     L -->|fail| M[revise_answer]
     M --> L
     L -->|pass| N[self_eval — LLM-as-judge]
-    N --> O[supervise — dispatch peer agent]
-    O --> P[appointment / triage]
-    P --> O
-    O -->|FINISH| Z([turn end])
+    N --> Z([turn end])
 ```
 
 - **Evidence-reflection retrieval loop** — rewrites and re-searches when evidence is thin.
 - **Answer grounding check + rewrite** — detects hallucination and rewrites strictly within retrieved evidence.
 - **Task decomposition** — splits compound questions into parallel sub-questions, then merges answers by index.
-- **Multi-agent supervisor** — after producing the medical answer, dispatches booking or triage peer agents in the same turn.
 - **Online self-evaluation** — LLM-as-judge scores safety, accuracy, completeness, and groundedness; low scores append a visible caveat.
 
-See the [Agentic Pipeline (P1–P5)](#agentic-pipeline-p1p5-from-rag-to-agent) section below for the staged implementation, config toggles, and integration tests.
+See the [Agentic Pipeline (P1–P4)](#agentic-pipeline-p1p4-from-rag-to-agent) section below for the staged implementation, config toggles, and integration tests.
 
 ### Three-Tier Memory: Redis + Summary + Semantic
 
@@ -181,9 +177,9 @@ flowchart LR
 - **PostgreSQL + pgvector** is the source of truth for documents, chunks, appointments, logs, and summaries.
 - **Redis** stores short-term conversational memory and recoverable session state.
 
-## Agentic Pipeline (P1–P5): From RAG to Agent
+## Agentic Pipeline (P1–P4): From RAG to Agent
 
-The medical-QA path is not a single retrieve-then-generate chain — it is a self-correcting agent with five layered behaviors. Each was built as an isolated stage (spec → plan → TDD → review) and ships with a config toggle that rolls back to the previous stage's behavior, plus compiled-graph integration tests proving the loops actually run through LangGraph's state machinery.
+The medical-QA path is not a single retrieve-then-generate chain - it is a self-correcting agent with four layered behaviors. Each was built as an isolated stage (spec → plan → TDD → review) and ships with a config toggle that rolls back to the previous stage's behavior, plus compiled-graph integration tests proving the loops actually run through LangGraph's state machinery.
 
 ```mermaid
 flowchart TD
@@ -203,15 +199,10 @@ flowchart TD
     J --> K["<b>P2</b> answer_grounding_check — grounded?"]
     K -->|not grounded, budget left| L["<b>P2</b> revise_answer<br/>(evidence-bounded rewrite)"]
     L --> K
-    K -->|grounded / exhausted| M["<b>P5</b> self_eval — LLM-as-judge<br/>safety · accuracy · completeness · groundedness"]
+    K -->|grounded / exhausted| M["<b>P4</b> self_eval - LLM-as-judge<br/>safety · accuracy · completeness · groundedness"]
     M -->|score &lt; 0.6| N["append soft-degrade caveat"]
-    M -->|ok| O
-    N --> O["<b>P4</b> supervise — dispatch peer agent?"]
-    O -->|appointment| P["appointment agent"]
-    O -->|triage| Q["triage agent"]
-    O -->|FINISH| Z([turn end])
-    P --> O
-    Q --> O
+    M -->|ok| Z([turn end])
+    N --> Z
 ```
 
 | Stage | Agent behavior | Key node(s) | Toggle (default) | What it adds |
@@ -219,16 +210,15 @@ flowchart TD
 | **P1** | Retrieval loop | `evaluate_evidence` | `ENABLE_AGENTIC_RETRIEVAL=true` (`MAX_EVIDENCE_ROUNDS=2`) | Evidence-sufficiency reflection — re-searches with a refined query when retrieval is thin |
 | **P2** | Answer reflection | `answer_grounding_check` + `revise_answer` | `ENABLE_ANSWER_REFLECTION=true` (`MAX_GROUNDING_ROUNDS=1`) | Grounding critique + evidence-bounded rewrite — no re-retrieval, stays in the answer stage |
 | **P3** | Autonomous planning | `decompose_tasks` + `Send×N` | `ENABLE_TASK_DECOMPOSITION=true` (`MAX_SUB_QUESTIONS=3`) | Splits a compound question into independent facets, fans out parallel retrieval, merges by index |
-| **P4** | Multi-agent collaboration | `supervise` + `reset_supervisor_state` | `ENABLE_MULTI_AGENT_SUPERVISOR=true` (`MAX_SUPERVISOR_ROUNDS=3`) | LLM supervisor observes the medical answer and dispatches a peer agent (booking/triage) in the same turn |
-| **P5** | Self-reflection | `self_eval` | `ENABLE_SELF_EVAL=true` (`SELF_EVAL_DEGRADE_THRESHOLD=0.6`) | LLM-as-judge scores the final answer on 4 dimensions; low scores trigger a visible self-deprecating caveat; score + details persist to `route_logs` |
+| **P4** | Self-reflection | `self_eval` | `ENABLE_SELF_EVAL=true` (`SELF_EVAL_DEGRADE_THRESHOLD=0.6`) | LLM-as-judge scores the final answer on 4 dimensions; low scores trigger a visible self-deprecating caveat; score + details persist to `route_logs` |
 
-**Turn planner (compound turns):** `analyze_turn` routes every fresh turn to `plan_tasks`, which decomposes cross-intent compound messages (e.g. "挂号皮肤科，顺便问湿疹") into an ordered `planned_tasks` list. `dispatch_next_task` drains them within a single graph invocation via `advance_task` -> `route_to_next_or_gate`, with `completeness_gate` appending a caveat for any unaddressed task. This replaces the earlier rule-based compound split + cross-turn drain queue; the P4 supervisor stays registered but dormant under the planner.
+**Turn planner (compound turns):** `analyze_turn` routes every fresh turn to `plan_tasks`, which decomposes cross-intent compound messages (e.g. "挂号皮肤科，顺便问湿疹") into an ordered `planned_tasks` list. `dispatch_next_task` drains them within a single graph invocation via `advance_task` -> `route_to_next_or_gate`, with `completeness_gate` appending a caveat for any unaddressed task. This replaces the earlier rule-based compound split + cross-turn drain queue.
 
 **Engineering guarantees that make it a real agent, not a pipeline:**
 - Every stage is **never-raise** — structured-output LLM calls degrade to a safe default (neutral score / FINISH / single-path) on failure, so the graph never hangs.
-- **Cross-turn state safety** — `reset_supervisor_state` (turn start) and `request_clarification` (resume) clear supervisor flags so a clarification interrupt can't mis-route the next turn.
-- **Reusability** — P3 fans out by reusing P1's retrieval loop as a unit; P4's fan-in reuses the existing `agent_answers` aggregation. Each stage composes rather than rewrites.
-- **Rollback** — disabling any toggle restores the prior stage's topology; all five are on by default.
+- **Cross-turn state safety** - `reset_turn_state` (turn start) clears planner task state so a previous turn's planned tasks can't bleed into the next.
+- **Reusability** - P3 fans out by reusing P1's retrieval loop as a unit. Each stage composes rather than rewrites.
+- **Rollback** - disabling any toggle restores the prior stage's topology; all four are on by default.
 
 Per-stage design specs and implementation plans live in [`docs/superpowers/`](docs/superpowers/). See also the [interview architecture guide](docs/INTERVIEW_PROJECT_ARCHITECTURE_CN.md) and [architecture gallery](docs/INTERVIEW_PROJECT_ARCHITECTURE_GALLERY.html).
 
@@ -525,9 +515,9 @@ It is **not** a medical device, does **not** provide diagnosis, and does **not**
 
 ## Roadmap
 
-- ~~Build the agentic pipeline (retrieval loop, answer reflection, task decomposition, multi-agent supervisor, online self-eval)~~ — **done (P1–P5)**, see [Agentic Pipeline](#agentic-pipeline-p1p5-from-rag-to-agent)
-- ~~Add stronger answer-level evaluation~~ — **done (P5 `self_eval`, LLM-as-judge on safety/accuracy/completeness/groundedness, persisted to `route_logs`)**
+- ~~Build the agentic pipeline (retrieval loop, answer reflection, task decomposition, online self-eval)~~ - **done (P1–P4)**, see [Agentic Pipeline](#agentic-pipeline-p1p4-from-rag-to-agent)
+- ~~Add stronger answer-level evaluation~~ - **done (P4 `self_eval`, LLM-as-judge on safety/accuracy/completeness/groundedness, persisted to `route_logs`)**
 - Move more admin capabilities from Gradio to dedicated FastAPI/React pages
 - Improve appointment rescheduling and alternative-slot planning
 - Add auth and deployment profiles for real multi-user environments
-- Make `_structured_output_llm._default()` handle `Literal` fields natively (currently P4/P5 rely on node-level try/except)
+- Make `_structured_output_llm._default()` handle `Literal` fields natively (currently P3/P4 rely on node-level try/except)
